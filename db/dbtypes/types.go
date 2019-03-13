@@ -44,15 +44,17 @@ const (
 	AddrTxnAll AddrTxnType = iota
 	AddrTxnCredit
 	AddrTxnDebit
+	AddrMergedTxnDebit
 	AddrTxnUnknown
 )
 
 // AddrTxnTypes is the canonical mapping from AddrTxnType to string.
 var AddrTxnTypes = map[AddrTxnType]string{
-	AddrTxnAll:     "all",
-	AddrTxnCredit:  "credit",
-	AddrTxnDebit:   "debit",
-	AddrTxnUnknown: "unknown",
+	AddrTxnAll:         "all",
+	AddrTxnCredit:      "credit",
+	AddrTxnDebit:       "debit",
+	AddrMergedTxnDebit: "merged_debit",
+	AddrTxnUnknown:     "unknown",
 }
 
 func (a AddrTxnType) String() string {
@@ -65,19 +67,71 @@ func AddrTxnTypeFromStr(txnType string) AddrTxnType {
 	switch txnType {
 	case "all":
 		return AddrTxnAll
-	case "credit":
-		fallthrough
-	case "credits":
+	case "credit", "credits":
 		return AddrTxnCredit
-	case "debit":
-		fallthrough
-	case "debits":
+	case "debit", "debits":
 		return AddrTxnDebit
+	case "merged_debit", "merged debit":
+		return AddrMergedTxnDebit
 	default:
 		return AddrTxnUnknown
 	}
-
 }
+
+// ChartGrouping defines the possible ways that a graph's axis can be grouped
+// according to all, year, month, week or day grouping.
+type ChartGrouping int8
+
+const (
+	AllChartGrouping ChartGrouping = iota
+	YearChartGrouping
+	MonthChartGrouping
+	WeekChartGrouping
+	DayChartGrouping
+	UnknownGrouping
+)
+
+// ChartGroupings helps maping a given chart grouping to its standard string value.
+var ChartGroupings = map[ChartGrouping]string{
+	AllChartGrouping:   "all",
+	YearChartGrouping:  "yr",
+	MonthChartGrouping: "mo",
+	WeekChartGrouping:  "wk",
+	DayChartGrouping:   "day",
+}
+
+func (g ChartGrouping) String() string {
+	return ChartGroupings[g]
+}
+
+// ChartGroupingFromStr converts groupings string to its respective chartGrouping value.
+func ChartGroupingFromStr(groupings string) ChartGrouping {
+	switch strings.ToLower(groupings) {
+	case "all":
+		return AllChartGrouping
+	case "yr", "year":
+		return YearChartGrouping
+	case "mo", "month":
+		return MonthChartGrouping
+	case "wk", "week":
+		return WeekChartGrouping
+	case "day":
+		return DayChartGrouping
+	default:
+		return UnknownGrouping
+	}
+}
+
+// HistoryChart is used to differentaite the three distinct graphs that
+// appear on the address history page.
+type HistoryChart int8
+
+const (
+	TxsType HistoryChart = iota
+	AmountFlow
+	TotalUnspent
+	ChartUnknown
+)
 
 type TicketPoolStatus int16
 
@@ -287,6 +341,7 @@ type Vout struct {
 	TxHash           string           `json:"tx_hash"`
 	TxIndex          uint32           `json:"tx_index"`
 	TxTree           int8             `json:"tx_tree"`
+	TxType           int16            `json:"tx_type"`
 	Value            uint64           `json:"value"`
 	Version          uint16           `json:"version"`
 	ScriptPubKey     []byte           `json:"pkScriptHex"`
@@ -296,35 +351,47 @@ type Vout struct {
 // AddressRow represents a row in the addresses table
 type AddressRow struct {
 	// id int64
-	Address string
+	Address        string
+	ValidMainChain bool
 	// MatchingTxHash provides the relationship between spending tx inputs and
 	// funding tx outputs.
-	MatchingTxHash string
-	IsFunding      bool
-	TxBlockTime    uint64
-	TxHash         string
-	TxVinVoutIndex uint32
-	Value          uint64
-	VinVoutDbID    uint64
+	MatchingTxHash   string
+	IsFunding        bool
+	TxBlockTime      uint64
+	TxHash           string
+	TxVinVoutIndex   uint32
+	Value            uint64
+	VinVoutDbID      uint64
+	MergedDebitCount uint64
+	TxType           int16
 }
 
 // ChartsData defines the fields that store the values needed to plot the charts
 // on the frontend.
 type ChartsData struct {
-	TimeStr    []string  `json:"timestr,omitempty"`
-	Difficulty []float64 `json:"difficulty,omitempty"`
-	Time       []uint64  `json:"time,omitempty"`
-	Value      []uint64  `json:"value,omitempty"`
-	Size       []uint64  `json:"size,omitempty"`
-	ChainSize  []uint64  `json:"chainsize,omitempty"`
-	Count      []uint64  `json:"count,omitempty"`
-	SizeF      []float64 `json:"sizef,omitempty"`
-	ValueF     []float64 `json:"valuef,omitempty"`
-	Unspent    []uint64  `json:"unspent,omitempty"`
-	Revoked    []uint64  `json:"revoked,omitempty"`
-	Height     []uint64  `json:"height,omitempty"`
-	Pooled     []uint64  `json:"pooled,omitempty"`
-	Solo       []uint64  `json:"solo,omitempty"`
+	TimeStr     []string  `json:"timestr,omitempty"`
+	Difficulty  []float64 `json:"difficulty,omitempty"`
+	Time        []uint64  `json:"time,omitempty"`
+	Value       []uint64  `json:"value,omitempty"`
+	Size        []uint64  `json:"size,omitempty"`
+	ChainSize   []uint64  `json:"chainsize,omitempty"`
+	Count       []uint64  `json:"count,omitempty"`
+	SizeF       []float64 `json:"sizef,omitempty"`
+	ValueF      []float64 `json:"valuef,omitempty"`
+	Unspent     []uint64  `json:"unspent,omitempty"`
+	Revoked     []uint64  `json:"revoked,omitempty"`
+	Height      []uint64  `json:"height,omitempty"`
+	Pooled      []uint64  `json:"pooled,omitempty"`
+	Solo        []uint64  `json:"solo,omitempty"`
+	SentRtx     []uint64  `json:"sentRtx,omitempty"`
+	ReceivedRtx []uint64  `json:"receivedRtx,omitempty"`
+	Tickets     []uint64  `json:"tickets,omitempty"`
+	Votes       []uint64  `json:"votes,omitempty"`
+	RevokeTx    []uint64  `json:"revokeTx,omitempty"`
+	Amount      []float64 `json:"amount,omitempty"`
+	Received    []float64 `json:"received,omitempty"`
+	Sent        []float64 `json:"sent,omitempty"`
+	Net         []float64 `json:"net,omitempty"`
 }
 
 // ScriptPubKeyData is part of the result of decodescript(ScriptPubKeyHex)
@@ -345,10 +412,12 @@ type VinTxProperty struct {
 	TxID        string `json:"tx_hash"`
 	TxIndex     uint32 `json:"tx_index"`
 	TxTree      uint16 `json:"tx_tree"`
+	TxType      int16  `json:"tx_type"`
 	BlockHeight uint32 `json:"blockheight"`
 	BlockIndex  uint32 `json:"blockindex"`
 	ScriptHex   []byte `json:"scripthex"`
 	IsValid     bool   `json:"is_valid"`
+	IsMainchain bool   `json:"is_mainchain"`
 	Time        int64  `json:"time"`
 }
 
@@ -412,6 +481,8 @@ type Tx struct {
 	VoutDbIds []uint64 `json:"voutdbids"`
 	// NOTE: VoutDbIds may not be needed if there is a vout table since each
 	// vout will have a tx_dbid
+	IsValidBlock     bool `json:"valid_block"`
+	IsMainchainBlock bool `json:"mainchain"`
 }
 
 // Block models a PicFight block.

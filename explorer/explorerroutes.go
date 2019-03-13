@@ -9,17 +9,17 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/db/agendadb"
 	"github.com/picfight/pfcdata/db/dbtypes"
 	"github.com/picfight/pfcdata/txhelpers"
-	humanize "github.com/dustin/go-humanize"
 )
 
 const (
@@ -29,12 +29,10 @@ const (
 
 // netName returns the name used when referring to a picfight network.
 func netName(chainParams *chaincfg.Params) string {
-	switch chainParams.Net {
-	case wire.TestNet2:
+	if strings.HasPrefix(strings.ToLower(chainParams.Name), "testnet") {
 		return "Testnet"
-	default:
-		return strings.Title(chainParams.Name)
 	}
+	return strings.Title(chainParams.Name)
 }
 
 // Home is the page handler for the "/" path
@@ -43,8 +41,9 @@ func (exp *explorerUI) Home(w http.ResponseWriter, r *http.Request) {
 
 	blocks := exp.blockData.GetExplorerBlocks(height, height-5)
 
-	exp.NewBlockDataMtx.Lock()
+	// Lock for both MempoolData and ExtraInfo
 	exp.MempoolData.RLock()
+	exp.NewBlockDataMtx.RLock()
 
 	str, err := exp.templates.execTemplateToString("home", struct {
 		Info    *HomeInfo
@@ -59,8 +58,9 @@ func (exp *explorerUI) Home(w http.ResponseWriter, r *http.Request) {
 		exp.Version,
 		exp.NetName,
 	})
-	exp.NewBlockDataMtx.Unlock()
+
 	exp.MempoolData.RUnlock()
+	exp.NewBlockDataMtx.RUnlock()
 
 	if err != nil {
 		log.Errorf("Template execute failure: %v", err)
@@ -160,7 +160,7 @@ func (exp *explorerUI) Block(w http.ResponseWriter, r *http.Request) {
 		NetName       string
 	}{
 		data,
-		exp.NewBlockData.Height - data.Confirmations,
+		exp.Height() - data.Confirmations,
 		exp.Version,
 		exp.NetName,
 	}
@@ -319,7 +319,9 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 				// expiry in blocks - (number of blocks since ticket purchase -
 				// ticket maturity))
 				// C is the probability (chance)
+				exp.NewBlockDataMtx.RLock()
 				pVote := float64(exp.ChainParams.TicketsPerBlock) / float64(exp.ExtraInfo.PoolInfo.Size)
+				exp.NewBlockDataMtx.RUnlock()
 				tx.TicketInfo.Probability = 100 * (math.Pow(1-pVote,
 					float64(exp.ChainParams.TicketExpiry)-float64(blocksLive)))
 			}
@@ -333,7 +335,7 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 		NetName       string
 	}{
 		tx,
-		exp.NewBlockData.Height - tx.Confirmations,
+		exp.Height() - tx.Confirmations,
 		exp.Version,
 		exp.NetName,
 	}
@@ -358,6 +360,9 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 		ConfirmHeight []int64
 		Version       string
 		NetName       string
+		OldestTxTime  int64
+		IsLiteMode    bool
+		ChartData     *dbtypes.ChartsData
 	}
 
 	// Get the address URL parameter, which should be set in the request context
@@ -399,6 +404,8 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Debugf("Showing transaction types: %s (%d)", txntype, txnType)
 
+	var oldestTxBlockTime int64
+
 	// Retrieve address information from the DB and/or RPC
 	var addrData *AddressInfo
 	if exp.liteMode {
@@ -412,89 +419,62 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 		// Get addresses table rows for the address
 		addrHist, balance, errH := exp.explorerSource.AddressHistory(
 			address, limitN, offsetAddrOuts, txnType)
-		// Fallback to RPC if DB query fails
-		if errH != nil {
-			log.Errorf("Unable to get address %s history: %v", address, errH)
-			addrData = exp.blockData.GetExplorerAddress(address, limitN, offsetAddrOuts)
+
+		if errH == nil {
+			// Generate AddressInfo skeleton from the address table rows
+			addrData = ReduceAddressHistory(addrHist)
 			if addrData == nil {
-				log.Errorf("Unable to get address %s", address)
-				exp.StatusPage(w, defaultErrorCode, "could not find that address", NotFoundStatusType)
-				return
+				// Empty history is not expected for credit txnType with any txns.
+				if txnType != dbtypes.AddrTxnDebit && (balance.NumSpent+balance.NumUnspent) > 0 {
+					log.Debugf("empty address history (%s): n=%d&start=%d", address, limitN, offsetAddrOuts)
+					exp.StatusPage(w, defaultErrorCode, "that address has no history", NotFoundStatusType)
+					return
+				}
+				// No mined transactions
+				addrData = new(AddressInfo)
+				addrData.Address = address
+			}
+			addrData.Fullmode = true
+
+			// Balances and txn counts (partial unless in full mode)
+			addrData.Balance = balance
+			addrData.KnownTransactions = (balance.NumSpent * 2) + balance.NumUnspent
+			addrData.KnownFundingTxns = balance.NumSpent + balance.NumUnspent
+			addrData.KnownSpendingTxns = balance.NumSpent
+			addrData.KnownMergedSpendingTxns = balance.NumMergedSpent
+
+			// Transactions to fetch with FillAddressTransactions. This should be a
+			// noop if ReduceAddressHistory is working right.
+			switch txnType {
+			case dbtypes.AddrTxnAll, dbtypes.AddrMergedTxnDebit:
+			case dbtypes.AddrTxnCredit:
+				addrData.Transactions = addrData.TxnsFunding
+			case dbtypes.AddrTxnDebit:
+				addrData.Transactions = addrData.TxnsSpending
+			default:
+				log.Warnf("Unknown address transaction type: %v", txnType)
 			}
 
-			// Set page parameters
-			addrData.Path = r.URL.Path
-			addrData.Limit, addrData.Offset = limitN, offsetAddrOuts
-			addrData.TxnType = txnType.String()
-
-			confirmHeights := make([]int64, len(addrData.Transactions))
-			for i, v := range addrData.Transactions {
-				confirmHeights[i] = exp.NewBlockData.Height - int64(v.Confirmations)
+			// Transactions on current page
+			addrData.NumTransactions = int64(len(addrData.Transactions))
+			if addrData.NumTransactions > limitN {
+				addrData.NumTransactions = limitN
 			}
 
-			pageData := AddressPageData{
-				Data:          addrData,
-				ConfirmHeight: confirmHeights,
-				Version:       exp.Version,
-			}
-			str, err := exp.templates.execTemplateToString("address", pageData)
+			// Query database for transaction details
+			err = exp.explorerSource.FillAddressTransactions(addrData)
 			if err != nil {
-				log.Errorf("Template execute failure: %v", err)
-				exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+				log.Errorf("Unable to fill address %s transactions: %v", address, err)
+				exp.StatusPage(w, defaultErrorCode, "could not find transactions for that address", NotFoundStatusType)
 				return
 			}
-
-			w.Header().Set("Content-Type", "text/html")
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, str)
-			return
-		}
-
-		// Generate AddressInfo skeleton from the address table rows
-		addrData = ReduceAddressHistory(addrHist)
-		if addrData == nil {
-			// Empty history is not expected for credit txnType with any txns.
-			if txnType != dbtypes.AddrTxnDebit && (balance.NumSpent+balance.NumUnspent) > 0 {
-				log.Debugf("empty address history (%s): n=%d&start=%d", address, limitN, offsetAddrOuts)
-				exp.StatusPage(w, defaultErrorCode, "that address has no history", NotFoundStatusType)
-				return
-			}
-			// No mined transactions
+		} else {
+			// We do not have any confirmed transactions.  Prep to display ONLY
+			// unconfirmed transactions (or none at all)
 			addrData = new(AddressInfo)
 			addrData.Address = address
-		}
-		addrData.Fullmode = true
-
-		// Balances and txn counts (partial unless in full mode)
-		addrData.Balance = balance
-		addrData.KnownTransactions = (balance.NumSpent * 2) + balance.NumUnspent
-		addrData.KnownFundingTxns = balance.NumSpent + balance.NumUnspent
-		addrData.KnownSpendingTxns = balance.NumSpent
-
-		// Transactions to fetch with FillAddressTransactions. This should be a
-		// noop if ReduceAddressHistory is working right.
-		switch txnType {
-		case dbtypes.AddrTxnAll:
-		case dbtypes.AddrTxnCredit:
-			addrData.Transactions = addrData.TxnsFunding
-		case dbtypes.AddrTxnDebit:
-			addrData.Transactions = addrData.TxnsSpending
-		default:
-			log.Warnf("Unknown address transaction type: %v", txnType)
-		}
-
-		// Transactions on current page
-		addrData.NumTransactions = int64(len(addrData.Transactions))
-		if addrData.NumTransactions > limitN {
-			addrData.NumTransactions = limitN
-		}
-
-		// Query database for transaction details
-		err = exp.explorerSource.FillAddressTransactions(addrData)
-		if err != nil {
-			log.Errorf("Unable to fill address %s transactions: %v", address, err)
-			exp.StatusPage(w, defaultErrorCode, "could not find transactions for that address", ErrorStatusType)
-			return
+			addrData.Fullmode = true
+			addrData.Balance = &AddressBalance{}
 		}
 
 		// Check for unconfirmed transactions
@@ -506,10 +486,20 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 		if addrData.UnconfirmedTxns == nil {
 			addrData.UnconfirmedTxns = new(AddressTransactions)
 		}
-		uctxn := addrData.UnconfirmedTxns
-
 		// Funding transactions (unconfirmed)
+		var received, sent, numReceived, numSent int64
+	FUNDING_TX_DUPLICATE_CHECK:
 		for _, f := range addressOuts.Outpoints {
+			//Mempool transactions stick around for 2 blocks.  The first block
+			//incorporates the transaction and mines it.  The second block
+			//validates it by the stake.  However, transactions move into our
+			//database as soon as they are mined and thus we need to be careful
+			//to not include those transactions in our list.
+			for _, b := range addrData.Transactions {
+				if f.Hash.String() == b.TxID && f.Index == b.InOutID {
+					continue FUNDING_TX_DUPLICATE_CHECK
+				}
+			}
 			fundingTx, ok := addressOuts.TxnsStore[f.Hash]
 			if !ok {
 				log.Errorf("An outpoint's transaction is not available in TxnStore.")
@@ -519,19 +509,34 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 				log.Errorf("An outpoint's transaction is unexpectedly confirmed.")
 				continue
 			}
-			addrTx := &AddressTx{
-				TxID:          fundingTx.Hash().String(),
-				InOutID:       f.Index,
-				FormattedSize: humanize.Bytes(uint64(fundingTx.Tx.SerializeSize())),
-				Total:         txhelpers.TotalOutFromMsgTx(fundingTx.Tx).ToCoin(),
-				ReceivedTotal: pfcutil.Amount(fundingTx.Tx.TxOut[f.Index].Value).ToCoin(),
+			if txnType == dbtypes.AddrTxnAll || txnType == dbtypes.AddrTxnCredit {
+				addrTx := &AddressTx{
+					TxID:          fundingTx.Hash().String(),
+					InOutID:       f.Index,
+					Time:          fundingTx.MemPoolTime,
+					FormattedSize: humanize.Bytes(uint64(fundingTx.Tx.SerializeSize())),
+					Total:         txhelpers.TotalOutFromMsgTx(fundingTx.Tx).ToCoin(),
+					ReceivedTotal: pfcutil.Amount(fundingTx.Tx.TxOut[f.Index].Value).ToCoin(),
+				}
+				addrData.Transactions = append(addrData.Transactions, addrTx)
 			}
-			uctxn.Transactions = append(uctxn.Transactions, addrTx)
-			uctxn.TxnsFunding = append(uctxn.TxnsFunding, addrTx)
-		}
+			received += fundingTx.Tx.TxOut[f.Index].Value
+			numReceived++
 
+		}
 		// Spending transactions (unconfirmed)
+	SPENDING_TX_DUPLICATE_CHECK:
 		for _, f := range addressOuts.PrevOuts {
+			//Mempool transactions stick around for 2 blocks.  The first block
+			//incorporates the transaction and mines it.  The second block
+			//validates it by the stake.  However, transactions move into our
+			//database as soon as they are mined and thus we need to be careful
+			//to not include those transactions in our list.
+			for _, b := range addrData.Transactions {
+				if f.TxSpending.String() == b.TxID && f.InputIndex == int(b.InOutID) {
+					continue SPENDING_TX_DUPLICATE_CHECK
+				}
+			}
 			spendingTx, ok := addressOuts.TxnsStore[f.TxSpending]
 			if !ok {
 				log.Errorf("An outpoint's transaction is not available in TxnStore.")
@@ -541,15 +546,46 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 				log.Errorf("An outpoint's transaction is unexpectedly confirmed.")
 				continue
 			}
-			addrTx := &AddressTx{
-				TxID:          spendingTx.Hash().String(),
-				InOutID:       uint32(f.InputIndex),
-				FormattedSize: humanize.Bytes(uint64(spendingTx.Tx.SerializeSize())),
-				Total:         txhelpers.TotalOutFromMsgTx(spendingTx.Tx).ToCoin(),
-				SentTotal:     pfcutil.Amount(spendingTx.Tx.TxIn[f.InputIndex].ValueIn).ToCoin(),
+
+			// sent total sats has to be a lookup of the vout:i prevout value
+			// because vin:i valuein is not reliable from pfcd at present
+			prevhash := spendingTx.Tx.TxIn[f.InputIndex].PreviousOutPoint.Hash
+			previndex := spendingTx.Tx.TxIn[f.InputIndex].PreviousOutPoint.Index
+			valuein := addressOuts.TxnsStore[prevhash].Tx.TxOut[previndex].Value
+
+			if txnType == dbtypes.AddrTxnAll || txnType == dbtypes.AddrTxnDebit {
+				addrTx := &AddressTx{
+					TxID:          spendingTx.Hash().String(),
+					InOutID:       uint32(f.InputIndex),
+					Time:          spendingTx.MemPoolTime,
+					FormattedSize: humanize.Bytes(uint64(spendingTx.Tx.SerializeSize())),
+					Total:         txhelpers.TotalOutFromMsgTx(spendingTx.Tx).ToCoin(),
+					SentTotal:     pfcutil.Amount(valuein).ToCoin(),
+				}
+				addrData.Transactions = append(addrData.Transactions, addrTx)
 			}
-			uctxn.Transactions = append(uctxn.Transactions, addrTx)
-			uctxn.TxnsSpending = append(uctxn.TxnsSpending, addrTx)
+
+			sent += valuein
+			numSent++
+		}
+		addrData.Balance.NumSpent += numSent
+		addrData.Balance.NumUnspent += (numReceived - numSent)
+		addrData.Balance.TotalSpent += sent
+		addrData.Balance.TotalUnspent += (received - sent)
+
+		if err != nil {
+			log.Errorf("Unable to fetch transactions for the address %s: %v", address, err)
+			exp.StatusPage(w, defaultErrorCode, "transactions for that address not found",
+				NotFoundStatusType)
+			return
+		}
+
+		oldestTxBlockTime, err = exp.explorerSource.GetOldestTxBlockTime(address)
+		if err != nil {
+			log.Errorf("Unable to fetch oldest transactions block time %s: %v", address, err)
+			exp.StatusPage(w, defaultErrorCode, "oldest block time not found",
+				NotFoundStatusType)
+			return
 		}
 	}
 
@@ -559,13 +595,31 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 	addrData.TxnType = txnType.String()
 
 	confirmHeights := make([]int64, len(addrData.Transactions))
+	bdHeight := exp.Height()
 	for i, v := range addrData.Transactions {
-		confirmHeights[i] = exp.NewBlockData.Height - int64(v.Confirmations)
+		confirmHeights[i] = bdHeight - int64(v.Confirmations)
 	}
+
+	sort.Slice(addrData.Transactions, func(i, j int) bool {
+		if addrData.Transactions[i].Time == addrData.Transactions[j].Time {
+			return addrData.Transactions[i].InOutID > addrData.Transactions[j].InOutID
+		}
+		return addrData.Transactions[i].Time > addrData.Transactions[j].Time
+	})
+
+	// addresscount := len(addressRows)
+	// if addresscount > 0 {
+	// 	calcoffset := int(math.Min(float64(addresscount), float64(offset)))
+	// 	calcN := int(math.Min(float64(offset+N), float64(addresscount)))
+	// 	log.Infof("Slicing result set which is %d addresses long to offset: %d and N: %d", addresscount, calcoffset, calcN)
+	// 	addressRows = addressRows[calcoffset:calcN]
+	// }
 
 	pageData := AddressPageData{
 		Data:          addrData,
 		ConfirmHeight: confirmHeights,
+		IsLiteMode:    exp.liteMode,
+		OldestTxTime:  oldestTxBlockTime,
 		Version:       exp.Version,
 		NetName:       exp.NetName,
 	}

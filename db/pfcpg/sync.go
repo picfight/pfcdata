@@ -181,7 +181,7 @@ func (db *ChainDB) SyncChainDB(client rpcutils.MasterBlockGetter, quit chan stru
 
 		// Store data from this block in the database
 		numVins, numVouts, err := db.StoreBlock(block.MsgBlock(), winners, true,
-			!updateAllAddresses, !updateAllVotes)
+			true, !updateAllAddresses, !updateAllVotes)
 		if err != nil {
 			return ib - 1, fmt.Errorf("StoreBlock failed: %v", err)
 		}
@@ -253,6 +253,10 @@ func (db *ChainDB) SyncChainDB(client rpcutils.MasterBlockGetter, quit chan stru
 			log.Errorf("IndexTicketsTable FAILED: %v", err)
 		}
 	}
+
+	// After sync and indexing, must use upsert statement, which checks for
+	// duplicate entries and updates instead of throwing and error and panicing.
+	db.EnableDuplicateCheckOnInsert(true)
 
 	log.Infof("Sync finished at height %d. Delta: %d blocks, %d transactions, %d ins, %d outs",
 		nodeHeight, nodeHeight-startHeight+1, totalTxs, totalVins, totalVouts)

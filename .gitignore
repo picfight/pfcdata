@@ -33,3 +33,7 @@ testnet/
 .DS_Store
 testdata/
 \.project
+test-data-repo
+pfcdata-testdata-gitlfs
+pfcdata-testdata
+.vendor-new

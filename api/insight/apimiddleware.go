@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	apitypes "github.com/picfight/pfcdata/api/types"
 	m "github.com/picfight/pfcdata/middleware"
-	"github.com/go-chi/chi"
 )
 
 type contextKey int

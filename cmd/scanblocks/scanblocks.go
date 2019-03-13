@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
@@ -15,7 +16,6 @@ import (
 	apitypes "github.com/picfight/pfcdata/api/types"
 	"github.com/picfight/pfcdata/rpcutils"
 	"github.com/picfight/pfcdata/txhelpers"
-	"github.com/decred/slog"
 )
 
 var host = flag.String("host", "127.0.0.1:9709", "node RPC host:port")

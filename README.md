@@ -1,7 +1,6 @@
 # pfcdata
 
 [![Build Status](https://img.shields.io/travis/picfight/pfcdata.svg)](https://travis-ci.org/picfight/pfcdata)
-[![GitHub release](https://img.shields.io/github/release/picfight/pfcdata.svg)](https://github.com/picfight/pfcdata/releases)
 [![Latest tag](https://img.shields.io/github/tag/picfight/pfcdata.svg)](https://github.com/picfight/pfcdata/tags)
 [![Go Report Card](https://goreportcard.com/badge/github.com/picfight/pfcdata)](https://goreportcard.com/report/github.com/picfight/pfcdata)
 [![ISC License](https://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
@@ -12,31 +11,49 @@ The pfcdata repository is a collection of golang packages and apps for [PicFight
 
 ```none
 ../pfcdata              The pfcdata daemon.
-├── blockdata           Package blockdata.
+├── api                 Package blockdata implements pfcdata's own HTTP API.
+│   ├── insight         Package insight implements the Insight API.
+│   └── types           Package types includes the exported structures used by
+|                         the pfcdata and Insight APIs.
+├── blockdata           Package blockdata is the primary data collection and
+|                         storage hub, and chain monitor.
 ├── cmd
-│   ├── rebuilddb       rebuilddb utility, for SQLite backend.
-│   ├── rebuilddb2      rebuilddb2 utility, for PostgreSQL backend.
-│   └── scanblocks      scanblocks utility.
+│   ├── rebuilddb       rebuilddb utility, for SQLite backend. Not required.
+│   ├── rebuilddb2      rebuilddb2 utility, for PostgreSQL backend. Not required.
+│   └── scanblocks      scanblocks utility. Not required.
 ├── pfcdataapi          Package pfcdataapi for golang API clients.
 ├── db
+│   ├── agendadb        Package agendadb is a basic PoS voting agenda database.
 │   ├── dbtypes         Package dbtypes with common data types.
 │   ├── pfcpg           Package pfcpg providing PostgreSQL backend.
 │   └── pfcsqlite       Package pfcsqlite providing SQLite backend.
 ├── dev                 Shell scripts for maintenance and deployment.
-├── public              Public resources for block explorer (css, js, etc.).
 ├── explorer            Package explorer, powering the block explorer.
-├── mempool             Package mempool.
-├── rpcutils            Package rpcutils.
+├── mempool             Package mempool for monitoring mempool for transactions,
+|                         data collection, and storage.
+├── middleware          Package middleware provides HTTP router middleware.
+├── notification        Package notification manages pfcd notifications, and
+|                         synchronous data collection by a queue of collectors.
+├── public              Public resources for block explorer (css, js, etc.).
+├── rpcutils            Package rpcutils contains helper types and functions for
+|                         interacting with a chain server via RPC.
 ├── semver              Package semver.
 ├── stakedb             Package stakedb, for tracking tickets.
-├── txhelpers           Package txhelpers.
+├── testutil            Package testutil provides some testing helper functions.
+├── txhelpers           Package txhelpers provides many functions and types for
+|                         processing blocks, transactions, voting, etc.
+├── version             Package version describes the pfcdata version.
 └── views               HTML templates for block explorer.
 ```
 
 ## Requirements
 
 * [Go](http://golang.org) 1.9.x or 1.10.x.
-* Running `pfcd` (>=1.1.2) synchronized to the current best block on the network.
+* Running `pfcd` (>=1.3.0) synchronized to the current best block on the
+  network. This is a strict requirement as testnet2 support is removed from
+  pfcdata v3.0.0.
+* (Optional) PostgreSQL 9.6+, if running in "full" mode. v10.x is recommended
+  for improved dump/restore formats and utilities.
 
 ## Installation
 
@@ -51,7 +68,9 @@ The following instructions assume a Unix-like shell (e.g. bash).
       go env GOROOT GOPATH
 
 * Ensure `$GOPATH/bin` is on your `$PATH`.
-* Install `dep`, the dependency management tool.
+* Install `dep`, the dependency management tool. The current [released binary of
+  `dep`](https://github.com/golang/dep/releases) is recommended, but the latest
+  may be installed from git via:
 
       go get -u -v github.com/golang/dep/cmd/dep
 
@@ -62,28 +81,34 @@ The following instructions assume a Unix-like shell (e.g. bash).
 * Fetch dependencies, and build the `pfcdata` executable.
 
       cd $GOPATH/src/github.com/picfight/pfcdata
-      dep ensure
+      dep ensure -vendor-only
       # build pfcdata executable in workspace:
       go build
 
 To build with the git commit hash appended to the version, set it as follows:
 
-    go build -ldflags "-X github.com/picfight/pfcdata/version.CommitHash=`git describe --abbrev=8 --long | awk -F "-" '{print $(NF-1)"-"$NF}'`"
+```bash
+go build -ldflags "-X github.com/picfight/pfcdata/version.CommitHash=`git describe --abbrev=8 --long | awk -F "-" '{print $(NF-1)"-"$NF}'`"
+```
 
-The sqlite driver uses cgo, which requires a C compiler (e.g. gcc) to compile the C sources. On
-Windows this is easily handled with MSYS2 ([download](http://www.msys2.org/) and
-install MinGW-w64 gcc packages).
+The sqlite driver uses cgo, which requires a C compiler (e.g. gcc) to compile
+the C sources. On Windows this is easily handled with MSYS2
+([download](http://www.msys2.org/) and install MinGW-w64 gcc packages).
 
 Tip: If you receive other build errors, it may be due to "vendor" directories
 left by dep builds of dependencies such as pfcwallet. You may safely delete
-vendor folders and run `dep ensure` again.
+vendor folders and run `dep ensure -vendor-only` again.
 
 ### Runtime resources
 
-The config file, logs, and data files are stored in the application data folder, which may be specified via the `-A/--appdata` setting. However, the location of the config file may be set with `-C/--configfile`.
+The config file, logs, and data files are stored in the application data folder,
+which may be specified via the `-A/--appdata` and `-b/--datadir` settings.
+However, the location of the config file may be set with `-C/--configfile`. If
+encountering errors involving file system paths, check the permissions on these
+folders to ensure that *the user running pfcdata* is able to access these paths.
 
-The "public" and "views" folders *must* be in the same
-folder as the `pfcdata` executable.
+The "public" and "views" folders *must* be in the same folder as the `pfcdata`
+executable. Set read-only permissions as appropriate.
 
 ## Updating
 
@@ -91,59 +116,84 @@ First, update the repository (assuming you have `master` checked out):
 
     cd $GOPATH/src/github.com/picfight/pfcdata
     git pull origin master
-    dep ensure
+    dep ensure -vendor-only
     go build
 
 Look carefully for errors with `git pull`, and reset locally modified files if
 necessary.
 
+## Updating dependencies
+
+`dep ensure -vendor-only` fetches project dependencies, without making changes
+in manifest files `Gopkg.toml` and `Gopkg.lock`.
+
+Call `dep ensure` to update project dependencies when introduce new imports.
+
+For guides and reference materials about `dep`, see [the documentation](https://golang.github.io/dep).
+
+The following FAQ explains [the difference between `Gopkg.toml` and `Gopkg.lock` files](https://github.com/golang/dep/blob/master/docs/FAQ.md#what-is-the-difference-between-gopkgtoml-the-manifest-and-gopkglock-the-lock).
+
 ## Upgrading Instructions 
 
-*__Only necessary while upgrading from v1.3.2 or below.__*
+*__Only necessary while upgrading from v2.x or below.__*  The database scheme
+change from pfcdata v2.x to v3.x does not permit an automatic migration. The
+tables must be rebuilt from scratch:
 
-1. Drop the old pfcdata database and create a new empty pfcdata database.
- ```sql
- // drop the old database
+1. Drop the old pfcdata database, and create a new empty pfcdata database.
+
+```sql
+ -- drop the old database
  DROP DATABASE pfcdata;
 
-// create a new database with the same user set in the pfcdata.conf e.g user pfcdata
-CREATE DATABASE pfcdata WITH OWNER pfcdata;
+-- create a new database with the same `pguser` set in the pfcdata.conf
+CREATE DATABASE pfcdata OWNER pfcdata;
 
-// grant all permissions to user pfcdata
+-- grant all permissions to user pfcdata
 GRANT ALL PRIVILEGES ON DATABASE pfcdata to pfcdata;
  ```
 
-2. Delete the data folder in pfcdata folder where pfcdata.conf file is located
-  - Mac :  `~/Library/Application Support/Pfcdata/data`
-  - Linux :  `~/Pfcdata/data`
-  - Window :  `C:\Users\<your-username>\AppData\Local\Pfcdata\data` 
+2. Delete the pfcdata data folder (i.e. corresponding to the `datadir` setting).
+   By default, `datadir` is in `{appdata}/data`:
+
+    * Linux:  `~/.pfcdata/data`
+    * Mac:  `~/Library/Application Support/Pfcdata/data`
+    * Windows:  `C:\Users\<your-username>\AppData\Local\Pfcdata\data` (`%localappdata%\Pfcdata\data`)
   
-3. Restart the data migration again by running the pfcdata and pfcd binaries
-  - run the downloaded pfcd binary first then the generated pfcdata binary
+3. With pfcd synchronized to the network's best block, start pfcdata to begin
+   the initial block data import.
 
 ## Getting Started
 
-### Configure PostgreSQL (IMPORTANT)
+### Configuring PostgreSQL (IMPORTANT)
 
 If you intend to run pfcdata in "full" mode (i.e. with the `--pg` switch), which
 uses a PostgreSQL database backend, it is crucial that you configure your
 PostgreSQL server for your hardware and the pfcdata workload.
 
 Read [postgresql-tuning.conf](./db/pfcpg/postgresql-tuning.conf) carefully for
-details on how to make the necessary changes to your system.
+details on how to make the necessary changes to your system. A helpful online
+tool for determining good settings for your system is called
+[PGTune](https://pgtune.leopard.in.ua/). **DO NOT** simply use this file in place
+of your existing postgresql.conf or copy and paste these settings into the
+existing postgresql.conf. It is necessary to edit postgresql.conf, reviewing all
+the settings to ensure the same configuration parameters are not set in two
+different places in the file.
 
-### Create configuration file
+On Linux, you may wish to use a unix domain socket instead of a TCP connection.
+The path to the socket depends on the system, but it is commonly
+/var/run/postgresql. Just set this path in `pghost`.
 
-Begin with the sample configuration file:
+### Creating the Configuration File
+
+Begin with the sample configuration file. With the default `appdata` directory
+for the current user on Linux:
 
 ```bash
-cp sample-pfcdata.conf pfcdata.conf
+cp sample-pfcdata.conf ~/.pfcdata/pfcdata.conf
 ```
 
-Then edit pfcdata.conf with your pfcd RPC settings. After you are finished, move
-pfcdata.conf to the `appdata` folder (default is `~/.pfcdata` on Linux,
-`%localappdata%\Pfcdata` on Windows). See the output of `pfcdata --help` for a list
-of all options and their default values.
+Then edit pfcdata.conf with your pfcd RPC settings. See the output of `pfcdata --help`
+for a list of all options and their default values.
 
 ### Indexing the Blockchain
 
@@ -151,8 +201,8 @@ If pfcdata has not previously been run with the PostgreSQL database backend, it
 is necessary to perform a bulk import of blockchain data and generate table
 indexes. *This will be done automatically by `pfcdata`* on a fresh startup.
 
-Alternatively, the PostgreSQL tables may also be generated with the `rebuilddb2`
-command line tool:
+Alternatively (but not recommended), the PostgreSQL tables may also be generated
+with the `rebuilddb2` command line tool:
 
 * Create the pfcdata user and database in PostgreSQL (tables will be created automatically).
 * Set your PostgreSQL credentials and host in both `./cmd/rebuilddb2/rebuilddb2.conf`,
@@ -161,20 +211,31 @@ command line tool:
 * In case of irrecoverable errors, such as detected schema changes without an
   upgrade path, the tables and their indexes may be dropped with `rebuilddb2 -D`.
 
-Note that pfcdata requires that [pfcd](https://docs.picfight.org/getting-started/user-guides/pfcd-setup/) is running with optional indexes enabled.  By default these indexes are not turned on when pfcd is installed.
+Note that pfcdata requires that
+[pfcd](https://docs.picfight.org/getting-started/user-guides/pfcd-setup/) is
+running with some optional indexes enabled.  By default, these indexes are not
+turned on when pfcd is installed. To enable them, set the following in
+pfcd.conf:
 
-In pfcd.conf set:
-```
+```ini
 txindex=1
 addrindex=1
 ```
 
+If these parameters are not set, pfcdata will be unable to retrieve transaction
+details and perform address searches, and will exit with an error mentioning
+these indexes.
+
 ### Starting pfcdata
 
-Launch the pfcdata daemon and allow the databases to process new blocks. Both
-SQLite and PostgreSQL synchronization require about an hour the first time
-pfcdata is run, but they are done concurrently. On subsequent launches, only
-blocks new to pfcdata are processed.
+Launch the pfcdata daemon and allow the databases to process new blocks. In
+"lite" mode (without `--pg`), only a SQLite DB is populated, which usually
+requires 30-60 minutes. In "full" mode (with `--pg`), concurrent synchronization
+of both SQLite and PostgreSQL databases is performed, requiring from 3-12 hours.
+See [System Hardware Requirements](#System-Hardware-Requirements) for more
+information.
+
+On subsequent launches, only blocks new to pfcdata are processed.
 
 ```bash
 ./pfcdata    # don't forget to configure pfcdata.conf in the appdata folder!
@@ -184,40 +245,84 @@ Unlike pfcdata.conf, which must be placed in the `appdata` folder or explicitly
 set with `-C`, the "public" and "views" folders *must* be in the same folder as
 the `pfcdata` executable.
 
-## pfcdata daemon
+## System Hardware Requirements
 
-The root of the repository is the `main` package for the pfcdata app, which has
-several components including:
+The time required to sync in "full" mode varies greatly with system hardware and
+software configuration. The most important factor is the storage medium on the
+database machine. An SSD (preferably NVMe, not SATA) is strongly recommended if
+you value your time and system performance.
+
+### "lite" Mode (SQLite only)
+
+Minimum:
+
+* 1 CPU core
+* 2 GB RAM
+* HDD with 4GB free space
+
+### "full" Mode (SQLite and PostgreSQL)
+
+These specifications assume pfcdata and postgres are running on the same machine.
+
+Minimum:
+
+* 1 CPU core
+* 4 GB RAM
+* HDD with 60GB free space
+
+Recommend:
+
+* 2+ CPU cores
+* 7+ GB RAM
+* SSD (NVMe preferred) with 60 GB free space
+
+If PostgreSQL is running on a separate machine, the minimum "lite" mode
+requirements may be applied to the pfcdata machine, while the recommended
+"full" mode requirements should be applied to the PostgreSQL host.
+
+## pfcdata Daemon
+
+The root of the repository is the `main` package for the `pfcdata` app, which
+has several components including:
 
 1. Block explorer (web interface).
-1. Blockchain monitoring and data collection.
-1. Mempool monitoring and reporting.
-1. Data storage in durable database (sqlite presently).
-1. RESTful JSON API over HTTP(S).
+2. Blockchain monitoring and data collection.
+3. Mempool monitoring and reporting.
+4. Database backend interfaces.
+5. RESTful JSON API (custom and Insight) over HTTP(S).
 
 ### Block Explorer
 
 After pfcdata syncs with the blockchain server via RPC, by default it will begin
 listening for HTTP connections on `http://127.0.0.1:7777/`. This means it starts
 a web server listening on IPv4 localhost, port 7777. Both the interface and port
-are configurable. The block explorer and the JSON API are both provided by the
+are configurable. The block explorer and the JSON APIs are both provided by the
 server on this port. See [JSON REST API](#json-rest-api) for details.
 
 Note that while pfcdata can be started with HTTPS support, it is recommended to
-employ a reverse proxy such as nginx. See sample-nginx.conf for an example nginx
-configuration.
+employ a reverse proxy such as Nginx ("engine x"). See sample-nginx.conf for an
+example Nginx configuration.
 
-A new auxillary database backend using PostgreSQL was introduced in v0.9.0 that
-provides expanded functionality. However, initial population of the database
-takes additional time and tens of gigabytes of disk storage space. Thus, pfcdata
-runs by default in a reduced functionality mode that does not require
+To save time and tens of gigabytes of disk storage space, pfcdata runs by
+default in a reduced functionality ("lite") mode that does not require
 PostgreSQL. To enable the PostgreSQL backend (and the expanded functionality),
 pfcdata may be started with the `--pg` switch.
 
-### JSON REST API
+### Insight API (EXPERIMENTAL)
 
-The API serves JSON data over HTTP(S). **All API endpoints are currently
-prefixed with `/api`** (e.g. `http://localhost:7777/api/stake`).
+The [Insight API](https://github.com/bitpay/insight-api) is accessible via HTTP
+at the `/insight/api` URL path prefix, and via WebSocket at the
+`/insight/socket.io` URL path prefix.
+
+The following endpoints are not implemented: `status`, `sync`, `peer`, `email`,
+and `rates`.
+
+### pfcdata API
+
+pfcdata has its own JSON HTTP API in addition to the experimental Insight API
+implementation. **pfcdata's API endpoints are prefixed with `/api`** (e.g.
+`http://localhost:7777/api/stake`).  The Insight API endpoints (not described in
+this section) are prefixed with `/insight/api`.
 
 #### Endpoint List
 
@@ -229,6 +334,7 @@ prefixed with `/api`** (e.g. `http://localhost:7777/api/stake`).
 | Hash |  `/block/best/hash` | `string` |
 | Height | `/block/best/height` | `int` |
 | Size | `/block/best/size` | `int32` |
+| Subsidy | `/block/best/subsidy` | `types.BlockSubsidies` |
 | Transactions | `/block/best/tx` | `types.BlockTransactions` |
 | Transactions Count | `/block/best/tx/count` | `types.BlockTransactionCounts` |
 | Verbose block result | `/block/best/verbose` | `pfcjson.GetBlockVerboseResult` |
@@ -240,6 +346,7 @@ prefixed with `/api`** (e.g. `http://localhost:7777/api/stake`).
 | Header |  `/block/X/header` | `pfcjson.GetBlockHeaderVerboseResult` |
 | Hash |  `/block/X/hash` | `string` |
 | Size | `/block/X/size` | `int32` |
+| Subsidy | `/block/best/subsidy` | `types.BlockSubsidies` |
 | Transactions | `/block/X/tx` | `types.BlockTransactions` |
 | Transactions Count | `/block/X/tx/count` | `types.BlockTransactionCounts` |
 | Verbose block result | `/block/X/verbose` | `pfcjson.GetBlockVerboseResult` |
@@ -251,6 +358,7 @@ prefixed with `/api`** (e.g. `http://localhost:7777/api/stake`).
 | Header |  `/block/hash/H/header` | `pfcjson.GetBlockHeaderVerboseResult` |
 | Height |  `/block/hash/H/height` | `int` |
 | Size | `/block/hash/H/size` | `int32` |
+| Subsidy | `/block/best/subsidy` | `types.BlockSubsidies` |
 | Transactions | `/block/hash/H/tx` | `types.BlockTransactions` |
 | Transactions count | `/block/hash/H/tx/count` | `types.BlockTransactionCounts` |
 | Verbose block result | `/block/hash/H/verbose` | `pfcjson.GetBlockVerboseResult` |
@@ -270,6 +378,9 @@ prefixed with `/api`** (e.g. `http://localhost:7777/api/stake`).
 | Details for input at index `X` | `/tx/T/in/X` | `types.TxIn` |
 | Outputs | `/tx/T/out` | `[]types.TxOut` |
 | Details for output at index `X` | `/tx/T/out/X` | `types.TxOut` |
+| Vote info (ssgen transactions only) | `/tx/T/vinfo` | `types.VoteInfo` |
+| Serialized bytes of the transaction | `/tx/hex/T` | `string` |
+| Same as `/tx/trimmed/T` | `/tx/decoded/T` | `types.TrimmedTx` |
 
 | Transactions (batch) | Path | Type |
 | --- | --- | --- |
@@ -279,6 +390,7 @@ prefixed with `/api`** (e.g. `http://localhost:7777/api/stake`).
 | Address A | Path | Type |
 | --- | --- | --- |
 | Summary of last 10 transactions | `/address/A` | `types.Address` |
+| Number and value of spent and unspent outputs | `/address/A/totals` | `types.AddressTotals` |
 | Verbose transaction result for last <br> 10 transactions | `/address/A/raw` | `types.AddressTxRaw` |
 | Summary of last `N` transactions | `/address/A/count/N` | `types.Address` |
 | Verbose transaction result for last <br> `N` transactions | `/address/A/count/N/raw` | `types.AddressTxRaw` |
@@ -329,7 +441,6 @@ parsing more efficient for the client.
 | Status | `/status` | `types.Status` |
 | Coin Supply | `/supply` | `types.CoinSupply` |
 | Endpoint list (always indented) | `/list` | `[]string` |
-| Directory | `/directory` | `string` |
 
 All JSON endpoints accept the URL query `indent=[true|false]`.  For example,
 `/stake/diff?indent=true`. By default, indentation is off. The characters to use
@@ -357,8 +468,10 @@ of the pfcdata daemon, but may be called alone with rebuilddb.
 
 `rebuilddb2` is a CLI app used for maintenance of pfcdata's `pfcpg` database
 (a.k.a. DB v2) that uses PostgreSQL to store a nearly complete record of the
-PicFight blockchain data. See the [README.md](./cmd/rebuilddb2/README.md) for
-`rebuilddb2` for important usage information.
+PicFight blockchain data. This functionality is included in the startup of the
+pfcdata daemon, but may be called alone with rebuilddb. See the
+[README.md](./cmd/rebuilddb2/README.md) for `rebuilddb2` for important usage
+information.
 
 ### scanblocks
 
@@ -367,7 +480,7 @@ More details are in [its own README](./cmd/scanblocks/README.md). The repository
 also includes a shell script, jsonarray2csv.sh, to convert the result into a
 comma-separated value (CSV) file.
 
-## Helper packages
+## Helper Packages
 
 `package pfcdataapi` defines the data types, with json tags, used by the JSON
 API.  This facilitates authoring of robust golang clients of the API.
@@ -392,7 +505,7 @@ from pfcd.
 `package txhelpers` includes helper functions for working with the common types
 `pfcutil.Tx`, `pfcutil.Block`, `chainhash.Hash`, and others.
 
-## Internal-use packages
+## Internal-use Packages
 
 Packages `blockdata` and `pfcsqlite` are currently designed only for internal
 use internal use by other pfcdata packages, but they may be of general value in
@@ -441,10 +554,12 @@ See the GitHub issue tracker and the [project milestones](https://github.com/pic
 Yes, please! See the CONTRIBUTING.md file for details, but here's the gist of it:
 
 1. Fork the repo.
-1. Create a branch for your work (`git branch -b cool-stuff`).
-1. Code something great.
-1. Commit and push to your repo.
-1. Create a [pull request](https://github.com/picfight/pfcdata/compare).
+2. Create a branch for your work (`git branch -b cool-stuff`).
+3. Code something great.
+4. Commit and push to your repo.
+5. Create a [pull request](https://github.com/picfight/pfcdata/compare).
+
+**DO NOT merge from master to your feature branch; rebase.**
 
 Before committing any changes to the Gopkg.lock file, you must update `dep` to
 the latest version via:
@@ -457,7 +572,7 @@ shown above.**
 Note that all pfcdata.org community and team members are expected to adhere to
 the code of conduct, described in the CODE_OF_CONDUCT file.
 
-Also, [come chat with us on Slack](https://join.slack.com/t/pfcdata/shared_invite/enQtMjQ2NzAzODk0MjQ3LTRkZGJjOWIyNDc0MjBmOThhN2YxMzZmZGRlYmVkZmNkNmQ3MGQyNzAxMzJjYzU1MzA2ZGIwYTIzMTUxMjM3ZDY)!
+Also, [come chat with us on Slack](https://slack.picfight.org/)!
 
 ## License
 

@@ -7,11 +7,11 @@ import (
 	"runtime/pprof"
 	"sync"
 
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/db/pfcsqlite"
 	"github.com/picfight/pfcdata/rpcutils"
 	"github.com/picfight/pfcdata/stakedb"
-	"github.com/decred/slog"
 )
 
 var (

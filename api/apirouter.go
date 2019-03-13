@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	m "github.com/picfight/pfcdata/middleware"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	m "github.com/picfight/pfcdata/middleware"
 	"github.com/rs/cors"
 )
 
@@ -44,6 +44,7 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 			rd.Get("/hash", app.getBlockHash)
 			rd.Get("/header", app.getBlockHeader)
 			rd.Get("/size", app.getBlockSize)
+			rd.Get("/subsidy", app.blockSubsidies)
 			rd.With((middleware.Compress(1))).Get("/verbose", app.getBlockVerbose)
 			rd.Get("/pos", app.getBlockStakeInfoExtended)
 			rd.Route("/tx", func(rt chi.Router) {
@@ -58,6 +59,7 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 			rd.Get("/height", app.getBlockHeight)
 			rd.Get("/header", app.getBlockHeader)
 			rd.Get("/size", app.getBlockSize)
+			rd.Get("/subsidy", app.blockSubsidies)
 			rd.With((middleware.Compress(1))).Get("/verbose", app.getBlockVerbose)
 			rd.Get("/pos", app.getBlockStakeInfoExtended)
 			rd.Route("/tx", func(rt chi.Router) {
@@ -72,6 +74,7 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 			rd.Get("/header", app.getBlockHeader)
 			rd.Get("/hash", app.getBlockHash)
 			rd.Get("/size", app.getBlockSize)
+			rd.Get("/subsidy", app.blockSubsidies)
 			rd.With((middleware.Compress(1))).Get("/verbose", app.getBlockVerbose)
 			rd.Get("/pos", app.getBlockStakeInfoExtended)
 			rd.Route("/tx", func(rt chi.Router) {
@@ -151,6 +154,9 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 			rd.Use(m.AddressPathCtx)
 			rd.Get("/totals", app.addressTotals)
 			rd.Get("/", app.getAddressTransactions)
+			rd.With(m.ChartGroupingCtx).Get("/types/{chartgrouping}", app.getAddressTxTypesData)
+			rd.With(m.ChartGroupingCtx).Get("/amountflow/{chartgrouping}", app.getAddressTxAmountFlowData)
+			rd.With(m.ChartGroupingCtx).Get("/unspent/{chartgrouping}", app.getAddressTxUnspentAmountData)
 			rd.With((middleware.Compress(1))).Get("/raw", app.getAddressTransactionsRaw)
 			rd.Route("/count/{N}", func(ri chi.Router) {
 				ri.Use(m.NPathCtx)
@@ -180,7 +186,7 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 	mux.Route("/chart", func(r chi.Router) {
 		// Return default chart data (ticket price)
 		r.Get("/", app.getTicketPriceChartData)
-		r.With(m.ChartTypeCtx).Get("/{chart-type}", app.getChartTypeData)
+		r.With(m.ChartTypeCtx).Get("/{charttype}", app.getChartTypeData)
 	})
 
 	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {

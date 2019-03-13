@@ -176,8 +176,8 @@ type AddressTotals struct {
 	BlockHeight  uint64  `json:"blockheight"`
 	NumSpent     int64   `json:"num_stxos"`
 	NumUnspent   int64   `json:"num_utxos"`
-	CoinsSpent   float64 `json:"pfc_spent"`
-	CoinsUnspent float64 `json:"pfc_unspent"`
+	CoinsSpent   float64 `json:"dcr_spent"`
+	CoinsUnspent float64 `json:"dcr_unspent"`
 }
 
 // BlockDataWithTxType adds an array of TxRawWithTxType to
@@ -310,6 +310,20 @@ type BlockExplorerExtraInfo struct {
 type BlockTransactionCounts struct {
 	Tx  int `json:"tx"`
 	STx int `json:"stx"`
+}
+
+// BlockSubsidies contains the block reward proportions for a certain block
+// height. The stake_reward is per vote, while total is for a certain number of
+// votes.
+type BlockSubsidies struct {
+	BlockNum   int64  `json:"height"`
+	BlockHash  string `json:"hash,omitempty"`
+	Work       int64  `json:"work_reward"`
+	Stake      int64  `json:"stake_reward"`
+	NumVotes   int16  `json:"num_votes,omitempty"`
+	TotalStake int64  `json:"stake_reward_total,omitempty"`
+	Tax        int64  `json:"project_subsidy"`
+	Total      int64  `json:"total,omitempty"`
 }
 
 // StakeDiff represents data about the evaluated stake difficulty and estimates

@@ -31,6 +31,7 @@ const (
 // BlockBasic models data for the explorer's explorer page
 type BlockBasic struct {
 	Height         int64  `json:"height"`
+	Hash           string `json:"hash"`
 	Size           int32  `json:"size"`
 	Valid          bool   `json:"valid"`
 	Voters         uint16 `json:"votes"`
@@ -61,31 +62,36 @@ type ChartDataCounter struct {
 
 // AddressTx models data for transactions on the address page
 type AddressTx struct {
-	TxID          string
-	InOutID       uint32
-	Size          uint32
-	FormattedSize string
-	Total         float64
-	Confirmations uint64
-	Time          int64
-	FormattedTime string
-	ReceivedTotal float64
-	SentTotal     float64
-	IsFunding     bool
-	MatchedTx     string
-	BlockTime     uint64
+	TxID           string
+	InOutID        uint32
+	Size           uint32
+	FormattedSize  string
+	Total          float64
+	Confirmations  uint64
+	Time           int64
+	FormattedTime  string
+	ReceivedTotal  float64
+	SentTotal      float64
+	IsFunding      bool
+	MatchedTx      string
+	BlockTime      uint64
+	MergedTxnCount uint64 `json:",omitempty"`
 }
 
 // IOID formats an identification string for the transaction input (or output)
 // represented by the AddressTx.
-func (a *AddressTx) IOID() string {
+func (a *AddressTx) IOID(txType ...string) string {
+	// If transaction is of type merged_debit, return unformatted transaction ID
+	if len(txType) > 0 && dbtypes.AddrTxnTypeFromStr(txType[0]) == dbtypes.AddrMergedTxnDebit {
+		return a.TxID
+	}
 	// When AddressTx is used properly, at least one of ReceivedTotal or
 	// SentTotal should be zero.
 	if a.IsFunding {
-		// an outpoint receiving funds
+		// An outpoint receiving funds
 		return fmt.Sprintf("%s:out[%d]", a.TxID, a.InOutID)
 	}
-	// a transaction input referencing an outpoint being spent
+	// A transaction input referencing an outpoint being spent
 	return fmt.Sprintf("%s:in[%d]", a.TxID, a.InOutID)
 }
 
@@ -149,6 +155,7 @@ type VoteInfo struct {
 	Choices            []*txhelpers.VoteChoice `json:"vote_choices"`
 	TicketSpent        string                  `json:"ticket_spent"`
 	MempoolTicketIndex int                     `json:"mempool_ticket_index"`
+	ForLastBlock       bool                    `json:"last_block"`
 }
 
 // BlockValidation models data about a vote's decision on a block
@@ -178,7 +185,6 @@ type Vout struct {
 // BlockInfo models data for display on the block page
 type BlockInfo struct {
 	*BlockBasic
-	Hash                  string
 	Version               int32
 	Confirmations         int64
 	StakeRoot             string
@@ -248,6 +254,15 @@ type AddressInfo struct {
 	KnownTransactions int64
 	KnownFundingTxns  int64
 	KnownSpendingTxns int64
+
+	// KnownMergedSpendingTxns refers to the total count of unique debit transactions
+	// that appear in the merged debit view.
+	KnownMergedSpendingTxns int64
+
+	// IsDummyAddress is true when the address is the dummy address typically
+	// used for unspendable ticket change outputs. See
+	// https://github.com/picfight/pfcdata/issues/358 for details.
+	IsDummyAddress bool
 }
 
 // TxnCount returns the number of transaction "rows" available.
@@ -262,6 +277,8 @@ func (a *AddressInfo) TxnCount() int64 {
 		return a.KnownFundingTxns
 	case dbtypes.AddrTxnDebit:
 		return a.KnownSpendingTxns
+	case dbtypes.AddrMergedTxnDebit:
+		return a.KnownMergedSpendingTxns
 	default:
 		log.Warnf("Unknown address transaction type: %v", a.TxnType)
 		return 0
@@ -271,28 +288,32 @@ func (a *AddressInfo) TxnCount() int64 {
 // AddressBalance represents the number and value of spent and unspent outputs
 // for an address.
 type AddressBalance struct {
-	Address      string `json:"address"`
-	NumSpent     int64  `json:"num_stxos"`
-	NumUnspent   int64  `json:"num_utxos"`
-	TotalSpent   int64  `json:"amount_spent"`
-	TotalUnspent int64  `json:"amount_unspent"`
+	Address        string `json:"address"`
+	NumSpent       int64  `json:"num_stxos"`
+	NumUnspent     int64  `json:"num_utxos"`
+	TotalSpent     int64  `json:"amount_spent"`
+	TotalUnspent   int64  `json:"amount_unspent"`
+	NumMergedSpent int64  `json:"num_merged_spent,omitempty"`
 }
 
 // HomeInfo represents data used for the home page
 type HomeInfo struct {
-	CoinSupply        int64          `json:"coin_supply"`
-	StakeDiff         float64        `json:"sdiff"`
-	IdxBlockInWindow  int            `json:"window_idx"`
-	IdxInRewardWindow int            `json:"reward_idx"`
-	Difficulty        float64        `json:"difficulty"`
-	DevFund           int64          `json:"dev_fund"`
-	DevAddress        string         `json:"dev_address"`
-	TicketReward      float64        `json:"reward"`
-	RewardPeriod      string         `json:"reward_period"`
-	ASR               float64        `json:"ASR"`
-	NBlockSubsidy     BlockSubsidy   `json:"subsidy"`
-	Params            ChainParams    `json:"params"`
-	PoolInfo          TicketPoolInfo `json:"pool_info"`
+	CoinSupply            int64          `json:"coin_supply"`
+	StakeDiff             float64        `json:"sdiff"`
+	NextExpectedStakeDiff float64        `json:"next_expected_sdiff"`
+	NextExpectedBoundsMin float64        `json:"next_expected_min"`
+	NextExpectedBoundsMax float64        `json:"next_expected_max"`
+	IdxBlockInWindow      int            `json:"window_idx"`
+	IdxInRewardWindow     int            `json:"reward_idx"`
+	Difficulty            float64        `json:"difficulty"`
+	DevFund               int64          `json:"dev_fund"`
+	DevAddress            string         `json:"dev_address"`
+	TicketReward          float64        `json:"reward"`
+	RewardPeriod          string         `json:"reward_period"`
+	ASR                   float64        `json:"ASR"`
+	NBlockSubsidy         BlockSubsidy   `json:"subsidy"`
+	Params                ChainParams    `json:"params"`
+	PoolInfo              TicketPoolInfo `json:"pool_info"`
 }
 
 // BlockSubsidy is an implementation of pfcjson.GetBlockSubsidyResult
@@ -313,20 +334,39 @@ type MempoolInfo struct {
 	Revocations  []MempoolTx `json:"revs"`
 }
 
+// TicketIndex is used to assign an index to a ticket hash.
+type TicketIndex map[string]int
+
+// BlockValidatorIndex keeps a list of arbitrary indexes for unique combinations
+// of block hash and the ticket being spent to validate the block, i.e.
+// map[validatedBlockHash]map[ticketHash]index.
+type BlockValidatorIndex map[string]TicketIndex
+
 // MempoolShort represents the mempool data sent as the mempool update
 type MempoolShort struct {
-	LastBlockHeight    int64          `json:"block_height"`
-	LastBlockTime      int64          `json:"block_time"`
-	TotalOut           float64        `json:"total"`
-	TotalSize          int32          `json:"size"`
-	NumTickets         int            `json:"num_tickets"`
-	NumVotes           int            `json:"num_votes"`
-	NumRegular         int            `json:"num_regular"`
-	NumRevokes         int            `json:"num_revokes"`
-	NumAll             int            `json:"num_all"`
-	LatestTransactions []MempoolTx    `json:"latest"`
-	FormattedTotalSize string         `json:"formatted_size"`
-	TicketIndexes      map[string]int `json:"ticket_indexes"`
+	LastBlockHeight    int64               `json:"block_height"`
+	LastBlockHash      string              `json:"block_hash"`
+	LastBlockTime      int64               `json:"block_time"`
+	TotalOut           float64             `json:"total"`
+	TotalSize          int32               `json:"size"`
+	NumTickets         int                 `json:"num_tickets"`
+	NumVotes           int                 `json:"num_votes"`
+	NumRegular         int                 `json:"num_regular"`
+	NumRevokes         int                 `json:"num_revokes"`
+	NumAll             int                 `json:"num_all"`
+	LatestTransactions []MempoolTx         `json:"latest"`
+	FormattedTotalSize string              `json:"formatted_size"`
+	TicketIndexes      BlockValidatorIndex `json:"-"`
+	VotingInfo         VotingInfo          `json:"voting_info"`
+	InvRegular         map[string]struct{} `json:"-"`
+	InvStake           map[string]struct{} `json:"-"`
+}
+
+// VotingInfo models data about the validity of the next block from mempool.
+type VotingInfo struct {
+	TicketsVoted     uint16 `json:"tickets_voted"`
+	MaxVotesPerBlock uint16 `json:"max_votes_per_block"`
+	votedTickets     map[string]bool
 }
 
 // ChainParams models simple data about the chain server's parameters used for some
@@ -352,6 +392,9 @@ func ReduceAddressHistory(addrHist []*dbtypes.AddressRow) *AddressInfo {
 	var received, sent int64
 	var transactions, creditTxns, debitTxns []*AddressTx
 	for _, addrOut := range addrHist {
+		if !addrOut.ValidMainChain {
+			continue
+		}
 		coin := pfcutil.Amount(addrOut.Value).ToCoin()
 		tx := AddressTx{
 			BlockTime: addrOut.TxBlockTime,
@@ -370,6 +413,8 @@ func ReduceAddressHistory(addrHist []*dbtypes.AddressRow) *AddressInfo {
 			// Spending transaction
 			sent += int64(addrOut.Value)
 			tx.SentTotal = coin
+			tx.MergedTxnCount = addrOut.MergedDebitCount
+
 			debitTxns = append(debitTxns, &tx)
 		}
 

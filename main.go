@@ -15,11 +15,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi"
+	"github.com/google/gops/agent"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/api"
@@ -37,8 +40,6 @@ import (
 	"github.com/picfight/pfcdata/semver"
 	"github.com/picfight/pfcdata/txhelpers"
 	"github.com/picfight/pfcdata/version"
-	"github.com/go-chi/chi"
-	"github.com/google/gops/agent"
 )
 
 // mainCore does all the work. Deferred functions do not run after os.Exit(),
@@ -75,8 +76,8 @@ func mainCore() error {
 	}
 
 	// Start with version info
-	ver := &version.Ver
-	log.Infof(version.AppName+" version %s", ver)
+	log.Infof("%s version %v (Go version %s)", version.AppName,
+		version.Version(), runtime.Version())
 
 	// PostgreSQL
 	usePG := cfg.FullMode
@@ -138,7 +139,7 @@ func mainCore() error {
 	defer baseDB.Close()
 
 	// PostgreSQL
-	var auxDB *pfcpg.ChainDB
+	var auxDB *pfcpg.ChainDBRPC
 	var newPGIndexes, updateAllAddresses, updateAllVotes bool
 	if usePG {
 		pgHost, pgPort := cfg.PGHost, ""
@@ -155,10 +156,15 @@ func mainCore() error {
 			Pass:   cfg.PGPass,
 			DBName: cfg.PGDBName,
 		}
-		auxDB, err = pfcpg.NewChainDB(&dbi, activeChain, baseDB.GetStakeDB(), !cfg.NoDevPrefetch)
-		if auxDB != nil {
-			defer auxDB.Close()
+		chainDB, err := pfcpg.NewChainDB(&dbi, activeChain, baseDB.GetStakeDB(), !cfg.NoDevPrefetch)
+		if chainDB != nil {
+			defer chainDB.Close()
 		}
+		if err != nil {
+			return err
+		}
+
+		auxDB, err = pfcpg.NewChainDBRPC(chainDB, pfcdClient)
 		if err != nil {
 			return err
 		}
@@ -288,8 +294,9 @@ func mainCore() error {
 	// Build a slice of each required saver type for each data source
 	var blockDataSavers []blockdata.BlockDataSaver
 	var mempoolSavers []mempool.MempoolDataSaver
-
-	blockDataSavers = append(blockDataSavers, auxDB)
+	if usePG {
+		blockDataSavers = append(blockDataSavers, auxDB)
+	}
 
 	// For example, dumping all mempool fees with a custom saver
 	if cfg.DumpAllMPTix {
@@ -302,7 +309,7 @@ func mainCore() error {
 	mempoolSavers = append(mempoolSavers, baseDB.MPC)
 
 	// Create the explorer system
-	explore := explorer.New(&baseDB, auxDB, cfg.UseRealIP, ver.String(), !cfg.NoDevPrefetch)
+	explore := explorer.New(&baseDB, auxDB, cfg.UseRealIP, version.Version(), !cfg.NoDevPrefetch)
 	if explore == nil {
 		return fmt.Errorf("failed to create new explorer (templates missing?)")
 	}
@@ -344,6 +351,13 @@ func mainCore() error {
 		return err
 	}
 
+	if usePG {
+		// After sync and indexing, must use upsert statement, which checks for
+		// duplicate entries and updates instead of erroring. SyncChainDB should set
+		// this on successful sync, but do it again anyway.
+		auxDB.EnableDuplicateCheckOnInsert(true)
+	}
+
 	// The sync routines may have lengthy tasks, such as table indexing, that
 	// follow main sync loop. Before enabling the chain monitors, ensure the DBs
 	// are at the node's best block.
@@ -365,6 +379,10 @@ func mainCore() error {
 		}
 	}
 	log.Infof("All ready, at height %d.", baseDBHeight)
+
+	if cfg.SyncAndQuit {
+		return nil
+	}
 
 	// Register for notifications from pfcd
 	cerr := notify.RegisterNodeNtfnHandlers(pfcdClient)
@@ -405,12 +423,25 @@ func mainCore() error {
 	wiredDBChainMonitor := baseDB.NewChainMonitor(collector, quit, &wg,
 		notify.NtfnChans.ConnectChanWiredDB, notify.NtfnChans.ReorgChanWiredDB)
 
+	var auxDBChainMonitor *pfcpg.ChainMonitor
+	auxDBBlockConnectedSync := func(*chainhash.Hash) {}
+	if usePG {
+		// Blockchain monitor for the aux (PG) DB
+		auxDBChainMonitor = auxDB.NewChainMonitor(quit, &wg,
+			notify.NtfnChans.ConnectChanDcrpgDB, notify.NtfnChans.ReorgChanDcrpgDB)
+		if auxDBChainMonitor == nil {
+			return fmt.Errorf("Failed to enable pfcpg ChainMonitor. *ChainDB is nil.")
+		}
+		auxDBBlockConnectedSync = auxDBChainMonitor.BlockConnectedSync
+	}
+
 	// Setup the synchronous handler functions called by the collectionQueue via
 	// OnBlockConnected.
 	collectionQueue.SetSynchronousHandlers([]func(*chainhash.Hash){
 		sdbChainMonitor.BlockConnectedSync,     // 1. Stake DB for pool info
 		wsChainMonitor.BlockConnectedSync,      // 2. blockdata for regular block data collection and storage
 		wiredDBChainMonitor.BlockConnectedSync, // 3. pfcsqlite for sqlite DB reorg handling
+		auxDBBlockConnectedSync,
 	})
 
 	// Initial data summary for web ui. stakedb must be at the same height, so
@@ -443,6 +474,13 @@ func mainCore() error {
 	wg.Add(2)
 	go wiredDBChainMonitor.BlockConnectedHandler()
 	go wiredDBChainMonitor.ReorgHandler()
+
+	if usePG {
+		// pfcsqlite does not handle new blocks except during reorg
+		wg.Add(2)
+		go auxDBChainMonitor.BlockConnectedHandler()
+		go auxDBChainMonitor.ReorgHandler()
+	}
 
 	if cfg.MonitorMempool {
 		mpoolCollector := mempool.NewMempoolDataCollector(pfcdClient, activeChain)
@@ -487,7 +525,7 @@ func mainCore() error {
 	}
 
 	// Start web API
-	app := api.NewContext(pfcdClient, &baseDB, auxDB, cfg.IndentJSON)
+	app := api.NewContext(pfcdClient, activeChain, &baseDB, auxDB, cfg.IndentJSON)
 	// Start notification hander to keep /status up-to-date
 	wg.Add(1)
 	go app.StatusNtfnHandler(&wg, quit)
@@ -524,8 +562,7 @@ func mainCore() error {
 	webMux.Get("/charts", explore.Charts)
 
 	if usePG {
-		chainDBRPC, _ := pfcpg.NewChainDBRPC(auxDB, pfcdClient)
-		insightApp := insight.NewInsightContext(pfcdClient, chainDBRPC, activeChain, &baseDB, cfg.IndentJSON)
+		insightApp := insight.NewInsightContext(pfcdClient, auxDB, activeChain, &baseDB, cfg.IndentJSON)
 		insightMux := insight.NewInsightApiRouter(insightApp, cfg.UseRealIP)
 		webMux.Mount("/insight/api", insightMux.Mux)
 
@@ -569,6 +606,12 @@ func waitForSync(base chan dbtypes.SyncResult, aux chan dbtypes.SyncResult,
 	baseRes := <-base
 	baseDBHeight := baseRes.Height
 	log.Infof("SQLite sync ended at height %d", baseDBHeight)
+	if baseRes.Error != nil {
+		log.Errorf("pfcsqlite.SyncDBAsync failed at height %d: %v.", baseDBHeight, baseRes.Error)
+		close(quit)
+		auxRes := <-aux
+		return baseDBHeight, auxRes.Height, baseRes.Error
+	}
 
 	auxRes := <-aux
 	auxDBHeight := auxRes.Height

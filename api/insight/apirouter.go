@@ -8,11 +8,11 @@
 package insight
 
 import (
-	m "github.com/picfight/pfcdata/middleware"
 	"github.com/didip/tollbooth"
 	"github.com/didip/tollbooth_chi"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	m "github.com/picfight/pfcdata/middleware"
 )
 
 // ApiMux contains the struct mux
@@ -58,6 +58,7 @@ func NewInsightApiRouter(app *insightApiContext, userRealIP bool) ApiMux {
 
 	// Status and Utility
 	mux.With(app.StatusInfoCtx).Get("/status", app.getStatusInfo)
+	mux.Get("/sync", app.getSyncInfo)
 	mux.With(app.NbBlocksCtx).Get("/utils/estimatefee", app.getEstimateFee)
 	mux.Get("/peer", app.GetPeerStatus)
 

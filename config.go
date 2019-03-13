@@ -15,12 +15,13 @@ import (
 	"strings"
 
 	flags "github.com/btcsuite/go-flags"
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
+	"github.com/picfight/pfcdata/db/dbtypes"
+	"github.com/picfight/pfcdata/netparams"
 	"github.com/picfight/pfcdata/version"
-	"github.com/picfight/pfcwallet/netparams"
-	"github.com/decred/slog"
 )
 
 const (
@@ -100,6 +101,7 @@ type config struct {
 	PGPass        string `long:"pgpass" description:"PostgreSQL DB password."`
 	PGHost        string `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)."`
 	NoDevPrefetch bool   `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected."`
+	SyncAndQuit   bool   `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API."`
 
 	// WatchAddresses []string `short:"w" long:"watchaddress" description:"Watched address (receiving). One per line."`
 	// SMTPUser     string `long:"smtpuser" description:"SMTP user name"`
@@ -293,7 +295,7 @@ func loadConfig() (*config, error) {
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 	if preCfg.ShowVersion {
 		fmt.Printf("%s version %s (Go version %s)\n", appName,
-			version.Ver.String(), runtime.Version())
+			version.Version(), runtime.Version())
 		os.Exit(0)
 	}
 
@@ -367,8 +369,8 @@ func loadConfig() (*config, error) {
 	activeNet = &netparams.MainNetParams
 	activeChain = &chaincfg.MainNetParams
 	if cfg.TestNet {
-		activeNet = &netparams.TestNet2Params
-		activeChain = &chaincfg.TestNet2Params
+		activeNet = &netparams.TestNet3Params
+		activeChain = &chaincfg.TestNet3Params
 		numNets++
 	}
 	if cfg.SimNet {
@@ -395,7 +397,7 @@ func loadConfig() (*config, error) {
 	// Make list of old versions of testnet directories here since the network
 	// specific DataDir will be used after this.
 	cfg.DataDir = cleanAndExpandPath(cfg.DataDir)
-	cfg.DataDir = filepath.Join(cfg.DataDir, netName(activeNet))
+	cfg.DataDir = filepath.Join(cfg.DataDir, activeNet.Name)
 	// Create the data folder if it does not exist.
 	err = os.MkdirAll(cfg.DataDir, 0700)
 	if err != nil {
@@ -406,7 +408,7 @@ func loadConfig() (*config, error) {
 	// Append the network type to the log directory so it is "namespaced"
 	// per network in the same fashion as the data directory.
 	cfg.LogDir = cleanAndExpandPath(cfg.LogDir)
-	cfg.LogDir = filepath.Join(cfg.LogDir, netName(activeNet))
+	cfg.LogDir = filepath.Join(cfg.LogDir, activeNet.Name)
 
 	// Initialize log rotation. After log rotation has been initialized, the
 	// logger variables may be used. This creates the LogDir if needed.
@@ -414,6 +416,13 @@ func loadConfig() (*config, error) {
 
 	log.Infof("Log folder:  %s", cfg.LogDir)
 	log.Infof("Config file: %s", configFile)
+
+	// Disable dev balance prefetch if network has invalid script.
+	_, err = dbtypes.DevSubsidyAddress(activeChain)
+	if !cfg.NoDevPrefetch && err != nil {
+		cfg.NoDevPrefetch = true
+		log.Warnf("%v. Disabling balance prefetch (--no-dev-prefetch).", err)
+	}
 
 	// Set the host names and ports to the default if the user does not specify
 	// them.
@@ -452,20 +461,16 @@ func loadConfig() (*config, error) {
 	return &cfg, nil
 }
 
-// netName returns the name used when referring to a picfight network.  At the
-// time of writing, pfcd currently places blocks for testnet version 0 in the
-// data and log directory "testnet", which does not match the Name field of the
-// chaincfg parameters.  This function can be used to override this directory
-// name as "testnet2" when the passed active network matches wire.TestNet2.
-//
-// A proper upgrade to move the data and log directories for this network to
-// "testnet" is planned for the future, at which point this function can be
-// removed and the network parameter's name used instead.
+// netName returns the name used when referring to a picfight network. TestNet3
+// correctly returns "testnet3", but not TestNet2. This function may be removed
+// after testnet2 is ancient history.
 func netName(chainParams *netparams.Params) string {
+	// The following switch is to ensure this code is not built for testnet2, as
+	// TestNet2 was removed entirely for pfcd 1.3.0. Compile check!
 	switch chainParams.Net {
-	case wire.TestNet2:
-		return "testnet2"
+	case wire.TestNet3, wire.MainNet, wire.SimNet:
 	default:
-		return chainParams.Name
+		log.Warnf("Unknown network: %s", chainParams.Name)
 	}
+	return chainParams.Name
 }

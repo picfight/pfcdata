@@ -28,6 +28,7 @@
     <script src="/js/turbolinks.js"></script>
     <script src="/js/jquery.js"></script>
     <script src="/js/lodash.min.js"></script>
+    <script src="/js/util.js"></script>
     <script src="/js/messagesocket.js"></script>
     <script src="/js/humanize.js"></script>
     <script src="/js/stimulus.umd.js"></script>
@@ -81,7 +82,7 @@
                         {{if eq .NetName "Mainnet"}}
                            <a data-keynav-skip href="http://testnet.pfcdata.org/" title="Home">Switch To Testnet</a>
                         {{else}}
-                           <a data-keynav-skip href="https://mainnet.picfight.org/" title="Home">Switch To Mainnet</a>
+                           <a data-keynav-skip href="https://explorer.pfcdata.org/" title="Home">Switch To Mainnet</a>
                         {{end}}
                         <a data-keynav-skip data-turbolinks="false" href="javascript:toggleSun()" class="jsonly"><span id="sun-icon" class="pfcicon-sun-fill no-underline pr-2"></span> Night Mode</a>
                         <a data-keynav-skip data-turbolinks="false" href="#" class="jsonly" id="keynav-toggle">
@@ -130,9 +131,11 @@
         if (darkEnabled()) {
             setCookie(darkBGCookieName, '', 0)
             toggleToLightClasses(document.body)
+            $(document).trigger("nightMode", { nightMode: false });
         } else {
             setCookie(darkBGCookieName, 1, 525600)
             toggleToDarkClasses(document.body)
+            $(document).trigger("nightMode", { nightMode: true })
         }
     }
     document.addEventListener("turbolinks:before-render", function(event) {
@@ -488,6 +491,10 @@
         }
     });
 
+    Mousetrap.bind('`', function(e) {
+       toggleSun()
+    });
+
     Mousetrap.bind('=', function(e) {
         toggleMenu(e)
         keyNav(e, true)
@@ -543,6 +550,7 @@ const app = Stimulus.Application.start()
 <script src="/js/controllers/mempool.js"  data-turbolinks-eval="false"></script>
 <script src="/js/controllers/agenda.js"  data-turbolinks-eval="false"></script>
 <script src="/js/controllers/charts.js" data-turbolinks-eval="false"></script>
+<script src="/js/controllers/address.js" data-turbolinks-eval="false"></script>
 {{end}}
 
 {{define "decimalParts"}}<span class="int">{{ index . 0 }}</span><span class="dot">.</span><span class="decimal">{{ index . 1 }}<span class="trailing-zeroes">{{ index . 2 }}</span></span>{{end}}

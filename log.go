@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/decred/slog"
+	"github.com/jrick/logrotate/rotator"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/api"
 	"github.com/picfight/pfcdata/api/insight"
@@ -21,8 +23,6 @@ import (
 	notify "github.com/picfight/pfcdata/notification"
 	"github.com/picfight/pfcdata/rpcutils"
 	"github.com/picfight/pfcdata/stakedb"
-	"github.com/decred/slog"
-	"github.com/jrick/logrotate/rotator"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and

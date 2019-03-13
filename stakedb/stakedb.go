@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/oleiade/lane"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
@@ -23,7 +24,6 @@ import (
 	apitypes "github.com/picfight/pfcdata/api/types"
 	"github.com/picfight/pfcdata/rpcutils"
 	"github.com/picfight/pfcdata/txhelpers"
-	"github.com/oleiade/lane"
 )
 
 // PoolInfoCache contains a map of block hashes to ticket pool info data at that
@@ -431,14 +431,20 @@ func (db *StakeDatabase) Height() uint32 {
 	return db.BestNode.Height()
 }
 
+// BlockCached attempts to find the block at the specified height in the block
+// cache. The returned boolean indicates if it was found.
+func (db *StakeDatabase) BlockCached(ind int64) (*pfcutil.Block, bool) {
+	db.blkMtx.RLock()
+	defer db.blkMtx.RUnlock()
+	block, found := db.blockCache[ind]
+	return block, found
+}
+
 // block first tries to find the block at the input height in cache, and if that
 // fails it will request it from the node RPC client. Don't use this casually
 // since reorganization may redefine a block at a given height.
 func (db *StakeDatabase) block(ind int64) (*pfcutil.Block, bool) {
-	db.blkMtx.RLock()
-	block, ok := db.blockCache[ind]
-	db.blkMtx.RUnlock()
-	//log.Info(ind, block, ok)
+	block, ok := db.BlockCached(ind)
 	if !ok {
 		var err error
 		block, _, err = rpcutils.GetBlock(ind, db.NodeClient)

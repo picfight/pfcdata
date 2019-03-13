@@ -17,11 +17,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/db/pfcpg"
 	"github.com/picfight/pfcdata/rpcutils"
 	"github.com/picfight/pfcdata/stakedb"
-	"github.com/decred/slog"
 )
 
 var (
@@ -336,8 +336,9 @@ func mainCore() error {
 		}
 
 		var numVins, numVouts int64
+		isValid, isMainchain := true, true
 		numVins, numVouts, err = db.StoreBlock(block.MsgBlock(), winners,
-			true, cfg.AddrSpendInfoOnline, !cfg.TicketSpendInfoBatch)
+			isValid, isMainchain, cfg.AddrSpendInfoOnline, !cfg.TicketSpendInfoBatch)
 		if err != nil {
 			return fmt.Errorf("StoreBlock failed: %v", err)
 		}

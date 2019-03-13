@@ -15,7 +15,7 @@ import (
 	flags "github.com/btcsuite/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcwallet/netparams"
+	"github.com/picfight/pfcdata/netparams"
 )
 
 const (
@@ -184,8 +184,8 @@ func loadConfig() (*config, error) {
 	activeNet = &netparams.MainNetParams
 	activeChain = &chaincfg.MainNetParams
 	if cfg.TestNet {
-		activeNet = &netparams.TestNet2Params
-		activeChain = &chaincfg.TestNet2Params
+		activeNet = &netparams.TestNet3Params
+		activeChain = &chaincfg.TestNet3Params
 		numNets++
 	}
 	if cfg.SimNet {

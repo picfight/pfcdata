@@ -128,7 +128,7 @@ func GetVoteAgendasForVersion(ver int64, client *rpcclient.Client) (agendas []Ag
 		for i := range voteInfo.Agendas {
 			v := &voteInfo.Agendas[i]
 			a := AgendaTagged{
-				Id:             v.Id,
+				Id:             v.ID,
 				Description:    v.Description,
 				Mask:           v.Mask,
 				StartTime:      v.StartTime,
@@ -179,7 +179,7 @@ func (db *AgendaDB) Updatedb(voteVersion int64, client *rpcclient.Client) {
 }
 
 // CheckForUpdates checks for update at the start of the process and will
-// proceed to update when neccessary.
+// proceed to update when necessary.
 func CheckForUpdates(client *rpcclient.Client) error {
 	adb, err := Open(dbName)
 	if err != nil {
@@ -217,16 +217,24 @@ func GetAgendaInfo(agendaId string) (*AgendaTagged, error) {
 
 // GetAllAgendas returns all agendas and their info in the db.
 func GetAllAgendas() (agendas []*AgendaTagged, err error) {
-	adb, err := Open(dbName)
+	var adb *AgendaDB
+	adb, err = Open(dbName)
 	if err != nil {
-		log.Errorf("Failed to open new DB: %v", err)
-	}
-	err = adb.sdb.All(&agendas)
-	if err != nil {
-		log.Errorf("Failed to get data from DB: %v", err)
+		log.Errorf("Failed to open new Agendas DB: %v", err)
+		return
 	}
 
-	err = adb.Close()
+	defer func() {
+		err = adb.Close()
+		if err != nil {
+			log.Errorf("Failed to close the Agendas DB: %v", err)
+		}
+	}()
+
+	err = adb.sdb.All(&agendas)
+	if err != nil {
+		log.Errorf("Failed to fetch data from Agendas DB: %v", err)
+	}
 
 	return
 }

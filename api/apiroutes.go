@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/rpcclient"
 	apitypes "github.com/picfight/pfcdata/api/types"
@@ -21,6 +22,7 @@ import (
 	"github.com/picfight/pfcdata/explorer"
 	m "github.com/picfight/pfcdata/middleware"
 	notify "github.com/picfight/pfcdata/notification"
+	"github.com/picfight/pfcdata/txhelpers"
 	appver "github.com/picfight/pfcdata/version"
 )
 
@@ -88,11 +90,15 @@ type DataSourceAux interface {
 	AddressTransactionDetails(addr string, count, skip int64,
 		txnType dbtypes.AddrTxnType) (*apitypes.Address, error)
 	AddressTotals(address string) (*apitypes.AddressTotals, error)
+	VotesInBlock(hash string) (int16, error)
+	GetTxHistoryData(address string, addrChart dbtypes.HistoryChart,
+		chartGroupings dbtypes.ChartGrouping) (*dbtypes.ChartsData, error)
 }
 
 // pfcdata application context used by all route handlers
 type appContext struct {
 	nodeClient    *rpcclient.Client
+	Params        *chaincfg.Params
 	BlockData     DataSourceLite
 	AuxDataSource DataSourceAux
 	LiteMode      bool
@@ -103,7 +109,7 @@ type appContext struct {
 
 // NewContext constructs a new appContext from the RPC client, primary and
 // auxiliary data sources, and JSON indentation string.
-func NewContext(client *rpcclient.Client, dataSource DataSourceLite, auxDataSource DataSourceAux, JSONIndent string) *appContext {
+func NewContext(client *rpcclient.Client, params *chaincfg.Params, dataSource DataSourceLite, auxDataSource DataSourceAux, JSONIndent string) *appContext {
 	conns, _ := client.GetConnectionCount()
 	nodeHeight, _ := client.GetBlockCount()
 
@@ -113,6 +119,7 @@ func NewContext(client *rpcclient.Client, dataSource DataSourceLite, auxDataSour
 
 	return &appContext{
 		nodeClient:    client,
+		Params:        params,
 		BlockData:     dataSource,
 		AuxDataSource: auxDataSource,
 		LiteMode:      liteMode,
@@ -120,7 +127,7 @@ func NewContext(client *rpcclient.Client, dataSource DataSourceLite, auxDataSour
 			Height:          uint32(nodeHeight),
 			NodeConnections: conns,
 			APIVersion:      APIVersion,
-			PfcdataVersion:  appver.Ver.String(),
+			PfcdataVersion:  appver.Version(),
 		},
 		JSONIndent: JSONIndent,
 	}
@@ -482,7 +489,7 @@ func (c *appContext) getDecodedTransactions(w http.ResponseWriter, r *http.Reque
 	for i := range txids {
 		tx := c.BlockData.GetTrimmedTransaction(txids[i])
 		if tx == nil {
-			apiLog.Errorf("Unable to get transaction %s", tx)
+			apiLog.Errorf("Unable to get transaction %v", tx)
 			http.Error(w, http.StatusText(422), 422)
 			return
 		}
@@ -729,6 +736,46 @@ func (c *appContext) getBlockSize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, blockSize, "")
+}
+
+func (c *appContext) blockSubsidies(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		// not available in lite mode
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
+	idx := c.getBlockHeightCtx(r)
+	if idx < 0 {
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+	hash := c.getBlockHashCtx(r)
+
+	// Unless this is a mined block, assume all votes.
+	numVotes := int16(c.Params.TicketsPerBlock)
+	if hash != "" {
+		var err error
+		numVotes, err = c.AuxDataSource.VotesInBlock(hash)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	work, stake, tax := txhelpers.RewardsAtBlock(idx, uint16(numVotes), c.Params)
+	rewards := apitypes.BlockSubsidies{
+		BlockNum:   idx,
+		BlockHash:  hash,
+		Work:       work,
+		Stake:      stake,
+		NumVotes:   numVotes,
+		TotalStake: stake * int64(numVotes),
+		Tax:        tax,
+		Total:      work + stake*int64(numVotes) + tax,
+	}
+
+	writeJSON(w, rewards, c.getIndentQuery(r))
 }
 
 func (c *appContext) getBlockRangeSize(w http.ResponseWriter, r *http.Request) {
@@ -1025,14 +1072,14 @@ func (c *appContext) getStakeDiffRange(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *appContext) addressTotals(w http.ResponseWriter, r *http.Request) {
-	address := m.GetAddressCtx(r)
-	if address == "" {
-		http.Error(w, http.StatusText(422), 422)
+	if c.LiteMode {
+		// not available in lite mode
+		http.Error(w, "not available in lite mode", 422)
 		return
 	}
 
-	if c.LiteMode {
-		// not available in lite mode
+	address := m.GetAddressCtx(r)
+	if address == "" {
 		http.Error(w, http.StatusText(422), 422)
 		return
 	}
@@ -1047,7 +1094,84 @@ func (c *appContext) addressTotals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, totals, c.getIndentQuery(r))
 }
 
+func (c *appContext) getAddressTxTypesData(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
+	address := m.GetAddressCtx(r)
+	chartGrouping := m.GetChartGroupingCtx(r)
+	if address == "" || chartGrouping == "" {
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	data, err := c.AuxDataSource.GetTxHistoryData(address, dbtypes.TxsType,
+		dbtypes.ChartGroupingFromStr(chartGrouping))
+	if err != nil {
+		log.Warnf("failed to get address (%s) history by tx type : %v", address, err)
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	writeJSON(w, data, c.getIndentQuery(r))
+}
+
+func (c *appContext) getAddressTxAmountFlowData(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
+	address := m.GetAddressCtx(r)
+	chartGrouping := m.GetChartGroupingCtx(r)
+	if address == "" || chartGrouping == "" {
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	data, err := c.AuxDataSource.GetTxHistoryData(address, dbtypes.AmountFlow,
+		dbtypes.ChartGroupingFromStr(chartGrouping))
+	if err != nil {
+		log.Warnf("failed to get address (%s) history by amount flow: %v", address, err)
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	writeJSON(w, data, c.getIndentQuery(r))
+}
+
+func (c *appContext) getAddressTxUnspentAmountData(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
+	address := m.GetAddressCtx(r)
+	chartGrouping := m.GetChartGroupingCtx(r)
+	if address == "" || chartGrouping == "" {
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	data, err := c.AuxDataSource.GetTxHistoryData(address, dbtypes.TotalUnspent,
+		dbtypes.ChartGroupingFromStr(chartGrouping))
+	if err != nil {
+		log.Warnf("failed to get address (%s) history by unspent amount flow: %v", address, err)
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	writeJSON(w, data, c.getIndentQuery(r))
+}
+
 func (c *appContext) getTicketPriceChartData(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
 	chartData, ok := explorer.GetChartTypeData("ticket-price")
 	if !ok {
 		http.NotFound(w, r)
@@ -1058,6 +1182,11 @@ func (c *appContext) getTicketPriceChartData(w http.ResponseWriter, r *http.Requ
 }
 
 func (c *appContext) getChartTypeData(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
 	chartType := m.GetChartTypeCtx(r)
 	chartData, ok := explorer.GetChartTypeData(chartType)
 	if !ok {

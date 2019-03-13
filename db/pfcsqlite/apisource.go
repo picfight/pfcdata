@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
@@ -28,7 +29,6 @@ import (
 	"github.com/picfight/pfcdata/rpcutils"
 	"github.com/picfight/pfcdata/stakedb"
 	"github.com/picfight/pfcdata/txhelpers"
-	humanize "github.com/dustin/go-humanize"
 )
 
 // wiredDB is intended to satisfy DataSourceLite interface. The block header is
@@ -908,6 +908,7 @@ func (db *wiredDB) GetAddressTransactionsRawWithSkip(addr string, count int, ski
 func makeExplorerBlockBasic(data *pfcjson.GetBlockVerboseResult) *explorer.BlockBasic {
 	block := &explorer.BlockBasic{
 		Height:         data.Height,
+		Hash:           data.Hash,
 		Size:           data.Size,
 		Valid:          true, // we do not know this, TODO with DB v2
 		Voters:         data.Voters,
@@ -1016,7 +1017,6 @@ func (db *wiredDB) GetExplorerBlock(hash string) *explorer.BlockInfo {
 	// Explorer Block Info
 	block := &explorer.BlockInfo{
 		BlockBasic:            makeExplorerBlockBasic(data),
-		Hash:                  data.Hash,
 		Version:               data.Version,
 		Confirmations:         data.Confirmations,
 		StakeRoot:             data.StakeRoot,
@@ -1148,13 +1148,18 @@ func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
 	inputs := make([]explorer.Vin, 0, len(txraw.Vin))
 	for i, vin := range txraw.Vin {
 		var addresses []string
+		// ValueIn is a temporary fix until amountIn is correct from pfcd call
+		var ValueIn pfcutil.Amount
 		if !(vin.IsCoinBase() || (vin.IsStakeBase() && i == 0)) {
-			addrs, err := txhelpers.OutPointAddresses(&msgTx.TxIn[i].PreviousOutPoint, db.client, db.params)
+			var addrs []string
+			addrs, ValueIn, err = txhelpers.OutPointAddresses(&msgTx.TxIn[i].PreviousOutPoint, db.client, db.params)
 			if err != nil {
 				log.Warnf("Failed to get outpoint address from txid: %v", err)
 				continue
 			}
 			addresses = addrs
+		} else {
+			ValueIn, _ = pfcutil.NewAmount(vin.AmountIn)
 		}
 		inputs = append(inputs, explorer.Vin{
 			Vin: &pfcjson.Vin{
@@ -1162,11 +1167,11 @@ func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
 				Coinbase:    vin.Coinbase,
 				Stakebase:   vin.Stakebase,
 				Vout:        vin.Vout,
-				AmountIn:    vin.AmountIn,
+				AmountIn:    ValueIn.ToCoin(),
 				BlockHeight: vin.BlockHeight,
 			},
 			Addresses:       addresses,
-			FormattedAmount: humanize.Commaf(vin.AmountIn),
+			FormattedAmount: humanize.Commaf(ValueIn.ToCoin()),
 		})
 	}
 	tx.Vin = inputs
@@ -1235,6 +1240,22 @@ func (db *wiredDB) GetExplorerAddress(address string, count, offset int64) *expl
 	if err != nil {
 		log.Infof("Invalid address %s: %v", address, err)
 		return nil
+	}
+
+	{
+		// Short circuit the transaction and balance queries if the provided address
+		// is the zero pubkey hash address commonly used for zero value
+		// sstxchange-tagged outputs.
+		isDummyAddress := IsZeroHashP2PHKAddress(address, db.params)
+		if isDummyAddress {
+			return &explorer.AddressInfo{
+				Address:         address,
+				Balance:         new(explorer.AddressBalance),
+				UnconfirmedTxns: new(explorer.AddressTransactions),
+				IsDummyAddress:  true,
+				Fullmode:        true,
+			}
+		}
 	}
 
 	maxcount := explorer.MaxAddressRows
@@ -1326,6 +1347,20 @@ func (db *wiredDB) GetExplorerAddress(address string, count, offset int64) *expl
 	}
 }
 
+// IsZeroHashP2PHKAddress checks if the given address is the dummy (zero pubkey
+// hash) address. See https://github.com/picfight/pfcdata/issues/358 for details.
+func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) bool {
+	zeroed := [20]byte{}
+	// expecting DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg address for mainnet
+	address, err := pfcutil.NewAddressPubKeyHash(zeroed[:], params, 0)
+	if err != nil {
+		log.Errorf("Incorrect pub key hash or invalid network params %v", params)
+		return false
+	}
+	zeroAddress := address.String()
+	return checkAddressString == zeroAddress
+}
+
 func ValidateNetworkAddress(address pfcutil.Address, p *chaincfg.Params) bool {
 	return address.IsForNet(p)
 }
@@ -1339,7 +1374,7 @@ func (db *wiredDB) CountUnconfirmedTransactions(address string) (int64, error) {
 
 // UnconfirmedTxnsForAddress returns the chainhash.Hash of all transactions in
 // mempool that (1) pay to the given address, or (2) spend a previous outpoint
-// that payed to the address.
+// that paid to the address.
 func (db *wiredDB) UnconfirmedTxnsForAddress(address string) (*txhelpers.AddressOutpoints, int64, error) {
 	// Mempool transactions
 	var numUnconfirmed int64
@@ -1360,9 +1395,8 @@ func (db *wiredDB) UnconfirmedTxnsForAddress(address string) (*txhelpers.Address
 		}
 
 		Tx, err1 := db.client.GetRawTransaction(txhash)
-
 		if err1 != nil {
-			log.Warnf("Unable to GetRawTransaction(%s): %v", tx, err1)
+			log.Warnf("Unable to GetRawTransaction(%s): %v", hash, err1)
 			err = err1
 			continue
 		}
@@ -1387,6 +1421,7 @@ func (db *wiredDB) UnconfirmedTxnsForAddress(address string) (*txhelpers.Address
 		// Merge the I/Os and the transactions into results
 		addressOutpoints.Update(prevTxns, outpoints, prevouts)
 	}
+
 	return addressOutpoints, numUnconfirmed, err
 }
 
