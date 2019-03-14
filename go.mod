@@ -48,9 +48,7 @@ require (
 	github.com/stretchr/testify v1.2.2 // indirect
 	github.com/vmihailenco/msgpack v3.3.3+incompatible // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2 // indirect
-	golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b // indirect
 	golang.org/x/net v0.0.0-20180925072008-f04abc6bdfa7
-	golang.org/x/sys v0.0.0-20180926141714-2f1df4e56cde // indirect
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	google.golang.org/appengine v1.1.0 // indirect
 	gopkg.in/airbrake/gobrake.v2 v2.0.9 // indirect
