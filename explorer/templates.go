@@ -16,6 +16,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
+	"github.com/picfight/pfcd/pfcutil"
 )
 
 type pageTemplate struct {
@@ -107,27 +108,85 @@ var toInt64 = func(v interface{}) int64 {
 	}
 }
 
+// float64Formatting formats a float64 value into multiple strings depending on whether
+// boldNumPlaces is provided or not. boldNumPlaces defines the number of decimal
+// places to be written with same font as the whole number value of the float.
+// If boldNumPlaces is provided the returned slice should have at least four items
+// otherwise it should have at least three items. i.e. given v is to 342.12132000,
+// numplaces is 8 and boldNumPlaces is set to 2 the following should be returned
+// []string{"342", "12", "132", "000"}. If boldNumPlace is not set the returned
+// slice should be []string{"342", "12132", "000"}.
+func float64Formatting(v float64, numPlaces int, useCommas bool, boldNumPlaces ...int) []string {
+	pow := math.Pow(10, float64(numPlaces))
+	formattedVal := math.Round(v*pow) / pow
+	clipped := fmt.Sprintf("%."+strconv.Itoa(numPlaces)+"f", formattedVal)
+	oldLength := len(clipped)
+	clipped = strings.TrimRight(clipped, "0")
+	trailingZeros := strings.Repeat("0", oldLength-len(clipped))
+	valueChunks := strings.Split(clipped, ".")
+	integer := valueChunks[0]
+
+	dec := ""
+	if len(valueChunks) > 1 {
+		dec = valueChunks[1]
+	}
+
+	if useCommas {
+		integer = humanize.Comma(int64(formattedVal))
+	}
+
+	if len(boldNumPlaces) == 0 {
+		return []string{integer, dec, trailingZeros}
+	}
+
+	places := boldNumPlaces[0]
+	if places > numPlaces {
+		return []string{integer, dec, trailingZeros}
+	}
+
+	if len(dec) < places {
+		places = len(dec)
+	}
+
+	return []string{integer, dec[:places], dec[places:], trailingZeros}
+}
+
 func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 	netTheme := "theme-" + strings.ToLower(netName(params))
 
 	return template.FuncMap{
-		"add": func(a int64, b int64) int64 {
+		"add": func(a, b int64) int64 {
 			return a + b
 		},
-		"subtract": func(a int64, b int64) int64 {
+		"intAdd": func(a, b int) int {
+			return a + b
+		},
+		"subtract": func(a, b int64) int64 {
 			return a - b
 		},
-		"divide": func(n int64, d int64) int64 {
+		"floatsubtract": func(a, b float64) float64 {
+			return a - b
+		},
+		"intSubtract": func(a, b int) int {
+			return a - b
+		},
+		"divide": func(n, d int64) int64 {
 			return n / d
 		},
-		"multiply": func(a int64, b int64) int64 {
+		"divideFloat": func(n, d float64) float64 {
+			return n / d
+		},
+		"multiply": func(a, b int64) int64 {
+			return a * b
+		},
+		"intMultiply": func(a, b int) int {
 			return a * b
 		},
 		"timezone": func() string {
 			t, _ := time.Now().Zone()
 			return t
 		},
-		"percentage": func(a int64, b int64) float64 {
+		"percentage": func(a, b int64) float64 {
 			return (float64(a) / float64(b)) * 100
 		},
 		"int64": toInt64,
@@ -145,59 +204,14 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			p := (float64(i) / float64(params.SubsidyReductionInterval)) * 100
 			return p
 		},
-		"float64AsDecimalParts": func(v float64, numPlaces int, useCommas bool) []string {
-			format := "%." + strconv.Itoa(numPlaces) + "f"
-			clipped := fmt.Sprintf(format, v)
-			oldLength := len(clipped)
-			clipped = strings.TrimRight(clipped, "0")
-			trailingZeros := strings.Repeat("0", oldLength-len(clipped))
-			valueChunks := strings.Split(clipped, ".")
-			integer := valueChunks[0]
-			var dec string
-			if len(valueChunks) == 2 {
-				dec = valueChunks[1]
-			} else {
-				dec = ""
-				log.Errorf("float64AsDecimalParts has no decimal value. Input: %v", v)
-			}
-			if useCommas {
-				integerAsInt64, err := strconv.ParseInt(integer, 10, 64)
-				if err != nil {
-					log.Errorf("float64AsDecimalParts comma formatting failed. Input: %v Error: %v", v, err.Error())
-					integer = "ERROR"
-					dec = "VALUE"
-					zeros := ""
-					return []string{integer, dec, zeros}
-				}
-				integer = humanize.Comma(integerAsInt64)
-			}
-			return []string{integer, dec, trailingZeros}
-		},
+		"float64AsDecimalParts": float64Formatting,
 		"amountAsDecimalParts": func(v int64, useCommas bool) []string {
-			amt := strconv.FormatInt(v, 10)
-			if len(amt) <= 8 {
-				dec := strings.TrimRight(amt, "0")
-				trailingZeros := strings.Repeat("0", len(amt)-len(dec))
-				leadingZeros := strings.Repeat("0", 8-len(amt))
-				return []string{"0", leadingZeros + dec, trailingZeros}
-			}
-			integer := amt[:len(amt)-8]
-			if useCommas {
-				integerAsInt64, err := strconv.ParseInt(integer, 10, 64)
-				if err != nil {
-					log.Errorf("amountAsDecimalParts comma formatting failed. Input: %v Error: %v", v, err.Error())
-					integer = "ERROR"
-					dec := "VALUE"
-					zeros := ""
-					return []string{integer, dec, zeros}
-				}
-				integer = humanize.Comma(integerAsInt64)
-			}
-			dec := strings.TrimRight(amt[len(amt)-8:], "0")
-			zeros := strings.Repeat("0", 8-len(dec))
-			return []string{integer, dec, zeros}
+			return float64Formatting(pfcutil.Amount(v).ToCoin(), 8, useCommas)
 		},
-		"remaining": func(idx int, max int64, t int64) string {
+		"toFloat64Amount": func(intAmount int64) float64 {
+			return pfcutil.Amount(intAmount).ToCoin()
+		},
+		"remaining": func(idx int, max, t int64) string {
 			x := (max - int64(idx)) * t
 			allsecs := int(time.Duration(x).Seconds())
 			str := ""
@@ -241,7 +255,7 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			}
 			return
 		},
-		"covertByteArrayToString": func(arr []byte) (inString string) {
+		"convertByteArrayToString": func(arr []byte) (inString string) {
 			inString = hex.EncodeToString(arr)
 			return
 		},
@@ -249,12 +263,32 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			result = int(a) * b
 			return
 		},
-		"TimeConversion": func(a uint64) (result time.Time) {
-			result = time.Unix(int64(a), 0)
+		"TimeConversion": func(a uint64) (result string) {
+			dateTime := time.Unix(int64(a), 0).UTC()
+			result = dateTime.Format("2006-01-02 15:04:05 MST")
 			return
+		},
+		"toLowerCase": func(a string) string {
+			return strings.ToLower(a)
 		},
 		"theme": func() string {
 			return netTheme
+		},
+		"uint16toInt64": func(v uint16) int64 {
+			return int64(v)
+		},
+		"zeroSlice": func(length int) []int {
+			if length < 0 {
+				length = 0
+			}
+			return make([]int, length)
+		},
+		"clipSlice": func(arr []*TrimmedTxInfo, n int) []*TrimmedTxInfo {
+			if len(arr) >= n {
+				return arr[:n]
+			} else {
+				return arr
+			}
 		},
 	}
 }

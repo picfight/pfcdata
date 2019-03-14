@@ -6,26 +6,38 @@ package explorer
 
 import (
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/db/agendadb"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/txhelpers"
+	"github.com/picfight/pfcd/txscript"
+	"github.com/picfight/pfcdata/v3/db/agendadb"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
+// Status page strings
 const (
 	defaultErrorCode    = "Something went wrong..."
-	defaultErrorMessage = "Try refreshing this page... it usually fixes things"
+	defaultErrorMessage = "Try refreshing... it usually fixes things."
+	fullModeRequired    = "Full-functionality mode is required for this page."
+	wrongNetwork        = "Wrong Network"
 )
+
+// number of blocks displayed on /nexthome
+const homePageBlocksMaxCount = 30
 
 // netName returns the name used when referring to a picfight network.
 func netName(chainParams *chaincfg.Params) string {
@@ -35,7 +47,7 @@ func netName(chainParams *chaincfg.Params) string {
 	return strings.Title(chainParams.Name)
 }
 
-// Home is the page handler for the "/" path
+// Home is the page handler for the "/" path.
 func (exp *explorerUI) Home(w http.ResponseWriter, r *http.Request) {
 	height := exp.blockData.GetHeight()
 
@@ -43,16 +55,18 @@ func (exp *explorerUI) Home(w http.ResponseWriter, r *http.Request) {
 
 	// Lock for both MempoolData and ExtraInfo
 	exp.MempoolData.RLock()
-	exp.NewBlockDataMtx.RLock()
+	exp.pageData.RLock()
 
 	str, err := exp.templates.execTemplateToString("home", struct {
-		Info    *HomeInfo
-		Mempool *MempoolInfo
-		Blocks  []*BlockBasic
-		Version string
-		NetName string
+		ChainParams *chaincfg.Params
+		Info        *HomeInfo
+		Mempool     *MempoolInfo
+		Blocks      []*BlockBasic
+		Version     string
+		NetName     string
 	}{
-		exp.ExtraInfo,
+		exp.ChainParams,
+		exp.pageData.HomeInfo,
 		exp.MempoolData,
 		blocks,
 		exp.Version,
@@ -60,7 +74,7 @@ func (exp *explorerUI) Home(w http.ResponseWriter, r *http.Request) {
 	})
 
 	exp.MempoolData.RUnlock()
-	exp.NewBlockDataMtx.RUnlock()
+	exp.pageData.RUnlock()
 
 	if err != nil {
 		log.Errorf("Template execute failure: %v", err)
@@ -72,19 +86,290 @@ func (exp *explorerUI) Home(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// Blocks is the page handler for the "/blocks" path
+// SideChains is the page handler for the "/side" path.
+func (exp *explorerUI) SideChains(w http.ResponseWriter, r *http.Request) {
+	sideBlocks, err := exp.explorerSource.SideChainBlocks()
+	if err != nil {
+		log.Errorf("Unable to get side chain blocks: %v", err)
+		exp.StatusPage(w, defaultErrorCode, "failed to retrieve side chain blocks", ErrorStatusType)
+		return
+	}
+
+	str, err := exp.templates.execTemplateToString("sidechains", struct {
+		ChainParams *chaincfg.Params
+		Data        []*dbtypes.BlockStatus
+		Version     string
+		NetName     string
+	}{
+		exp.ChainParams,
+		sideBlocks,
+		exp.Version,
+		exp.NetName,
+	})
+
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+// DisapprovedBlocks is the page handler for the "/rejects" path.
+func (exp *explorerUI) DisapprovedBlocks(w http.ResponseWriter, r *http.Request) {
+	disapprovedBlocks, err := exp.explorerSource.DisapprovedBlocks()
+	if err != nil {
+		log.Errorf("Unable to get stakeholder disapproved blocks: %v", err)
+		exp.StatusPage(w, defaultErrorCode,
+			"failed to retrieve stakeholder disapproved blocks", ErrorStatusType)
+		return
+	}
+
+	str, err := exp.templates.execTemplateToString("rejects", struct {
+		ChainParams *chaincfg.Params
+		Data        []*dbtypes.BlockStatus
+		Version     string
+		NetName     string
+	}{
+		exp.ChainParams,
+		disapprovedBlocks,
+		exp.Version,
+		exp.NetName,
+	})
+
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+// show only regular tx in block.Transactions, exclude coinbase (reward) transactions
+// for use in NextHome handler and websocket response to getmempooltxs event
+func filterRegularTx(txs []*TrimmedTxInfo) (transactions []*TrimmedTxInfo) {
+	for _, tx := range txs {
+		if !tx.Coinbase {
+			transactions = append(transactions, tx)
+		}
+	}
+	return transactions
+}
+
+func trimMempoolTx(txs []MempoolTx) (trimmedTxs []*TrimmedTxInfo) {
+	for _, tx := range txs {
+		txBasic := &TxBasic{
+			Coinbase: tx.Coinbase,
+			TxID:     tx.TxID,
+			Total:    tx.TotalOut,
+			VoteInfo: tx.VoteInfo,
+		}
+
+		var voteValid bool
+		if tx.VoteInfo != nil {
+			voteValid = tx.VoteInfo.Validation.Validity
+		}
+
+		trimmedTx := &TrimmedTxInfo{
+			TxBasic:   txBasic,
+			Fees:      tx.Fees,
+			VoteValid: voteValid,
+			VinCount:  tx.VinCount,
+			VoutCount: tx.VoutCount,
+		}
+
+		trimmedTxs = append(trimmedTxs, trimmedTx)
+	}
+
+	return trimmedTxs
+}
+
+func filterUniqueLastBlockVotes(txs []*TrimmedTxInfo) (votes []*TrimmedTxInfo) {
+	for _, tx := range txs {
+		if tx.VoteInfo != nil && tx.VoteInfo.ForLastBlock == true {
+			votes = append(votes, tx)
+		}
+	}
+	return votes
+}
+
+// convert the *MempoolInfo in exp.MempoolData to *MempoolData
+func (exp *explorerUI) TrimmedMempoolInfo() *TrimmedMempoolInfo {
+	exp.MempoolData.RLock()
+
+	mempoolRegularTxs := trimMempoolTx(exp.MempoolData.Transactions)
+	mempoolVotes := trimMempoolTx(exp.MempoolData.Votes)
+
+	data := &TrimmedMempoolInfo{
+		Transactions: filterRegularTx(mempoolRegularTxs),
+		Tickets:      trimMempoolTx(exp.MempoolData.Tickets),
+		Votes:        filterUniqueLastBlockVotes(mempoolVotes),
+		Revocations:  trimMempoolTx(exp.MempoolData.Revocations),
+		Total:        exp.MempoolData.TotalOut,
+		Time:         exp.MempoolData.LastBlockTime,
+	}
+
+	exp.MempoolData.RUnlock()
+
+	// calculate total fees for mempool block
+	getTotalFee := func(txs []*TrimmedTxInfo) (total float64) {
+		for _, tx := range txs {
+			total += tx.Fees
+		}
+		return
+	}
+
+	data.Fees = getTotalFee(data.Transactions) + getTotalFee(data.Revocations) + getTotalFee(data.Tickets) +
+		getTotalFee(data.Votes)
+
+	return data
+}
+
+// NextHome is the page handler for the "/nexthome" path.
+func (exp *explorerUI) NextHome(w http.ResponseWriter, r *http.Request) {
+	// Get top N blocks and trim each block to have just the fields required for this page.
+	height := exp.blockData.GetHeight()
+	blocks := exp.blockData.GetExplorerFullBlocks(height, height-homePageBlocksMaxCount)
+
+	// trim unwanted data in each block
+	trimmedBlocks := make([]*TrimmedBlockInfo, 0, len(blocks))
+	for _, block := range blocks {
+		trimmedBlock := &TrimmedBlockInfo{
+			Time:         block.BlockTime,
+			Height:       block.Height,
+			Total:        block.TotalSent,
+			Fees:         block.MiningFee,
+			Subsidy:      block.Subsidy,
+			Votes:        block.Votes,
+			Tickets:      block.Tickets,
+			Revocations:  block.Revs,
+			Transactions: filterRegularTx(block.Tx),
+		}
+
+		trimmedBlocks = append(trimmedBlocks, trimmedBlock)
+	}
+
+	// construct mempool object with properties required in template
+	mempoolInfo := exp.TrimmedMempoolInfo()
+	// mempool fees appear incorrect, temporarily set to zero for now
+	mempoolInfo.Fees = 0
+
+	exp.pageData.RLock()
+	mempoolInfo.Subsidy = exp.pageData.HomeInfo.NBlockSubsidy
+
+	str, err := exp.templates.execTemplateToString("nexthome", struct {
+		ChainParams *chaincfg.Params
+		Info        *HomeInfo
+		Mempool     *TrimmedMempoolInfo
+		Blocks      []*TrimmedBlockInfo
+		Version     string
+		NetName     string
+	}{
+		exp.ChainParams,
+		exp.pageData.HomeInfo,
+		mempoolInfo,
+		trimmedBlocks,
+		exp.Version,
+		exp.NetName,
+	})
+
+	exp.pageData.RUnlock()
+
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+// StakeDiffWindows is the page handler for the "/ticketpricewindows" path
+func (exp *explorerUI) StakeDiffWindows(w http.ResponseWriter, r *http.Request) {
+	if exp.liteMode {
+		exp.StatusPage(w, fullModeRequired,
+			"Windows page cannot run in lite mode.", NotSupportedStatusType)
+		return
+	}
+
+	offsetWindow, err := strconv.ParseUint(r.URL.Query().Get("offset"), 10, 64)
+	if err != nil {
+		offsetWindow = 0
+	}
+
+	bestWindow := uint64(exp.Height() / exp.ChainParams.StakeDiffWindowSize)
+	if offsetWindow > bestWindow {
+		offsetWindow = bestWindow
+	}
+
+	rows, err := strconv.ParseUint(r.URL.Query().Get("rows"), 10, 64)
+	if err != nil || rows < minExplorerRows {
+		rows = minExplorerRows
+	}
+
+	if rows > maxExplorerRows {
+		rows = maxExplorerRows
+	}
+
+	windows, err := exp.explorerSource.PosIntervals(rows, offsetWindow)
+	if err != nil {
+		log.Errorf("The specified windows are invalid. offset=%d&rows=%d: error: %v ", offsetWindow, rows, err)
+		exp.StatusPage(w, defaultErrorCode, "The specified windows could not found", NotFoundStatusType)
+		return
+	}
+
+	str, err := exp.templates.execTemplateToString("windows", struct {
+		ChainParams  *chaincfg.Params
+		Data         []*dbtypes.BlocksGroupedInfo
+		WindowSize   int64
+		BestWindow   int64
+		OffsetWindow int64
+		Limit        int64
+		Version      string
+		NetName      string
+	}{
+		exp.ChainParams,
+		windows,
+		exp.ChainParams.StakeDiffWindowSize,
+		int64(bestWindow),
+		int64(offsetWindow),
+		int64(rows),
+		exp.Version,
+		exp.NetName,
+	})
+
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+// Blocks is the page handler for the "/blocks" path.
 func (exp *explorerUI) Blocks(w http.ResponseWriter, r *http.Request) {
-	idx := exp.blockData.GetHeight()
+	bestBlockHeight := exp.blockData.GetHeight()
 
 	height, err := strconv.Atoi(r.URL.Query().Get("height"))
-	if err != nil || height > idx {
-		height = idx
+	if err != nil || height > bestBlockHeight {
+		height = bestBlockHeight
 	}
 
 	rows, err := strconv.Atoi(r.URL.Query().Get("rows"))
-
-	if err != nil || rows > maxExplorerRows || rows < minExplorerRows {
+	if err != nil || rows < minExplorerRows {
 		rows = minExplorerRows
+	}
+
+	if rows > maxExplorerRows {
+		rows = maxExplorerRows
 	}
 
 	oldestBlock := height - rows + 1
@@ -99,18 +384,33 @@ func (exp *explorerUI) Blocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !exp.liteMode {
+		for _, s := range summaries {
+			blockStatus, err := exp.explorerSource.BlockStatus(s.Hash)
+			if err != nil && err != sql.ErrNoRows {
+				log.Warnf("Unable to retrieve chain status for block %s: %v", s.Hash, err)
+			}
+			s.Valid = blockStatus.IsValid
+			s.MainChain = blockStatus.IsMainchain
+		}
+	}
+
 	str, err := exp.templates.execTemplateToString("explorer", struct {
-		Data      []*BlockBasic
-		BestBlock int
-		Rows      int
-		Version   string
-		NetName   string
+		ChainParams *chaincfg.Params
+		Data        []*BlockBasic
+		BestBlock   int64
+		Rows        int64
+		Version     string
+		NetName     string
+		WindowSize  int64
 	}{
+		exp.ChainParams,
 		summaries,
-		idx,
-		rows,
+		int64(bestBlockHeight),
+		int64(rows),
 		exp.Version,
 		exp.NetName,
+		exp.ChainParams.StakeDiffWindowSize,
 	})
 
 	if err != nil {
@@ -123,17 +423,18 @@ func (exp *explorerUI) Blocks(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// Block is the page handler for the "/block" path
+// Block is the page handler for the "/block" path.
 func (exp *explorerUI) Block(w http.ResponseWriter, r *http.Request) {
+	// Retrieve the block specified on the path.
 	hash := getBlockHashCtx(r)
-
 	data := exp.blockData.GetExplorerBlock(hash)
 	if data == nil {
 		log.Errorf("Unable to get block %s", hash)
 		exp.StatusPage(w, defaultErrorCode, "could not find that block", NotFoundStatusType)
 		return
 	}
-	// Checking if there exists any regular non-Coinbase transactions in the block.
+
+	// Check if there are any regular non-coinbase transactions in the block.
 	var count int
 	data.TxAvailable = true
 	for _, i := range data.Tx {
@@ -145,22 +446,32 @@ func (exp *explorerUI) Block(w http.ResponseWriter, r *http.Request) {
 		data.TxAvailable = false
 	}
 
+	// In full mode, retrieve missed votes, main/side chain status, and
+	// stakeholder approval.
 	if !exp.liteMode {
 		var err error
 		data.Misses, err = exp.explorerSource.BlockMissedVotes(hash)
 		if err != nil && err != sql.ErrNoRows {
 			log.Warnf("Unable to retrieve missed votes for block %s: %v", hash, err)
 		}
+
+		var blockStatus dbtypes.BlockStatus
+		blockStatus, err = exp.explorerSource.BlockStatus(hash)
+		if err != nil && err != sql.ErrNoRows {
+			log.Warnf("Unable to retrieve chain status for block %s: %v", hash, err)
+		}
+		data.Valid = blockStatus.IsValid
+		data.MainChain = blockStatus.IsMainchain
 	}
 
 	pageData := struct {
-		Data          *BlockInfo
-		ConfirmHeight int64
-		Version       string
-		NetName       string
+		ChainParams *chaincfg.Params
+		Data        *BlockInfo
+		Version     string
+		NetName     string
 	}{
+		exp.ChainParams,
 		data,
-		exp.Height() - data.Confirmations,
 		exp.Version,
 		exp.NetName,
 	}
@@ -176,14 +487,16 @@ func (exp *explorerUI) Block(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// Mempool is the page handler for the "/mempool" path
+// Mempool is the page handler for the "/mempool" path.
 func (exp *explorerUI) Mempool(w http.ResponseWriter, r *http.Request) {
 	exp.MempoolData.RLock()
 	str, err := exp.templates.execTemplateToString("mempool", struct {
-		Mempool *MempoolInfo
-		Version string
-		NetName string
+		ChainParams *chaincfg.Params
+		Mempool     *MempoolInfo
+		Version     string
+		NetName     string
 	}{
+		exp.ChainParams,
 		exp.MempoolData,
 		exp.Version,
 		exp.NetName,
@@ -200,7 +513,63 @@ func (exp *explorerUI) Mempool(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// TxPage is the page handler for the "/tx" path
+// Ticketpool is the page handler for the "/ticketpool" path.
+func (exp *explorerUI) Ticketpool(w http.ResponseWriter, r *http.Request) {
+	if exp.liteMode {
+		exp.StatusPage(w, fullModeRequired,
+			"Ticketpool page cannot run in lite mode", NotSupportedStatusType)
+		return
+	}
+	interval := dbtypes.AllChartGrouping
+
+	barGraphs, donutChart, height, err := exp.explorerSource.TicketPoolVisualization(interval)
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+		return
+	}
+
+	var mp dbtypes.PoolTicketsData
+	exp.MempoolData.RLock()
+	if len(exp.MempoolData.Tickets) > 0 {
+		mp.Time = append(mp.Time, uint64(exp.MempoolData.Tickets[0].Time))
+		mp.Price = append(mp.Price, exp.MempoolData.Tickets[0].TotalOut)
+		mp.Mempool = append(mp.Mempool, uint64(len(exp.MempoolData.Tickets)))
+	} else {
+		log.Debug("No tickets exist in the mempool")
+	}
+	exp.MempoolData.RUnlock()
+
+	str, err := exp.templates.execTemplateToString("ticketpool", struct {
+		ChainParams  *chaincfg.Params
+		Version      string
+		NetName      string
+		ChartsHeight uint64
+		ChartData    []*dbtypes.PoolTicketsData
+		GroupedData  *dbtypes.PoolTicketsData
+		Mempool      *dbtypes.PoolTicketsData
+	}{
+		exp.ChainParams,
+		exp.Version,
+		exp.NetName,
+		height,
+		barGraphs,
+		donutChart,
+		&mp,
+	})
+
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+// TxPage is the page handler for the "/tx" path.
 func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 	// attempt to get tx hash string from URL path
 	hash, ok := r.Context().Value(ctxTxHash).(string)
@@ -209,14 +578,189 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 		exp.StatusPage(w, defaultErrorCode, "there was no transaction requested", NotFoundStatusType)
 		return
 	}
-	tx := exp.blockData.GetExplorerTx(hash)
-	if tx == nil {
-		log.Errorf("Unable to get transaction %s", hash)
-		exp.StatusPage(w, defaultErrorCode, "could not find that transaction", NotFoundStatusType)
+
+	inout, _ := r.Context().Value(ctxTxInOut).(string)
+	if inout != "in" && inout != "out" && inout != "" {
+		exp.StatusPage(w, defaultErrorCode, "there was no transaction requested", NotFoundStatusType)
 		return
 	}
+	ioid, _ := r.Context().Value(ctxTxInOutId).(string)
+	inoutid, _ := strconv.ParseInt(ioid, 10, 0)
 
-	// Set ticket-related parameters for both full and lite mode
+	tx := exp.blockData.GetExplorerTx(hash)
+	// If pfcd has no information about the transaction, pull the transaction
+	// details from the full mode database.
+	if tx == nil {
+		if exp.liteMode {
+			log.Errorf("Unable to get transaction %s", hash)
+			exp.StatusPage(w, defaultErrorCode, "could not find that transaction", NotFoundStatusType)
+			return
+		}
+		// Search for occurrences of the transaction in the database.
+		dbTxs, err := exp.explorerSource.Transaction(hash)
+		if err != nil {
+			log.Errorf("Unable to retrieve transaction details for %s.", hash)
+			exp.StatusPage(w, defaultErrorCode, "could not find that transaction", NotFoundStatusType)
+			return
+		}
+		if dbTxs == nil {
+			exp.StatusPage(w, defaultErrorCode, "that transaction has not been recorded", NotFoundStatusType)
+			return
+		}
+
+		// Take the first one. The query order should put valid at the top of
+		// the list. Regardless of order, the transaction web page will link to
+		// all occurrences of the transaction.
+		dbTx0 := dbTxs[0]
+		fees := pfcutil.Amount(dbTx0.Fees)
+		tx = &TxInfo{
+			TxBasic: &TxBasic{
+				TxID:          hash,
+				FormattedSize: humanize.Bytes(uint64(dbTx0.Size)),
+				Total:         pfcutil.Amount(dbTx0.Sent).ToCoin(),
+				Fee:           fees,
+				FeeRate:       pfcutil.Amount((1000 * int64(fees)) / int64(dbTx0.Size)),
+				// VoteInfo TODO - check votes table
+				Coinbase: dbTx0.BlockIndex == 0,
+			},
+			SpendingTxns: make([]TxInID, len(dbTx0.VoutDbIds)), // SpendingTxns filled below
+			Type:         txhelpers.TxTypeToString(int(dbTx0.TxType)),
+			// Vins - looked-up in vins table
+			// Vouts - looked-up in vouts table
+			BlockHeight:   dbTx0.BlockHeight,
+			BlockIndex:    dbTx0.BlockIndex,
+			BlockHash:     dbTx0.BlockHash,
+			Confirmations: exp.Height() - dbTx0.BlockHeight + 1,
+			Time:          dbTx0.Time,
+			FormattedTime: time.Unix(dbTx0.Time, 0).Format("2006-01-02 15:04:05"),
+		}
+
+		// Coinbase transactions are regular, but call them coinbase for the page.
+		if tx.Coinbase {
+			tx.Type = "Coinbase"
+		}
+
+		// Retrieve vouts from DB.
+		vouts, err := exp.explorerSource.VoutsForTx(dbTx0)
+		if err != nil {
+			log.Errorf("Failed to retrieve all vout details for transaction %s: %v",
+				dbTx0.TxID, err)
+			exp.StatusPage(w, defaultErrorCode, "VoutsForTx failed", ErrorStatusType)
+			return
+		}
+
+		// Convert to explorer.Vout, getting spending information from DB.
+		for iv := range vouts {
+			// Check pkScript for OP_RETURN
+			var opReturn string
+			asm, _ := txscript.DisasmString(vouts[iv].ScriptPubKey)
+			if strings.Contains(asm, "OP_RETURN") {
+				opReturn = asm
+			}
+			// Determine if the outpoint is spent
+			spendingTx, _, _, err := exp.explorerSource.SpendingTransaction(hash, vouts[iv].TxIndex)
+			if err != nil && err != sql.ErrNoRows {
+				log.Warnf("SpendingTransaction failed for outpoint %s:%d: %v",
+					hash, vouts[iv].TxIndex, err)
+			}
+			amount := pfcutil.Amount(int64(vouts[iv].Value)).ToCoin()
+			tx.Vout = append(tx.Vout, Vout{
+				Addresses:       vouts[iv].ScriptPubKeyData.Addresses,
+				Amount:          amount,
+				FormattedAmount: humanize.Commaf(amount),
+				Type:            txhelpers.TxTypeToString(int(vouts[iv].TxType)),
+				Spent:           spendingTx != "",
+				OP_RETURN:       opReturn,
+			})
+		}
+
+		// Retrieve vins from DB.
+		vins, prevPkScripts, scriptVersions, err := exp.explorerSource.VinsForTx(dbTx0)
+		if err != nil {
+			log.Errorf("Failed to retrieve all vin details for transaction %s: %v",
+				dbTx0.TxID, err)
+			exp.StatusPage(w, defaultErrorCode, "VinsForTx failed", ErrorStatusType)
+			return
+		}
+
+		// Convert to explorer.Vin from dbtypes.VinTxProperty.
+		for iv := range vins {
+			// Decode all addresses from previous outpoint's pkScript.
+			var addresses []string
+			pkScriptsStr, err := hex.DecodeString(prevPkScripts[iv])
+			if err != nil {
+				log.Errorf("Failed to decode pkgScript: %v", err)
+			}
+			_, scrAddrs, _, err := txscript.ExtractPkScriptAddrs(scriptVersions[iv],
+				pkScriptsStr, exp.ChainParams)
+			if err != nil {
+				log.Errorf("Failed to decode pkScript: %v", err)
+			} else {
+				for ia := range scrAddrs {
+					addresses = append(addresses, scrAddrs[ia].EncodeAddress())
+				}
+			}
+
+			// If the scriptsig does not decode or disassemble, oh well.
+			asm, _ := txscript.DisasmString(vins[iv].ScriptHex)
+
+			txIndex := vins[iv].TxIndex
+			amount := pfcutil.Amount(vins[iv].ValueIn).ToCoin()
+			var coinbase, stakebase string
+			if txIndex == 0 {
+				if tx.Coinbase {
+					coinbase = hex.EncodeToString(txhelpers.CoinbaseScript)
+				} else if tx.IsVote() {
+					stakebase = hex.EncodeToString(txhelpers.CoinbaseScript)
+				}
+			}
+			tx.Vin = append(tx.Vin, Vin{
+				Vin: &pfcjson.Vin{
+					Coinbase:    coinbase,
+					Stakebase:   stakebase,
+					Txid:        hash,
+					Vout:        vins[iv].PrevTxIndex,
+					Tree:        dbTx0.Tree,
+					Sequence:    vins[iv].Sequence,
+					AmountIn:    amount,
+					BlockHeight: uint32(tx.BlockHeight),
+					BlockIndex:  tx.BlockIndex,
+					ScriptSig: &pfcjson.ScriptSig{
+						Asm: asm,
+						Hex: hex.EncodeToString(vins[iv].ScriptHex),
+					},
+				},
+				Addresses:       addresses,
+				FormattedAmount: humanize.Commaf(amount),
+			})
+		}
+
+		// For coinbase and stakebase, get maturity status.
+		if tx.Coinbase || tx.IsVote() {
+			tx.Maturity = int64(exp.ChainParams.CoinbaseMaturity)
+			if tx.IsVote() {
+				tx.Maturity++ // TODO why as elsewhere for votes?
+			}
+			if tx.Confirmations >= int64(exp.ChainParams.CoinbaseMaturity) {
+				tx.Mature = "True"
+			} else if tx.IsVote() {
+				tx.VoteFundsLocked = "True"
+			}
+			coinbaseMaturityInHours := exp.ChainParams.TargetTimePerBlock.Hours() * float64(tx.Maturity)
+			tx.MaturityTimeTill = coinbaseMaturityInHours * (1 - float64(tx.Confirmations)/float64(tx.Maturity))
+		}
+
+		// For ticket purchase, get status and maturity blocks, but compute
+		// details in normal code branch below.
+		if tx.IsTicket() {
+			tx.TicketInfo.TicketMaturity = int64(exp.ChainParams.TicketMaturity)
+			if tx.Confirmations >= tx.TicketInfo.TicketMaturity {
+				tx.Mature = "True"
+			}
+		}
+	} // tx == nil (not found by pfcd)
+
+	// Set ticket-related parameters for both full and lite mode.
 	if tx.IsTicket() {
 		blocksLive := tx.Confirmations - int64(exp.ChainParams.TicketMaturity)
 		tx.TicketInfo.TicketPoolSize = int64(exp.ChainParams.TicketPoolSize) *
@@ -233,8 +777,22 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 			float64(exp.ChainParams.TicketExpiry)) * expirationInDays
 	}
 
-	if !exp.liteMode {
-		// For any coinbase transactions look up the total block fees to include as part of the inputs
+	// In full mode, create list of blocks in which the transaction was mined,
+	// and get additional ticket details and pool status.
+	var blocks []*dbtypes.BlockStatus
+	var blockInds []uint32
+	var hasValidMainchain bool
+	if exp.liteMode {
+		blocks = append(blocks, &dbtypes.BlockStatus{
+			Hash:        tx.BlockHash,
+			Height:      uint32(tx.BlockHeight),
+			IsMainchain: true,
+			IsValid:     true,
+		})
+		blockInds = []uint32{tx.BlockIndex}
+	} else {
+		// For any coinbase transactions look up the total block fees to include
+		// as part of the inputs.
 		if tx.Type == "Coinbase" {
 			data := exp.blockData.GetExplorerBlock(tx.BlockHash)
 			if data == nil {
@@ -243,6 +801,25 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 				tx.BlockMiningFee = int64(data.MiningFee)
 			}
 		}
+
+		// Details on all the blocks containing this transaction
+		var err error
+		blocks, blockInds, err = exp.explorerSource.TransactionBlocks(tx.TxID)
+		if err != nil {
+			log.Errorf("Unable to retrieve blocks for transaction %s: %v", hash, err)
+			exp.StatusPage(w, defaultErrorCode, defaultErrorMessage, ErrorStatusType)
+			return
+		}
+
+		// See if any of these blocks are mainchain and stakeholder-approved
+		// (a.k.a. valid).
+		for ib := range blocks {
+			if blocks[ib].IsValid && blocks[ib].IsMainchain {
+				hasValidMainchain = true
+				break
+			}
+		}
+
 		// For each output of this transaction, look up any spending transactions,
 		// and the index of the spending transaction input.
 		spendingTxHashes, spendingTxVinInds, voutInds, err := exp.explorerSource.SpendingTransactions(hash)
@@ -273,7 +850,8 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 				}
 				tx.TicketInfo.SpendStatus = spendStatus.String()
 
-				// Ticket luck and probability of voting
+				// Ticket luck and probability of voting.
+				// blockLive < 0 for immature tickets
 				blocksLive := tx.Confirmations - int64(exp.ChainParams.TicketMaturity)
 				if tx.TicketInfo.SpendStatus == "Voted" {
 					// Blocks from eligible until voted (actual luck)
@@ -319,25 +897,36 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 				// expiry in blocks - (number of blocks since ticket purchase -
 				// ticket maturity))
 				// C is the probability (chance)
-				exp.NewBlockDataMtx.RLock()
-				pVote := float64(exp.ChainParams.TicketsPerBlock) / float64(exp.ExtraInfo.PoolInfo.Size)
-				exp.NewBlockDataMtx.RUnlock()
-				tx.TicketInfo.Probability = 100 * (math.Pow(1-pVote,
-					float64(exp.ChainParams.TicketExpiry)-float64(blocksLive)))
+				exp.pageData.RLock()
+				pVote := float64(exp.ChainParams.TicketsPerBlock) / float64(exp.pageData.HomeInfo.PoolInfo.Size)
+				exp.pageData.RUnlock()
+
+				remainingBlocksLive := float64(exp.ChainParams.TicketExpiry) - float64(blocksLive)
+				tx.TicketInfo.Probability = 100 * math.Pow(1-pVote, remainingBlocksLive)
 			}
-		}
-	}
+		} // tx.IsTicket()
+	} // !exp.liteMode
 
 	pageData := struct {
-		Data          *TxInfo
-		ConfirmHeight int64
-		Version       string
-		NetName       string
+		ChainParams       *chaincfg.Params
+		Data              *TxInfo
+		Blocks            []*dbtypes.BlockStatus
+		BlockInds         []uint32
+		HasValidMainchain bool
+		Version           string
+		NetName           string
+		HighlightInOut    string
+		HighlightInOutID  int64
 	}{
+		exp.ChainParams,
 		tx,
-		exp.Height() - tx.Confirmations,
+		blocks,
+		blockInds,
+		hasValidMainchain,
 		exp.Version,
 		exp.NetName,
+		inout,
+		inoutid,
 	}
 
 	str, err := exp.templates.execTemplateToString("tx", pageData)
@@ -352,17 +941,18 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// AddressPage is the page handler for the "/address" path
+// AddressPage is the page handler for the "/address" path.
 func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 	// AddressPageData is the data structure passed to the HTML template
 	type AddressPageData struct {
-		Data          *AddressInfo
-		ConfirmHeight []int64
-		Version       string
-		NetName       string
-		OldestTxTime  int64
-		IsLiteMode    bool
-		ChartData     *dbtypes.ChartsData
+		ChainParams    *chaincfg.Params
+		Data           *AddressInfo
+		TxBlockHeights []int64
+		Version        string
+		NetName        string
+		OldestTxTime   int64
+		IsLiteMode     bool
+		ChartData      *dbtypes.ChartsData
 	}
 
 	// Get the address URL parameter, which should be set in the request context
@@ -371,6 +961,45 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Trace("address not set")
 		exp.StatusPage(w, defaultErrorCode, "there seems to not be an address in this request", NotFoundStatusType)
+		return
+	}
+
+	// Validate the address.
+	addr, addrType, addrErr := txhelpers.AddressValidation(address, exp.ChainParams)
+	isZeroAddress := addrErr == txhelpers.AddressErrorZeroAddress
+	if addrErr != nil && !isZeroAddress {
+		var status statusType
+		var message string
+		code := defaultErrorCode
+		switch addrErr {
+		case txhelpers.AddressErrorDecodeFailed, txhelpers.AddressErrorUnknown:
+			status = ErrorStatusType
+			message = "Unexpected issue validating this address."
+		case txhelpers.AddressErrorWrongNet:
+			status = WrongNetworkStatusType
+			message = fmt.Sprintf("The address %v is valid on %s, not %s.",
+				addr, addr.Net().Name, exp.NetName)
+			code = wrongNetwork
+		default:
+			status = ErrorStatusType
+			message = "Unknown error."
+		}
+
+		exp.StatusPage(w, code, message, status)
+		return
+	}
+
+	// Handle valid but unsupported address types.
+	switch addrType {
+	case txhelpers.AddressTypeP2PKH, txhelpers.AddressTypeP2SH:
+		// All good.
+	case txhelpers.AddressTypeP2PK:
+		message := "Looks like you are searching for an address of type P2PK."
+		exp.StatusPage(w, defaultErrorCode, message, P2PKAddresStatusType)
+		return
+	default:
+		message := "Unsupported address type."
+		exp.StatusPage(w, defaultErrorCode, message, NotSupportedStatusType)
 		return
 	}
 
@@ -408,11 +1037,28 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 
 	// Retrieve address information from the DB and/or RPC
 	var addrData *AddressInfo
-	if exp.liteMode {
-		addrData = exp.blockData.GetExplorerAddress(address, limitN, offsetAddrOuts)
+	if isZeroAddress {
+		// For the zero address (e.g. DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg), short-circuit any queries.
+		addrData = &AddressInfo{
+			Address:         address,
+			IsDummyAddress:  true,
+			Balance:         new(AddressBalance),
+			UnconfirmedTxns: new(AddressTransactions),
+			Fullmode:        true,
+		}
+	} else if exp.liteMode {
+		addrData, err = exp.blockData.GetExplorerAddress(address, limitN, offsetAddrOuts)
+		if err != nil && strings.HasPrefix(err.Error(), "wrong network") {
+			exp.StatusPage(w, wrongNetwork, "That address is not valid for "+exp.NetName, NotSupportedStatusType)
+			return
+		}
+		if err != nil {
+			log.Errorf("Unable to get address %s: %v", address, err)
+			exp.StatusPage(w, defaultErrorCode, "Unexpected issue locating data for that address.", ErrorStatusType)
+			return
+		}
 		if addrData == nil {
-			log.Errorf("Unable to get address %s", address)
-			exp.StatusPage(w, defaultErrorCode, "could not find that address", NotFoundStatusType)
+			exp.StatusPage(w, defaultErrorCode, "Unknown issue locating data for that address.", NotFoundStatusType)
 			return
 		}
 	} else {
@@ -477,15 +1123,30 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 			addrData.Balance = &AddressBalance{}
 		}
 
+		// If there are confirmed transactions, check the oldest transaction's time.
+		if len(addrData.Transactions) > 0 {
+			oldestTxBlockTime, err = exp.explorerSource.GetOldestTxBlockTime(address)
+			if err != nil {
+				log.Errorf("Unable to fetch oldest transactions block time %s: %v", address, err)
+				exp.StatusPage(w, defaultErrorCode, "oldest block time not found",
+					NotFoundStatusType)
+				return
+			}
+		}
+
 		// Check for unconfirmed transactions
 		addressOuts, numUnconfirmed, err := exp.blockData.UnconfirmedTxnsForAddress(address)
-		if err != nil {
-			log.Warnf("UnconfirmedTxnsForAddress failed for address %s: %v", address, err)
+		if err != nil || addressOuts == nil {
+			log.Errorf("UnconfirmedTxnsForAddress failed for address %s: %v", address, err)
+			exp.StatusPage(w, defaultErrorCode, "transactions for that address not found",
+				NotFoundStatusType)
+			return
 		}
 		addrData.NumUnconfirmed = numUnconfirmed
 		if addrData.UnconfirmedTxns == nil {
 			addrData.UnconfirmedTxns = new(AddressTransactions)
 		}
+
 		// Funding transactions (unconfirmed)
 		var received, sent, numReceived, numSent int64
 	FUNDING_TX_DUPLICATE_CHECK:
@@ -512,6 +1173,7 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 			if txnType == dbtypes.AddrTxnAll || txnType == dbtypes.AddrTxnCredit {
 				addrTx := &AddressTx{
 					TxID:          fundingTx.Hash().String(),
+					TxType:        txhelpers.DetermineTxTypeString(fundingTx.Tx),
 					InOutID:       f.Index,
 					Time:          fundingTx.MemPoolTime,
 					FormattedSize: humanize.Bytes(uint64(fundingTx.Tx.SerializeSize())),
@@ -550,17 +1212,30 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 			// sent total sats has to be a lookup of the vout:i prevout value
 			// because vin:i valuein is not reliable from pfcd at present
 			prevhash := spendingTx.Tx.TxIn[f.InputIndex].PreviousOutPoint.Hash
+			strprevhash := prevhash.String()
 			previndex := spendingTx.Tx.TxIn[f.InputIndex].PreviousOutPoint.Index
 			valuein := addressOuts.TxnsStore[prevhash].Tx.TxOut[previndex].Value
 
+			// Look through old transactions and set the
+			// the spending transactions match fields
+			for _, dbTxn := range addrData.Transactions {
+				if dbTxn.TxID == strprevhash && dbTxn.InOutID == previndex && dbTxn.IsFunding {
+					dbTxn.MatchedTx = spendingTx.Hash().String()
+					dbTxn.MatchedTxIndex = uint32(f.InputIndex)
+				}
+			}
+
 			if txnType == dbtypes.AddrTxnAll || txnType == dbtypes.AddrTxnDebit {
 				addrTx := &AddressTx{
-					TxID:          spendingTx.Hash().String(),
-					InOutID:       uint32(f.InputIndex),
-					Time:          spendingTx.MemPoolTime,
-					FormattedSize: humanize.Bytes(uint64(spendingTx.Tx.SerializeSize())),
-					Total:         txhelpers.TotalOutFromMsgTx(spendingTx.Tx).ToCoin(),
-					SentTotal:     pfcutil.Amount(valuein).ToCoin(),
+					TxID:           spendingTx.Hash().String(),
+					TxType:         txhelpers.DetermineTxTypeString(spendingTx.Tx),
+					InOutID:        uint32(f.InputIndex),
+					Time:           spendingTx.MemPoolTime,
+					FormattedSize:  humanize.Bytes(uint64(spendingTx.Tx.SerializeSize())),
+					Total:          txhelpers.TotalOutFromMsgTx(spendingTx.Tx).ToCoin(),
+					SentTotal:      pfcutil.Amount(valuein).ToCoin(),
+					MatchedTx:      strprevhash,
+					MatchedTxIndex: previndex,
 				}
 				addrData.Transactions = append(addrData.Transactions, addrTx)
 			}
@@ -580,25 +1255,13 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		oldestTxBlockTime, err = exp.explorerSource.GetOldestTxBlockTime(address)
-		if err != nil {
-			log.Errorf("Unable to fetch oldest transactions block time %s: %v", address, err)
-			exp.StatusPage(w, defaultErrorCode, "oldest block time not found",
-				NotFoundStatusType)
-			return
-		}
 	}
 
 	// Set page parameters
+	addrData.IsDummyAddress = isZeroAddress // may be redundant
 	addrData.Path = r.URL.Path
 	addrData.Limit, addrData.Offset = limitN, offsetAddrOuts
 	addrData.TxnType = txnType.String()
-
-	confirmHeights := make([]int64, len(addrData.Transactions))
-	bdHeight := exp.Height()
-	for i, v := range addrData.Transactions {
-		confirmHeights[i] = bdHeight - int64(v.Confirmations)
-	}
 
 	sort.Slice(addrData.Transactions, func(i, j int) bool {
 		if addrData.Transactions[i].Time == addrData.Transactions[j].Time {
@@ -607,21 +1270,21 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 		return addrData.Transactions[i].Time > addrData.Transactions[j].Time
 	})
 
-	// addresscount := len(addressRows)
-	// if addresscount > 0 {
-	// 	calcoffset := int(math.Min(float64(addresscount), float64(offset)))
-	// 	calcN := int(math.Min(float64(offset+N), float64(addresscount)))
-	// 	log.Infof("Slicing result set which is %d addresses long to offset: %d and N: %d", addresscount, calcoffset, calcN)
-	// 	addressRows = addressRows[calcoffset:calcN]
-	// }
+	// Do not put this before the sort.Slice of addrData.Transactions above
+	txBlockHeights := make([]int64, len(addrData.Transactions))
+	bdHeight := exp.Height()
+	for i, v := range addrData.Transactions {
+		txBlockHeights[i] = bdHeight - int64(v.Confirmations) + 1
+	}
 
 	pageData := AddressPageData{
-		Data:          addrData,
-		ConfirmHeight: confirmHeights,
-		IsLiteMode:    exp.liteMode,
-		OldestTxTime:  oldestTxBlockTime,
-		Version:       exp.Version,
-		NetName:       exp.NetName,
+		ChainParams:    exp.ChainParams,
+		Data:           addrData,
+		TxBlockHeights: txBlockHeights,
+		IsLiteMode:     exp.liteMode,
+		OldestTxTime:   oldestTxBlockTime,
+		Version:        exp.Version,
+		NetName:        exp.NetName,
 	}
 	str, err := exp.templates.execTemplateToString("address", pageData)
 	if err != nil {
@@ -639,9 +1302,11 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 // decoding or broadcasting is handled by the websocket hub.
 func (exp *explorerUI) DecodeTxPage(w http.ResponseWriter, r *http.Request) {
 	str, err := exp.templates.execTemplateToString("rawtx", struct {
-		Version string
-		NetName string
+		ChainParams *chaincfg.Params
+		Version     string
+		NetName     string
 	}{
+		exp.ChainParams,
 		exp.Version,
 		exp.NetName,
 	})
@@ -658,7 +1323,7 @@ func (exp *explorerUI) DecodeTxPage(w http.ResponseWriter, r *http.Request) {
 // Charts handles the charts displays showing the various charts plotted.
 func (exp *explorerUI) Charts(w http.ResponseWriter, r *http.Request) {
 	if exp.liteMode {
-		exp.StatusPage(w, "full-functionality mode required for this page",
+		exp.StatusPage(w, fullModeRequired,
 			"Charts page cannot run in lite mode", NotSupportedStatusType)
 		return
 	}
@@ -670,10 +1335,12 @@ func (exp *explorerUI) Charts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	str, err := exp.templates.execTemplateToString("charts", struct {
-		Version string
-		NetName string
-		Data    *dbtypes.ChartsData
+		ChainParams *chaincfg.Params
+		Version     string
+		NetName     string
+		Data        *dbtypes.ChartsData
 	}{
+		exp.ChainParams,
 		exp.Version,
 		exp.NetName,
 		tickets,
@@ -691,16 +1358,17 @@ func (exp *explorerUI) Charts(w http.ResponseWriter, r *http.Request) {
 
 // Search implements a primitive search algorithm by checking if the value in
 // question is a block index, block hash, address hash or transaction hash and
-// redirects to the appropriate page or displays an error
+// redirects to the appropriate page or displays an error.
 func (exp *explorerUI) Search(w http.ResponseWriter, r *http.Request) {
 	searchStr := r.URL.Query().Get("search")
 	if searchStr == "" {
-		exp.StatusPage(w, "search failed", "Nothing was searched for", NotFoundStatusType)
+		exp.StatusPage(w, "search failed", "Empty search string!", NotSupportedStatusType)
 		return
 	}
 
-	// Attempt to get a block hash by calling GetBlockHash to see if the value
-	// is a block index and then redirect to the block page if it is
+	// Attempt to get a block hash by calling GetBlockHash of wiredDB or
+	// BlockHash of ChainDB (if full mode) to see if the URL query value is a
+	// block index. Then redirect to the block page if it is.
 	idx, err := strconv.ParseInt(searchStr, 10, 0)
 	if err == nil {
 		_, err = exp.blockData.GetBlockHash(idx)
@@ -708,52 +1376,87 @@ func (exp *explorerUI) Search(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/block/"+searchStr, http.StatusPermanentRedirect)
 			return
 		}
+		if !exp.liteMode {
+			_, err = exp.explorerSource.BlockHash(idx)
+			if err == nil {
+				http.Redirect(w, r, "/block/"+searchStr, http.StatusPermanentRedirect)
+				return
+			}
+		}
 		exp.StatusPage(w, "search failed", "Block "+searchStr+" has not yet been mined", NotFoundStatusType)
 		return
 	}
 
-	// Call GetExplorerAddress to see if the value is an address hash and
-	// then redirect to the address page if it is
-	address := exp.blockData.GetExplorerAddress(searchStr, 1, 0)
+	// Check to see if the value is an address, and redirect to the address page
+	// if it is. Ignore the error as the passed data is expected to fail
+	// validation or have other issues.
+	address, _ := exp.blockData.GetExplorerAddress(searchStr, 1, 0)
 	if address != nil {
 		http.Redirect(w, r, "/address/"+searchStr, http.StatusPermanentRedirect)
 		return
 	}
+	if !exp.liteMode {
+		addrHist, _, _ := exp.explorerSource.AddressHistory(searchStr,
+			1, 0, dbtypes.AddrTxnAll)
+		if len(addrHist) > 0 {
+			http.Redirect(w, r, "/address/"+searchStr, http.StatusPermanentRedirect)
+			return
+		}
+	}
 
-	// Check if the value is a valid hash
+	// Remaining possibilities are hashes, so verify the string is a hash.
 	if _, err = chainhash.NewHashFromStr(searchStr); err != nil {
-		exp.StatusPage(w, "search failed", "Couldn't find any address "+searchStr, NotFoundStatusType)
+		exp.StatusPage(w, "search failed", "Search string is not a valid hash or address: "+searchStr, NotFoundStatusType)
 		return
 	}
 
 	// Attempt to get a block index by calling GetBlockHeight to see if the
-	// value is a block hash and then redirect to the block page if it is
+	// value is a block hash and then redirect to the block page if it is.
 	_, err = exp.blockData.GetBlockHeight(searchStr)
+	// If block search failed, and pfcdata is in full mode, check the aux DB,
+	// which has data for side chain and orphaned blocks.
+	if err != nil && !exp.liteMode {
+		_, err = exp.explorerSource.BlockHeight(searchStr)
+	}
 	if err == nil {
 		http.Redirect(w, r, "/block/"+searchStr, http.StatusPermanentRedirect)
 		return
 	}
 
 	// Call GetExplorerTx to see if the value is a transaction hash and then
-	// redirect to the tx page if it is
+	// redirect to the tx page if it is.
 	tx := exp.blockData.GetExplorerTx(searchStr)
 	if tx != nil {
 		http.Redirect(w, r, "/tx/"+searchStr, http.StatusPermanentRedirect)
 		return
 	}
-	exp.StatusPage(w, "search failed", "Could not find any transaction or block "+searchStr, NotFoundStatusType)
+	if !exp.liteMode {
+		// Search for occurrences of the transaction in the database.
+		dbTxs, err := exp.explorerSource.Transaction(searchStr)
+		if err != nil && err != sql.ErrNoRows {
+			log.Errorf("Searching for transaction failed: %v", err)
+		}
+		if dbTxs != nil {
+			http.Redirect(w, r, "/tx/"+searchStr, http.StatusPermanentRedirect)
+			return
+		}
+	}
+
+	exp.StatusPage(w, "search failed", "The search string does not match any address, block, or transaction: "+searchStr, NotFoundStatusType)
 }
 
 // StatusPage provides a page for displaying status messages and exception
 // handling without redirecting.
-func (exp *explorerUI) StatusPage(w http.ResponseWriter, code string, message string, sType statusType) {
+func (exp *explorerUI) StatusPage(w http.ResponseWriter, code, message string, sType statusType) {
 	str, err := exp.templates.execTemplateToString("status", struct {
-		StatusType statusType
-		Code       string
-		Message    string
-		Version    string
-		NetName    string
+		ChainParams *chaincfg.Params
+		StatusType  statusType
+		Code        string
+		Message     string
+		Version     string
+		NetName     string
 	}{
+		exp.ChainParams,
 		sType,
 		code,
 		message,
@@ -771,33 +1474,42 @@ func (exp *explorerUI) StatusPage(w http.ResponseWriter, code string, message st
 		w.WriteHeader(http.StatusNotFound)
 	case ErrorStatusType:
 		w.WriteHeader(http.StatusInternalServerError)
+	// When blockchain sync is running, status 202 is used to imply that the
+	// other requests apart from serving the status sync page have been received
+	// and accepted but cannot be processed now till the sync is complete.
+	case BlockchainSyncingType:
+		w.WriteHeader(http.StatusAccepted)
+	case NotSupportedStatusType:
+		w.WriteHeader(http.StatusUnprocessableEntity)
 	default:
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 	io.WriteString(w, str)
 }
 
-// NotFound wraps StatusPage to display a 404 page
+// NotFound wraps StatusPage to display a 404 page.
 func (exp *explorerUI) NotFound(w http.ResponseWriter, r *http.Request) {
 	exp.StatusPage(w, "Page not found.", "Cannot find page: "+r.URL.Path, NotFoundStatusType)
 }
 
-// ParametersPage is the page handler for the "/parameters" path
+// ParametersPage is the page handler for the "/parameters" path.
 func (exp *explorerUI) ParametersPage(w http.ResponseWriter, r *http.Request) {
 	cp := exp.ChainParams
 	addrPrefix := AddressPrefixes(cp)
 	actualTicketPoolSize := int64(cp.TicketPoolSize * cp.TicketsPerBlock)
 	ecp := ExtendedChainParams{
-		Params:               cp,
+		MaximumBlockSize:     cp.MaximumBlockSizes[0],
 		AddressPrefix:        addrPrefix,
 		ActualTicketPoolSize: actualTicketPoolSize,
 	}
 
 	str, err := exp.templates.execTemplateToString("parameters", struct {
-		Cp      ExtendedChainParams
-		Version string
-		NetName string
+		ChainParams *chaincfg.Params
+		Cp          ExtendedChainParams
+		Version     string
+		NetName     string
 	}{
+		exp.ChainParams,
 		ecp,
 		exp.Version,
 		exp.NetName,
@@ -813,10 +1525,10 @@ func (exp *explorerUI) ParametersPage(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// AgendaPage is the page handler for the "/agenda" path
+// AgendaPage is the page handler for the "/agenda" path.
 func (exp *explorerUI) AgendaPage(w http.ResponseWriter, r *http.Request) {
 	if exp.liteMode {
-		exp.StatusPage(w, "Activate full-functionality mode",
+		exp.StatusPage(w, fullModeRequired,
 			"Agenda page cannot run in lite mode.", NotSupportedStatusType)
 		return
 	}
@@ -826,7 +1538,7 @@ func (exp *explorerUI) AgendaPage(w http.ResponseWriter, r *http.Request) {
 			"the agenda ID given seems to not exist", NotFoundStatusType)
 	}
 
-	// Attempt to get agendaid string from URL path
+	// Attempt to get agendaid string from URL path.
 	agendaid := getAgendaIDCtx(r)
 	agendaInfo, err := GetAgendaInfo(agendaid)
 	if err != nil {
@@ -847,12 +1559,14 @@ func (exp *explorerUI) AgendaPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	str, err := exp.templates.execTemplateToString("agenda", struct {
+		ChainParams      *chaincfg.Params
 		Ai               *agendadb.AgendaTagged
 		Version          string
 		NetName          string
 		ChartDataByTime  *dbtypes.AgendaVoteChoices
 		ChartDataByBlock *dbtypes.AgendaVoteChoices
 	}{
+		exp.ChainParams,
 		agendaInfo,
 		exp.Version,
 		exp.NetName,
@@ -870,7 +1584,7 @@ func (exp *explorerUI) AgendaPage(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, str)
 }
 
-// AgendasPage is the page handler for the "/agendas" path
+// AgendasPage is the page handler for the "/agendas" path.
 func (exp *explorerUI) AgendasPage(w http.ResponseWriter, r *http.Request) {
 	agendas, err := agendadb.GetAllAgendas()
 	if err != nil {
@@ -880,10 +1594,12 @@ func (exp *explorerUI) AgendasPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	str, err := exp.templates.execTemplateToString("agendas", struct {
-		Agendas []*agendadb.AgendaTagged
-		Version string
-		NetName string
+		ChainParams *chaincfg.Params
+		Agendas     []*agendadb.AgendaTagged
+		Version     string
+		NetName     string
 	}{
+		exp.ChainParams,
 		agendas,
 		exp.Version,
 		exp.NetName,
@@ -896,5 +1612,46 @@ func (exp *explorerUI) AgendasPage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+// HandleApiRequestsOnSync is a handler that handles all API request when the
+// sync status pages is running.
+func (exp *explorerUI) HandleApiRequestsOnSync(w http.ResponseWriter, r *http.Request) {
+	var complete int
+	dataFetched := SyncStatus()
+
+	syncStatus := "in progress"
+	if len(dataFetched) == complete {
+		syncStatus = "complete"
+	}
+
+	for _, v := range dataFetched {
+		if v.PercentComplete == 100 {
+			complete++
+		}
+	}
+	stageRunning := complete + 1
+	if stageRunning > len(dataFetched) {
+		stageRunning = len(dataFetched)
+	}
+
+	data, err := json.Marshal(struct {
+		Message string           `json:"message"`
+		Stage   int              `json:"stage"`
+		Stages  []SyncStatusInfo `json:"stages"`
+	}{
+		fmt.Sprintf("blockchain sync is %s.", syncStatus),
+		stageRunning,
+		dataFetched,
+	})
+
+	str := string(data)
+	if err != nil {
+		str = fmt.Sprintf("error occurred while processing the API response: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
 	io.WriteString(w, str)
 }

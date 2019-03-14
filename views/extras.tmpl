@@ -23,6 +23,7 @@
     <title>{{.}}</title>
     <link href="/css/bootstrap.css" rel="stylesheet">
     <link href="/css/main.css" rel="stylesheet">
+    <link href="/css/nexthome.css" rel="stylesheet">
     <link href="/css/charts.css" rel="stylesheet">
     <!-- <link rel="stylesheet/less" type="text/css" href="/css/dynamic.less"> -->
     <script src="/js/turbolinks.js"></script>
@@ -33,21 +34,18 @@
     <script src="/js/humanize.js"></script>
     <script src="/js/stimulus.umd.js"></script>
     <script src="/js/mousetrap.min.js"></script>
-    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
-    <!--[if lt IE 9]>
-      <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
-      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
-    <![endif]-->
 </head>
 {{end}}
 
 {{define "navbar"}}
-<div class="top-nav">
+<header class="top-nav">
     <div class="container">
         <div class="d-flex align-items-center flex-wrap">
             <div class="d-flex align-items-center">
                 <div class="col-sm-auto" style="padding: 0 2px">
-                    <a href="/" class="pfcicon-picfight no-underline"></a>
+                    <a href="/" class="no-underline d-block home-link">
+                        <div class="pfcdata-logo"></div>
+                    </a>
                 </div>
             </div>
             <div class="col pl-2">
@@ -74,30 +72,29 @@
                         <a data-keynav-skip href="/" title="Home">Home</a>
                         <a data-keynav-skip href="/blocks" title="PicFight blocks">Blocks</a>
                         <a data-keynav-skip href="/mempool" title="PicFight mempool">Mempool</a>
-                        <a data-keynav-skip href="/charts" title="PicFight Charts">Charts</a>
-                        <a data-keynav-skip href="/parameters" title="Chain Parameters">Parameters</a>
+                        <a data-keynav-skip href="/ticketpool" title="PicFight ticket pool">Ticket Pool</a>
+                        <a data-keynav-skip class="jsonly" href="/charts" title="PicFight charts">Charts</a>
                         <a data-keynav-skip href="/agendas" title="Agendas">Agendas</a>
-                        <a data-keynav-skip href="/blocks" title="PicFight blocks">Blocks</a>
+                        <a data-keynav-skip href="/parameters" title="Chain Parameters">Parameters</a>
                         <a data-keynav-skip href="/decodetx" title="Decode or send a raw transaction">Decode/Broadcast Tx</a>
                         {{if eq .NetName "Mainnet"}}
-                           <a data-keynav-skip href="http://testnet.pfcdata.org/" title="Home">Switch To Testnet</a>
+                            <a data-keynav-skip href="http://testnet.pfcdata.org/" title="Home">Switch To Testnet</a>
                         {{else}}
-                           <a data-keynav-skip href="https://explorer.pfcdata.org/" title="Home">Switch To Mainnet</a>
+                            <a data-keynav-skip href="https://explorer.pfcdata.org/" title="Home">Switch To Mainnet</a>
                         {{end}}
                         <a data-keynav-skip data-turbolinks="false" href="javascript:toggleSun()" class="jsonly"><span id="sun-icon" class="pfcicon-sun-fill no-underline pr-2"></span> Night Mode</a>
                         <a data-keynav-skip data-turbolinks="false" href="#" class="jsonly" id="keynav-toggle">
                             <span class="text">Enable Hot Keys</span><span class="keys-hint">(&nbsp;&nbsp;<span class="arrows"> &#8592;<br>&#8594;</span>&nbsp;&nbsp;enter&nbsp;&nbsp;\&nbsp;&nbsp;=&nbsp;&nbsp;)</span>
                         </a>
-                        <a data-keynav-skip href="https://github.com/picfight/pfcdata#json-rest-api" title="API Endpoints" target="_blank">JSON API Docs</a>
+                        <a data-keynav-skip href="https://github.com/picfight/pfcdata#json-rest-api" title="API Endpoints" target="_blank" rel="noopener noreferrer">JSON API Docs</a>
                     </div>
                 </div>
             </nav>
         </div>
     </div>
-</div>
+</header>
 <div id="watermark">HODL<br>HODL<br>HODL</div>
 <script data-turbolinks-eval="false">
-    $(".jsonly").show()
     $.ajaxSetup({
         cache: true
     });
@@ -107,6 +104,10 @@
         var expires = "expires="+d.toUTCString();
         document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
     }
+
+    var PFCThings = {}
+    PFCThings.ticketPoolSize = {{$.ChainParams.TicketPoolSize}}
+
     var sunIcon = document.getElementById("sun-icon")
     var darkBGCookieName = 'pfcdataDarkBG';
     function darkEnabled() {
@@ -184,17 +185,22 @@
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    // `formatTxDate`: Format a string to match the format `(UTC) YYYY-MM-DD HH:MM:SS` used by explorer.TxPage and tx.tmpl
+    function formatTxDate(stamp, withTimezone) {
+        var d = new Date(stamp*1000);
+        var zone = withTimezone ? "("+d.toLocaleTimeString('en-us',{timeZoneName:'short'}).split(' ')[2]+") " : "";
+        return zone+String(d.getFullYear())+"-"+String(d.getMonth()+1).padStart(2, "0")+"-"+String(d.getDate()).padStart(2, "0")+" "
+            +String(d.getHours()).padStart(2, "0")+":"+String(d.getMinutes()).padStart(2, "0")+":"+String(d.getSeconds()).padStart(2, "0");
+    }
+
     var ws; // websocket global
     async function createWebSocket(loc) {
         // wait a bit to prevent websocket churn from drive by page loads
-        console.log('Waiting to create websocket');
         $('#connection').removeClass('hidden');
         var uri = getSocketURI(loc)
         ws = new MessageSocket(uri);
         await sleep(3000);
         ws.connect()
-        console.log('Starting websocket');
-        console.log("createdWebSocket", uri, ws)
         ws.registerEvtHandler("open", function() {
             console.log('Connected')
             updateConnectionStatus('Connected', true);
@@ -211,8 +217,7 @@
         });
 
         ws.registerEvtHandler("ping", function(evt) {
-            console.log("ping. users online: ", evt)
-            //ws.send("pong", "copy")
+            console.debug("ping. users online: ", evt)
         });
         ws.registerEvtHandler("decodetxResp", function(evt) {
             console.log("Got message: ", evt);
@@ -232,20 +237,28 @@
                 if (isNaN($(v).text())) {
                     $(v).text("0");
                 }
-                $(v).text(
-                    newBlock.block.height - $(v).data('confirmation-block-height')
-                )
+                var confirmations = newBlock.block.height - $(v).data('confirmation-block-height') + 1;
+                $(v).text("(" + confirmations + (confirmations > 1? " confirmations": " confirmation") + ")")
             })
 
             // block summary data
             var b = newBlock.block;
             desktopNotifyNewBlock(b);
 
+
+            advanceTicketProgress(b)
+            confirmAddrMempool(b)
+
             var expTableRows = $('#explorertable tbody tr');
             //var CurrentHeight = parseInt($('#explorertable tbody tr td').first().text());
             if (expTableRows){
+                var indexVal = ""
+                if (window.location.pathname === "/blocks") {
+                    indexVal = '<td>' + b.windowIndex + '</td>'
+                }
                 expTableRows.last().remove()
                 var newRow = '<tr id="' + b.height + '">' +
+                    indexVal +
                     '<td><a href="/block/' + b.height + '" class="fs18">' + b.height + '</a></td>' +
                     '<td>' + b.tx + '</td>' +
                     '<td>' + b.votes + '</td>' +
@@ -258,8 +271,27 @@
                 var newRowHtml = $.parseHTML(newRow)
                 $(newRowHtml).insertBefore(expTableRows.first())
             }
+
+
             var ex = newBlock.extra
-            if ($("#bsubsidy_total").text() !== "") {
+            if (window.location.pathname === "/nexthome"){
+                $("#coin-supply").html(humanize.decimalParts(ex.coin_supply/100000000, true, 0, false))
+                $("#bsubsidy-dev").html(humanize.decimalParts(ex.subsidy.dev/100000000, false, 8, false, 2))
+                $("#dev-fund").html(humanize.decimalParts(ex.dev_fund/100000000, true, 0, false))
+                $("#pool-value").html(humanize.decimalParts(ex.pool_info.value, true, 0, false))
+                $("#pool-info-percentage").html("("+parseFloat(ex.pool_info.percent).toFixed(2)+" % of total supply)")
+                $("#bsubsidy-pos").html(humanize.decimalParts((ex.subsidy.pos/500000000), false, 8, false, 2))
+                $("#ticket-reward").html("("+ humanize.fmtPercentage(ex.reward)+ " per ~29.07 days)")
+                $("#ticket-price").html(humanize.decimalParts(ex.sdiff, false, 8, false, 2))
+                $("#diff").html(humanize.decimalParts(ex.difficulty/1000000, true, 0, false))
+                $("#bsubsidy-pow").html(humanize.decimalParts(ex.subsidy.pow/100000000, false, 8, false, 2))
+                $("#hashrate").html(humanize.decimalParts(ex.hash_rate, false, 8, false, 2))
+                $("#hashrate-subdata").html("("+ humanize.fmtPercentage(ex.hash_rate_change)+ " in 24hr)")
+
+                handleBlockUpdate(newBlock.block)
+            }
+
+             if (window.location.pathname == "/"){
                 $("#difficulty").html(humanize.decimalParts(ex.difficulty, true, 8))
                 $("#bsubsidy_total").html(humanize.decimalParts(ex.subsidy.total/100000000, false, 8))
                 $("#bsubsidy_pow").html(humanize.decimalParts(ex.subsidy.pow/100000000, false, 8))
@@ -280,7 +312,28 @@
             }
         };
         ws.registerEvtHandler("newblock", updateBlockData);
+
+        ws.registerEvtHandler("mempool", function(event){
+            if (window.location.pathname === "/nexthome") {
+                ws.send("getmempooltxs", "")
+            }
+            else {
+                var mempool = JSON.parse(event);
+                $("#mempool-total-sent").html(humanize.decimalParts(mempool.total, false, 2, false, 2))
+                $("#mempool-tx-count").text("sent in "+mempool.num_all+" transactions")
+                $("#mempool-votes").text(mempool.num_votes)
+                $("#mempool-tickets").text(mempool.num_tickets)
+            }
+        });
+
+        ws.registerEvtHandler("getmempooltxsResp", function(event) {
+            console.log("received mempooltx response", event);
+            if (window.location.pathname === "/nexthome") {
+                handleMempoolUpdate(event);
+            }
+        });
     }
+
     document.getElementById('search').onkeypress = function(e){
         if (!e) e = window.event;
         var keyCode = e.keyCode || e.which;
@@ -330,6 +383,112 @@
             doNotification(block);
         }
     }
+
+    // Check for the txid in the given block
+    function txInBlock(txid, block) {
+      var txTypes = [block.Tx, block.Tickets, block.Revs, block.Votes]
+      for(txIdx in txTypes){
+          txs = txTypes[txIdx]
+          for(idx in txs){
+              if(txs[idx].TxID ==  txid){
+                  return true;
+              }
+          }
+      }
+      return false;
+    }
+
+    // Advance various progress bars on /tx.
+    function advanceTicketProgress(block){
+        // Check for confirmations on mempool transactions.
+        var needsConfirmation = $("[data-txid-mempool-display]")
+        if(needsConfirmation.length && needsConfirmation.text() == "mempool"){
+            var txid = needsConfirmation.data("txid-mempool-display");
+            if(txInBlock(txid, block)){
+              needsConfirmation.remove();
+              $("[data-confirmation-block-height]").data("confirmation-block-height", block.height).html("(1 confirmation)");
+              $("#txMempoolLink").html(block.height).attr("href", "/block/"+block.hash);
+              $("#txFmtTime").html(formatTxDate(block.time, true));
+              $("#txAge").html(humanize.timeSince(block.time)).before("(").after(" ago)").attr("data-age",block.time);
+              var progressBar = $("#txMaturityProgress")
+              var remainingBlocks = parseInt(progressBar.attr("aria-valuemax")) - 1
+              progressBar.attr('data-confirm-height', block.height)
+            }
+        }
+        // Advance the progress bars.
+        var ticketProgress = $("#txMaturityProgress");
+        if(!ticketProgress.length){
+            return;
+        }
+        var txBlockHeight = ticketProgress.data("confirm-height")
+        if(txBlockHeight == 0){
+          return;
+        }
+        var confirmations = block.height - txBlockHeight + 1;
+        var txType = ticketProgress.data("tx-type");
+        var complete = parseInt(ticketProgress.attr("aria-valuemax"));
+        if(confirmations == complete + 1){
+            ticketProgress.closest(".row").replaceWith(txType == "LiveTicket" ? "Expired" : "Mature");
+            return;
+        }
+        var ratio = confirmations/complete;
+        if(confirmations == complete){
+            ticketProgress.children("span").html(txType == "Ticket" ? "Mature. Eligible to vote on next block." :
+            txType == "LiveTicket" ? "Ticket has expired" : "Mature. Ready to spend.");
+            var status = $("#txPoolStatus");
+            if(status.length){
+                status.html("live / unspent");
+            }
+        }
+        else{
+            var blocksLeft = complete+1-confirmations;
+            var remainingTime = blocksLeft*PFCThings.targetBlockTime
+            if(txType == "LiveTicket"){
+                ticketProgress.children("span").html("block "+confirmations+" of "+complete+" ("+(remainingTime/86400.).toFixed(1)+" days remaining)");
+                // Chance of expiring is (1-P)^N where P := single-block probability of being picked, N := blocks remaining.
+                // This probability is using the network parameter rather than the calculated value. So far, the ticket pool size seems stable enough to do that.
+                var pctChance = Math.pow(1 - 1/PFCThings.ticketPoolSize, blocksLeft)*100;
+                $("#ticketExpiryChance").children("span").html(pctChance.toFixed(2)+"% chance of expiry");
+            }
+            else{
+                var typeStub = txType == "Ticket" ? "eligible to vote" : "spendable";
+                ticketProgress.children("span").html("Immature, "+typeStub+" in "+blocksLeft+" blocks ("+(remainingTime/3600.).toFixed(1)+" hours remaining)");
+            }
+            ticketProgress.attr("aria-valuenow", confirmations).css({"width":(ratio*100).toString()+"%"});
+        }
+    }
+
+    // Check the block for mempool transactions on the address page.
+    function confirmAddrMempool(block){
+      var mempoolRows = $("[data-addr-tx-pending]");
+      mempoolRows.each(function(idx, tr){
+        var row = $(tr)
+        var txid = row.data('addr-tx-pending')
+        if(txInBlock(txid, block)){
+          var confirms = row.children('.addr-tx-confirms');
+          confirms.attr('data-tx-block-height', block.height);
+          row.removeAttr('data-addr-tx-pending');
+          row.children('.addr-tx-time').html(formatTxDate(block.time, false));
+          row.children('.addr-tx-age').children('span').attr("data-age", block.time).html(humanize.timeSince(block.time));
+          confirms.html("1")
+        }
+      });
+      var confirmTds = $('[data-tx-block-height]');
+      confirmTds.each(function(idx, td){
+        confirms = $(td);
+        confirms.html(block.height - parseInt(confirms.data('tx-block-height')) + 1);
+      });
+      var pendingCounters = $('[data-tx-confirmations-pending]');
+      pendingCounters.each(function(i,c){
+        var counter = $(c);
+        var txid = counter.data('tx-confirmations-pending')
+        if(txInBlock(txid, block)){
+          counter.removeAttr('data-tx-confirmations-pending')
+          counter.attr('data-confirmation-block-height', block.height).html('(1 confirmation)')
+        }
+      });
+    }
+
 </script>
 
 <script>
@@ -339,26 +498,45 @@
 </script>
 
 <script src="/js/notify.min.js"></script>
-
 {{end}}
 
 {{define "footer"}}
 <footer class="navbar-fixed-bottom">
-    <div class="container wrapper text-center">
-        <div style="text-align: left; margin:0 auto !important; display:inline-block">
-            <a class="nav-item" href="https://github.com/picfight/pfcdata" title="pfcdata on GitHub" target="_blank">pfcdata v{{.Version}}</a>
-            <a class="nav-item" href="https://github.com/picfight/pfcdata/blob/master/LICENSE" target="_blank">© 2018 The Decred developers (ISC)</a>
-        </div>
-        <div style="float: right;">
-            <span data-turbolinks-permanent class="nav-item" id="connection"
-                title="While connected, you will receive live page updates and, if enabled, desktop notifications (click to enable)."
-                >Connecting to WebSocket...<div></div>
-            </span>
-        </div>
+    <div class="container d-flex">
+        <ul class="nav justify-content-center col">
+            <li class="nav-item">
+                <a
+                    class="nav-item no-wrap"
+                    href="https://github.com/picfight/pfcdata"
+                    title="pfcdata on GitHub"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >pfcdata v{{.Version}}</a>
+            </li>
+            <li class="nav-item">
+                <a
+                    class="nav-item nowrap"
+                    href="https://github.com/picfight/pfcdata/blob/master/LICENSE"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >© 2018 The Decred developers (ISC)</a>
+            </li>
+        </ul>
+        <ul class="nav justify-content-right align-items-center jsonly">
+            <li class="text-right connection-wrapper">
+                <span
+                    id="connection"
+                    class="nav-item align-items-center"
+                    data-turbolinks-permanent
+                    title="While connected, you will receive live page updates and, if enabled, desktop notifications (click to enable)."
+                    ><span>Connecting <span class="d-none d-md-inline-block">to WebSocket...</span></span><div></div>
+                </span>
+            </li>
+        </ul>
     </div>
 </footer>
-<script data-turbolinks-eval="false">
 
+<script data-turbolinks-eval="false">
     // Keyboard Navigation
     var targets;
     var targetsLength;
@@ -455,6 +633,9 @@
     });
 
     Mousetrap.bind('enter', function(e) {
+        if (targets.length < currentIndex) {
+            return
+        }
         var currentTarget = $(targets[currentIndex])
         if (currentTarget.is( "input")) {
             currentTarget.focus()
@@ -533,6 +714,7 @@
 
 </script>
 <script>
+    $(".jsonly").removeClass('jsonly')
     $('.scriptDataStar').on('click', function(){
         $(this).next('.scriptData').slideToggle();
     });
@@ -542,15 +724,32 @@
         }
     })
 </script>
-
 <script data-turbolinks-eval="false">
-const app = Stimulus.Application.start()
+    const app = Stimulus.Application.start()
 </script>
 <script src="/js/controllers/main.js"  data-turbolinks-eval="false"></script>
 <script src="/js/controllers/mempool.js"  data-turbolinks-eval="false"></script>
 <script src="/js/controllers/agenda.js"  data-turbolinks-eval="false"></script>
 <script src="/js/controllers/charts.js" data-turbolinks-eval="false"></script>
 <script src="/js/controllers/address.js" data-turbolinks-eval="false"></script>
+<script src="/js/controllers/ticketpool.js" data-turbolinks-eval="false"></script>
+<script src="/js/controllers/status.js" data-turbolinks-eval="false"></script>
 {{end}}
 
-{{define "decimalParts"}}<span class="int">{{ index . 0 }}</span><span class="dot">.</span><span class="decimal">{{ index . 1 }}<span class="trailing-zeroes">{{ index . 2 }}</span></span>{{end}}
+{{define "decimalParts"}}
+    {{if eq (len .) 4}}
+    <span class="int">{{ index . 0 }}.{{ index . 1 }}</span>
+    {{if gt (len (index . 2)) 0}}<span class="decimal lh15rem">{{ index . 2 }}</span>
+    <span class="decimal lh15rem trailing-zeroes">{{ index . 3 }}</span>{{end}}
+    {{else}}
+    <span class="int">{{index . 0}}</span>
+    {{if gt (len (index . 1)) 0}}<span class="decimal lh15rem dot">.</span>
+    <span class="decimal lh15rem">{{index . 1 }}</span>
+    <span class="decimal lh15rem trailing-zeroes">{{index . 2}}</span>{{end}}
+    {{end}}
+{{end}}
+
+{{define "fmtPercentage"}}
+    {{if gt . 0.0}}<span style="color:green">+{{printf "%.2f" .}} %</span>
+    {{else}}<span style="color:red">{{printf "%.2f" .}} %</span>{{end}}
+{{end}}

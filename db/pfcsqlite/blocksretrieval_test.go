@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/testutil"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/testutil"
 )
 
 func TestEmptyDBRetrieveAllPoolValAndSize(t *testing.T) {

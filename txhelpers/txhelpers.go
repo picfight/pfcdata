@@ -11,12 +11,15 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"sort"
 	"strconv"
+	"sync"
 
+	"github.com/decred/base58"
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
@@ -31,6 +34,23 @@ var (
 	zeroHash            = chainhash.Hash{}
 	zeroHashStringBytes = []byte(chainhash.Hash{}.String())
 )
+
+var CoinbaseFlags = "/pfcd/"
+var CoinbaseScript = append([]byte{0x00, 0x00}, []byte(CoinbaseFlags)...)
+
+// ReorgData contains details of a chain reorganization, including the full old
+// and new chains, and the common ancestor that should not be included in either
+// chain.
+type ReorgData struct {
+	CommonAncestor chainhash.Hash
+	OldChainHead   chainhash.Hash
+	OldChainHeight int32
+	OldChain       []chainhash.Hash
+	NewChainHead   chainhash.Hash
+	NewChainHeight int32
+	NewChain       []chainhash.Hash
+	WG             *sync.WaitGroup
+}
 
 // RawTransactionGetter is an interface satisfied by rpcclient.Client, and
 // required by functions that would otherwise require a rpcclient.Client just
@@ -776,6 +796,42 @@ func DetermineTxTypeString(msgTx *wire.MsgTx) string {
 	}
 }
 
+// TxTypeToString returns a string representation of the provided transaction
+// type, which corresponds to the txn types defined for stake.TxType type.
+func TxTypeToString(txType int) string {
+	switch stake.TxType(txType) {
+	case stake.TxTypeSSGen:
+		return "Vote"
+	case stake.TxTypeSStx:
+		return "Ticket"
+	case stake.TxTypeSSRtx:
+		return "Revocation"
+	default:
+		return "Regular"
+	}
+}
+
+// TxIsTicket indicates if the transaction type is a ticket (sstx).
+func TxIsTicket(txType int) bool {
+	return stake.TxType(txType) == stake.TxTypeSStx
+}
+
+// TxIsVote indicates if the transaction type is a vote (ssgen).
+func TxIsVote(txType int) bool {
+	return stake.TxType(txType) == stake.TxTypeSSGen
+}
+
+// TxIsRevoke indicates if the transaction type is a revocation (ssrtx).
+func TxIsRevoke(txType int) bool {
+	return stake.TxType(txType) == stake.TxTypeSSRtx
+}
+
+// TxIsRegular indicates if the transaction type is a regular (non-stake)
+// transaction.
+func TxIsRegular(txType int) bool {
+	return stake.TxType(txType) == stake.TxTypeRegular
+}
+
 // IsStakeTx indicates if the input MsgTx is a stake transaction.
 func IsStakeTx(msgTx *wire.MsgTx) bool {
 	switch stake.DetermineTxType(msgTx) {
@@ -845,4 +901,105 @@ func TotalVout(vouts []pfcjson.Vout) pfcutil.Amount {
 		total += a
 	}
 	return total
+}
+
+// GenesisTxHash returns the hash of the single coinbase transaction in the
+// genesis block of the specified network. This transaction is hard coded, and
+// the pubkey script for its one output only decodes for simnet.
+func GenesisTxHash(params *chaincfg.Params) chainhash.Hash {
+	return params.GenesisBlock.Transactions[0].TxHash()
+}
+
+// IsZeroHashP2PHKAddress checks if the given address is the dummy (zero pubkey
+// hash) address. See https://github.com/picfight/pfcdata/v3/issues/358 for details.
+func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) bool {
+	zeroed := [20]byte{}
+	// expecting DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg address for mainnet
+	address, err := pfcutil.NewAddressPubKeyHash(zeroed[:], params, 0)
+	if err != nil {
+		return false
+	}
+	zeroAddress := address.String()
+	return checkAddressString == zeroAddress
+}
+
+// ValidateNetworkAddress checks if the given address is valid on the given
+// network.
+func ValidateNetworkAddress(address pfcutil.Address, p *chaincfg.Params) bool {
+	return address.IsForNet(p)
+}
+
+// AddressError is the type of error returned by AddressValidation.
+type AddressError error
+
+var (
+	AddressErrorNoError      AddressError = nil
+	AddressErrorZeroAddress  AddressError = errors.New("null address")
+	AddressErrorWrongNet     AddressError = errors.New("wrong network")
+	AddressErrorDecodeFailed AddressError = errors.New("decoding failed")
+	AddressErrorUnknown      AddressError = errors.New("unknown error")
+	AddressErrorUnsupported  AddressError = errors.New("recognized, but unsuported address type")
+)
+
+type AddressType int
+
+const (
+	AddressTypeP2PK = iota
+	AddressTypeP2PKH
+	AddressTypeP2SH
+	AddressTypeOther
+	AddressTypeUnknown
+)
+
+// AddressValidation performs several validation checks on the given address
+// string. Initially, decoding as a PicFight address is attempted. If it fails to
+// decode, btcutil is used to try decoding it as a Bitcoin address. If both
+// decoding fails, AddressErrorDecodeFailed is returned with AddressTypeUnknown.
+// If the address is a Bitcoin address, AddressErrorBitcoin is returned with
+// AddressTypeBitcoin. If the address decoded successfully as a PicFight address,
+// it is checked against the specified network. If it is the wrong network,
+// AddressErrorWrongNet is returned with AddressTypeUnknown. If the address is
+// the correct network, the address type is obtained. A final check is performed
+// to determine if the address is the zero pubkey hash address, in which case
+// AddressErrorZeroAddress is returned with the determined address type. If it
+// is another address, AddressErrorNoError is returned with the determined
+// address type.
+func AddressValidation(address string, params *chaincfg.Params) (pfcutil.Address, AddressType, AddressError) {
+	// Decode and validate the address.
+	addr, err := pfcutil.DecodeAddress(address)
+	if err != nil {
+		return nil, AddressTypeUnknown, AddressErrorDecodeFailed
+	}
+
+	// Detect when an address belonging to a different PicFight network.
+	if !ValidateNetworkAddress(addr, params) {
+		return addr, AddressTypeUnknown, AddressErrorWrongNet
+	}
+
+	// Determine address type for this valid PicFight address. Ignore the error
+	// since DecodeAddress succeeded.
+	_, netID, _ := base58.CheckDecode(address)
+
+	var addrType AddressType
+	switch netID {
+	case params.PubKeyAddrID:
+		addrType = AddressTypeP2PK
+	case params.PubKeyHashAddrID:
+		addrType = AddressTypeP2PKH
+	case params.ScriptHashAddrID:
+		addrType = AddressTypeP2SH
+	case params.PKHEdwardsAddrID, params.PKHSchnorrAddrID:
+		addrType = AddressTypeOther
+	default:
+		addrType = AddressTypeUnknown
+	}
+
+	// Check if the address is the zero pubkey hash address commonly used for
+	// zero value sstxchange-tagged outputs. Return a special error value, but
+	// the decoded address and address type are valid.
+	if IsZeroHashP2PHKAddress(address, params) {
+		return addr, addrType, AddressErrorZeroAddress
+	}
+
+	return addr, addrType, AddressErrorNoError
 }

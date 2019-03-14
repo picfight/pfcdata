@@ -6,7 +6,7 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/picfight/pfcdata/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
 )
 
 // InsightAddress models an address transactions

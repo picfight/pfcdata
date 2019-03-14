@@ -21,12 +21,12 @@ import (
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/db/pfcpg"
-	m "github.com/picfight/pfcdata/middleware"
-	"github.com/picfight/pfcdata/semver"
-	"github.com/picfight/pfcdata/txhelpers"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/pfcpg"
+	m "github.com/picfight/pfcdata/v3/middleware"
+	"github.com/picfight/pfcdata/v3/semver"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // DataSourceLite specifies an interface for collecting data from the built-in
@@ -283,7 +283,7 @@ func (c *insightApiContext) broadcastTransactionRaw(w http.ResponseWriter, r *ht
 
 	// Respond with hash of broadcasted transaction
 	txidJSON := struct {
-		TxidHash string `json:"rawtx"`
+		TxidHash string `json:"txid"`
 	}{
 		txid,
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	apitypes "github.com/picfight/pfcdata/api/types"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
 // TxConverter converts pfcd-tx to insight tx

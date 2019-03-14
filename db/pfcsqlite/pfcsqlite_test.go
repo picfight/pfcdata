@@ -6,7 +6,7 @@ This file contains package-related test-setup utils
 import (
 	"path/filepath"
 
-	"github.com/picfight/pfcdata/testutil"
+	"github.com/picfight/pfcdata/v3/testutil"
 )
 
 // DBPathForTest produces path inside dedicated test folder for current test
@@ -31,7 +31,7 @@ func InitTestDB(targetDBFile string) *DB {
 	return db //is not nil
 }
 
-var reusableEmptyDB *DB = nil
+var reusableEmptyDB *DB
 
 // ObtainReusableEmptyDB returns a single reusable instance of an empty DB. The instance
 // is created once during the first call. All the subsequent calls will return

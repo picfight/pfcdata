@@ -15,13 +15,14 @@ import (
 	"strings"
 
 	flags "github.com/btcsuite/go-flags"
+	"github.com/caarlos0/env"
 	"github.com/decred/slog"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/netparams"
-	"github.com/picfight/pfcdata/version"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/netparams"
+	"github.com/picfight/pfcdata/v3/version"
 )
 
 const (
@@ -55,7 +56,8 @@ var (
 	defaultMempoolMaxInterval = 120
 	defaultMPTriggerTickets   = 1
 
-	defaultDBFileName = "pfcdata.sqlt.db"
+	defaultDBFileName      = "pfcdata.sqlt.db"
+	defaultAgendDBFileName = "agendas.db"
 
 	defaultPGHost   = "127.0.0.1:5432"
 	defaultPGUser   = "pfcdata"
@@ -65,43 +67,47 @@ var (
 
 type config struct {
 	// General application behavior
-	HomeDir      string `short:"A" long:"appdata" description:"Path to application home directory"`
-	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file"`
-	DataDir      string `short:"b" long:"datadir" description:"Directory to store data"`
-	LogDir       string `long:"logdir" description:"Directory to log output."`
-	OutFolder    string `short:"f" long:"outfolder" description:"Folder for file outputs"`
+	HomeDir      string `short:"A" long:"appdata" description:"Path to application home directory" env:"PFCDATA_APPDATA_DIR"`
+	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file" env:"PFCDATA_CONFIG_FILE"`
+	DataDir      string `short:"b" long:"datadir" description:"Directory to store data" env:"PFCDATA_DATA_DIR"`
+	LogDir       string `long:"logdir" description:"Directory to log output." env:"PFCDATA_LOG_DIR"`
+	OutFolder    string `short:"f" long:"outfolder" description:"Folder for file outputs" env:"PFCDATA_OUT_FOLDER"`
 	ShowVersion  bool   `short:"V" long:"version" description:"Display version information and exit"`
-	TestNet      bool   `long:"testnet" description:"Use the test network (default mainnet)"`
-	SimNet       bool   `long:"simnet" description:"Use the simulation test network (default mainnet)"`
-	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}"`
-	Quiet        bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error"`
-	HTTPProfile  bool   `long:"httpprof" short:"p" description:"Start HTTP profiler."`
-	HTTPProfPath string `long:"httpprofprefix" description:"URL path prefix for the HTTP profiler."`
-	CPUProfile   string `long:"cpuprofile" description:"File for CPU profiling."`
-	UseGops      bool   `short:"g" long:"gops" description:"Run with gops diagnostics agent listening. See github.com/google/gops for more information."`
+	TestNet      bool   `long:"testnet" description:"Use the test network (default mainnet)" env:"PFCDATA_USE_TESTNET"`
+	SimNet       bool   `long:"simnet" description:"Use the simulation test network (default mainnet)" env:"PFCDATA_USE_SIMNET"`
+	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}" env:"PFCDATA_LOG_LEVEL"`
+	Quiet        bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error" env:"PFCDATA_QUIET"`
+	HTTPProfile  bool   `long:"httpprof" short:"p" description:"Start HTTP profiler." env:"PFCDATA_ENABLE_HTTP_PROFILER"`
+	HTTPProfPath string `long:"httpprofprefix" description:"URL path prefix for the HTTP profiler." env:"PFCDATA_HTTP_PROFILER_PREFIX"`
+	CPUProfile   string `long:"cpuprofile" description:"File for CPU profiling." env:"PFCDATA_CPU_PROFILER_FILE"`
+	UseGops      bool   `short:"g" long:"gops" description:"Run with gops diagnostics agent listening. See github.com/google/gops for more information." env:"PFCDATA_USE_GOPS"`
 
 	// API
-	APIProto           string `long:"apiproto" description:"Protocol for API (http or https)"`
-	APIListen          string `long:"apilisten" description:"Listen address for API"`
+	APIProto           string `long:"apiproto" description:"Protocol for API (http or https)" env:"PFCDATA_ENABLE_HTTPS"`
+	APIListen          string `long:"apilisten" description:"Listen address for API" env:"PFCDATA_LISTEN_URL"`
 	IndentJSON         string `long:"indentjson" description:"String for JSON indentation (default is \"   \"), when indentation is requested via URL query."`
-	UseRealIP          bool   `long:"userealip" description:"Use the RealIP middleware from the pressly/chi/middleware package to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order."`
-	CacheControlMaxAge int    `long:"cachecontrol-maxage" description:"Set CacheControl in the HTTP response header to a value in seconds for clients to cache the response. This applies only to FileServer routes."`
+	UseRealIP          bool   `long:"userealip" description:"Use the RealIP middleware from the pressly/chi/middleware package to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order." env:"PFCDATA_USE_REAL_IP"`
+	CacheControlMaxAge int    `long:"cachecontrol-maxage" description:"Set CacheControl in the HTTP response header to a value in seconds for clients to cache the response. This applies only to FileServer routes." env:"PFCDATA_MAX_CACHE_AGE"`
 
 	// Data I/O
-	MonitorMempool     bool   `short:"m" long:"mempool" description:"Monitor mempool for new transactions, and report ticketfee info when new tickets are added."`
-	MempoolMinInterval int    `long:"mp-min-interval" description:"The minimum time in seconds between mempool reports, regarless of number of new tickets seen."`
-	MempoolMaxInterval int    `long:"mp-max-interval" description:"The maximum time in seconds between mempool reports (within a couple seconds), regarless of number of new tickets seen."`
-	MPTriggerTickets   int    `long:"mp-ticket-trigger" description:"The number minimum number of new tickets that must be seen to trigger a new mempool report."`
-	DumpAllMPTix       bool   `long:"dumpallmptix" description:"Dump to file the fees of all the tickets in mempool."`
-	DBFileName         string `long:"dbfile" description:"SQLite DB file name (default is pfcdata.sqlt.db)."`
+	MonitorMempool     bool   `short:"m" long:"mempool" description:"Monitor mempool for new transactions, and report ticketfee info when new tickets are added." env:"PFCDATA_ENABLE_MEMPOOL_MONITOR"`
+	MempoolMinInterval int    `long:"mp-min-interval" description:"The minimum time in seconds between mempool reports, regarless of number of new tickets seen." env:"PFCDATA_MEMPOOL_MIN_INTERVAL"`
+	MempoolMaxInterval int    `long:"mp-max-interval" description:"The maximum time in seconds between mempool reports (within a couple seconds), regarless of number of new tickets seen." env:"PFCDATA_MEMPOOL_MAX_INTERVAL"`
+	MPTriggerTickets   int    `long:"mp-ticket-trigger" description:"The number minimum number of new tickets that must be seen to trigger a new mempool report." env:"PFCDATA_MP_TRIGGER_TICKETS"`
+	DumpAllMPTix       bool   `long:"dumpallmptix" description:"Dump to file the fees of all the tickets in mempool." env:"PFCDATA_ENABLE_DUMP_ALL_MP_TIX"`
+	DBFileName         string `long:"dbfile" description:"SQLite DB file name (default is pfcdata.sqlt.db)." env:"PFCDATA_SQLITE_DB_FILE_NAME"`
+	AgendaDBFileName   string `long:"agendadbfile" description:"Agenda DB file name (default is agendas.db)." env:"PFCDATA_AGENDA_DB_FILE_NAME"`
 
-	FullMode      bool   `long:"pg" description:"Run in \"Full Mode\" mode,  enables postgresql support"`
-	PGDBName      string `long:"pgdbname" description:"PostgreSQL DB name."`
-	PGUser        string `long:"pguser" description:"PostgreSQL DB user."`
-	PGPass        string `long:"pgpass" description:"PostgreSQL DB password."`
-	PGHost        string `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)."`
-	NoDevPrefetch bool   `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected."`
-	SyncAndQuit   bool   `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API."`
+	FullMode         bool   `long:"pg" description:"Run in \"Full Mode\" mode,  enables postgresql support" env:"PFCDATA_ENABLE_FULL_MODE"`
+	PGDBName         string `long:"pgdbname" description:"PostgreSQL DB name." env:"PFCDATA_PG_DB_NAME"`
+	PGUser           string `long:"pguser" description:"PostgreSQL DB user." env:"PFCDATA_POSTGRES_USER"`
+	PGPass           string `long:"pgpass" description:"PostgreSQL DB password." env:"PFCDATA_POSTGRES_PASS"`
+	PGHost           string `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)." env:"PFCDATA_POSTGRES_HOST_URL"`
+	NoDevPrefetch    bool   `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected." env:"PFCDATA_DISABLE_DEV_PREFETCH"`
+	SyncAndQuit      bool   `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API." env:"PFCDATA_ENABLE_SYNC_N_QUIT"`
+	ImportSideChains bool   `long:"import-side-chains" description:"(experimental) Enable startup import of side chains retrieved from pfcd via getchaintips." env:"PFCDATA_IMPORT_SIDE_CHAINS"`
+
+	SyncStatusLimit int64 `long:"sync-status-limit" description:"Sets the number of blocks behind the current best height past which only the syncing status page can be served on the running web server. Value should be greater than 2 but less than 5000."`
 
 	// WatchAddresses []string `short:"w" long:"watchaddress" description:"Watched address (receiving). One per line."`
 	// SMTPUser     string `long:"smtpuser" description:"SMTP user name"`
@@ -111,11 +117,11 @@ type config struct {
 	// EmailSubject string `long:"emailsubj" description:"Email subject. (default \"pfcdataapi transaction notification\")"`
 
 	// RPC client options
-	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name"`
-	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password"`
-	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9709, testnet: localhost:19709, simnet: localhost:19556)"`
-	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file"`
-	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost"`
+	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name" env:"PFCDATA_PFCD_USER"`
+	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password" env:"PFCDATA_PFCD_PASS"`
+	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9709, testnet: localhost:19709, simnet: localhost:19556)" env:"PFCDATA_PFCD_URL"`
+	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file" env:"PFCDATA_PFCD_CERT"`
+	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost" env:"PFCDATA_PFCD_DISABLE_TLS"`
 }
 
 var (
@@ -125,6 +131,7 @@ var (
 		LogDir:             defaultLogDir,
 		ConfigFile:         defaultConfigFile,
 		DBFileName:         defaultDBFileName,
+		AgendaDBFileName:   defaultAgendDBFileName,
 		DebugLevel:         defaultLogLevel,
 		HTTPProfPath:       defaultHTTPProfPath,
 		APIProto:           defaultAPIProto,
@@ -270,16 +277,34 @@ func loadConfig() (*config, error) {
 		return nil, err
 	}
 
-	// Default config.
+	// Default config
 	cfg := defaultConfig
+	defaultConfigNow := defaultConfig
 
-	// Pre-parse the command line options to see if an alternative config
-	// file or the version flag was specified.
+	// Load settings from environment variables.
+	err := env.Parse(&cfg)
+	if err != nil {
+		return loadConfigError(err)
+	}
+
+	// If appdata was specified but not the config file, change the config file
+	// path, and record this as the new default config file location.
+	if defaultHomeDir != cfg.HomeDir && defaultConfigNow.ConfigFile == cfg.ConfigFile {
+		cfg.ConfigFile = filepath.Join(cfg.HomeDir, defaultConfigFilename)
+		// Update the defaultConfig to avoid an error if the config file in this
+		// "new default" location does not exist.
+		defaultConfigNow.ConfigFile = cfg.ConfigFile
+	}
+
+	// Pre-parse the command line options to see if an alternative config file
+	// or the version flag was specified. Override any environment variables
+	// with parsed command line flags.
 	preCfg := cfg
 	preParser := flags.NewParser(&preCfg, flags.HelpFlag|flags.PassDoubleDash)
-	_, err := preParser.Parse()
-	if err != nil {
-		e, ok := err.(*flags.Error)
+	_, flagerr := preParser.Parse()
+
+	if flagerr != nil {
+		e, ok := flagerr.(*flags.Error)
 		if !ok || e.Type != flags.ErrHelp {
 			preParser.WriteHelp(os.Stderr)
 		}
@@ -287,7 +312,7 @@ func loadConfig() (*config, error) {
 			preParser.WriteHelp(os.Stdout)
 			os.Exit(0)
 		}
-		return loadConfigError(err)
+		return loadConfigError(flagerr)
 	}
 
 	// Show the version and exit if the version flag was specified.
@@ -299,14 +324,29 @@ func loadConfig() (*config, error) {
 		os.Exit(0)
 	}
 
+	// If a non-default appdata folder is specified on the command line, it may
+	// be necessary adjust the config file location. If the the config file
+	// location was not specified on the command line, the default location
+	// should be under the non-default appdata directory. However, if the config
+	// file was specified on the command line, it should be used regardless of
+	// the appdata directory.
+	if defaultHomeDir != preCfg.HomeDir && defaultConfigNow.ConfigFile == preCfg.ConfigFile {
+		preCfg.ConfigFile = filepath.Join(preCfg.HomeDir, defaultConfigFilename)
+		// Update the defaultConfig to avoid an error if the config file in this
+		// "new default" location does not exist.
+		defaultConfigNow.ConfigFile = preCfg.ConfigFile
+	}
+
 	// Load additional config from file.
 	var configFileError error
 	// Config file name for logging.
 	configFile := "NONE (defaults)"
 	parser := flags.NewParser(&cfg, flags.Default)
+
+	// Do not error default config file is missing.
 	if _, err := os.Stat(preCfg.ConfigFile); os.IsNotExist(err) {
 		// Non-default config file must exist
-		if defaultConfig.ConfigFile != preCfg.ConfigFile {
+		if defaultConfigNow.ConfigFile != preCfg.ConfigFile {
 			fmt.Fprintln(os.Stderr, err)
 			return loadConfigError(err)
 		}
@@ -353,6 +393,19 @@ func loadConfig() (*config, error) {
 		err := fmt.Errorf(str, funcName, err)
 		fmt.Fprintln(os.Stderr, err)
 		return nil, err
+	}
+
+	// If a non-default appdata folder is specified, it may be necessary to
+	// adjust the DataDir and LogDir. If these other paths are their defaults,
+	// they should be modifed to look under the non-default appdata directory.
+	// If they are not their defaults, the user-specified values should be used.
+	if defaultHomeDir != cfg.HomeDir {
+		if defaultDataDir == cfg.DataDir {
+			cfg.DataDir = filepath.Join(cfg.HomeDir, defaultDataDirname)
+		}
+		if defaultLogDir == cfg.LogDir {
+			cfg.LogDir = filepath.Join(cfg.HomeDir, defaultLogDirname)
+		}
 	}
 
 	// Warn about missing config file after the final command line parse
@@ -417,11 +470,29 @@ func loadConfig() (*config, error) {
 	log.Infof("Log folder:  %s", cfg.LogDir)
 	log.Infof("Config file: %s", configFile)
 
+	// If import-sidechains is true, but not running in full mode, warn the user
+	// that side chain import cannot be performed.
+	if !cfg.FullMode && cfg.ImportSideChains {
+		log.Warn("Unable to import side chains in lite mode!")
+	}
+
 	// Disable dev balance prefetch if network has invalid script.
 	_, err = dbtypes.DevSubsidyAddress(activeChain)
 	if !cfg.NoDevPrefetch && err != nil {
 		cfg.NoDevPrefetch = true
 		log.Warnf("%v. Disabling balance prefetch (--no-dev-prefetch).", err)
+	}
+
+	// Check if sync-status-limit value has been set. If its equal to zero then
+	// it hasn't been set.
+	if cfg.SyncStatusLimit != 0 {
+		// sync-status-limit value should not be set to a value less than 2 or to a
+		// value greater than 5000. 5000 is the max value that can be set by the user
+		// in pfcdata.conf file.
+		if cfg.SyncStatusLimit < 2 || cfg.SyncStatusLimit > 5000 {
+			return nil, fmt.Errorf("sync-status-limit should not be set to a value " +
+				"less than 2 or more than 5000")
+		}
 	}
 
 	// Set the host names and ports to the default if the user does not specify
@@ -457,7 +528,6 @@ func loadConfig() (*config, error) {
 		parser.WriteHelp(os.Stderr)
 		return loadConfigError(err)
 	}
-
 	return &cfg, nil
 }
 

@@ -6,7 +6,7 @@ package main
 import (
 	"sync"
 
-	apitypes "github.com/picfight/pfcdata/api/types"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
 // WebSocketMessage represents the JSON object used to send and received typed

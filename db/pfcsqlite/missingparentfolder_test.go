@@ -4,12 +4,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/picfight/pfcdata/testutil"
+	"github.com/picfight/pfcdata/v3/testutil"
 )
 
 // TestMissingParentFolder ensures InitDB() is able to create
 // a new DB-file parent directory if necessary
-// See https://github.com/picfight/pfcdata/issues/515
+// See https://github.com/picfight/pfcdata/v3/issues/515
 func TestMissingParentFolder(t *testing.T) {
 	testutil.BindCurrentTestSetup(t)
 	testMissingParentFolder()

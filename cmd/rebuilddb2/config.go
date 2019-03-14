@@ -15,7 +15,7 @@ import (
 	flags "github.com/btcsuite/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/netparams"
+	"github.com/picfight/pfcdata/v3/netparams"
 )
 
 const (

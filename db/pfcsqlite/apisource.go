@@ -5,6 +5,7 @@
 package pfcsqlite
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -20,35 +21,38 @@ import (
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/explorer"
-	"github.com/picfight/pfcdata/mempool"
-	"github.com/picfight/pfcdata/rpcutils"
-	"github.com/picfight/pfcdata/stakedb"
-	"github.com/picfight/pfcdata/txhelpers"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/explorer"
+	"github.com/picfight/pfcdata/v3/mempool"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // wiredDB is intended to satisfy DataSourceLite interface. The block header is
 // not stored in the DB, so the RPC client is used to get it on demand.
+// updateStatusSync should be true when another object is not responsible for
+// relaying updates on the sync status (e.g. when in explorer's lite mode).
 type wiredDB struct {
 	*DBDataSaver
-	MPC      *mempool.MempoolDataCache
-	client   *rpcclient.Client
-	params   *chaincfg.Params
-	sDB      *stakedb.StakeDatabase
-	waitChan chan chainhash.Hash
+	MPC              *mempool.MempoolDataCache
+	client           *rpcclient.Client
+	params           *chaincfg.Params
+	sDB              *stakedb.StakeDatabase
+	waitChan         chan chainhash.Hash
+	updateStatusSync bool
 }
 
 func newWiredDB(DB *DB, statusC chan uint32, cl *rpcclient.Client,
-	p *chaincfg.Params, datadir string) (wiredDB, func() error) {
+	p *chaincfg.Params, datadir string, updateStatusDuringSync bool) (wiredDB, func() error) {
 	wDB := wiredDB{
-		DBDataSaver: &DBDataSaver{DB, statusC},
-		MPC:         new(mempool.MempoolDataCache),
-		client:      cl,
-		params:      p,
+		DBDataSaver:      &DBDataSaver{DB, statusC},
+		MPC:              new(mempool.MempoolDataCache),
+		client:           cl,
+		params:           p,
+		updateStatusSync: updateStatusDuringSync,
 	}
 
 	var err error
@@ -75,14 +79,14 @@ func newWiredDB(DB *DB, statusC chan uint32, cl *rpcclient.Client,
 // parameters, and a status update channel. It calls pfcsqlite.NewDB to create a
 // new DB that wrapps the sql.DB.
 func NewWiredDB(db *sql.DB, statusC chan uint32, cl *rpcclient.Client,
-	p *chaincfg.Params, datadir string) (wiredDB, func() error, error) {
+	p *chaincfg.Params, datadir string, updateStatusSync bool) (wiredDB, func() error, error) {
 	// Create the sqlite.DB
 	DB, err := NewDB(db)
 	if err != nil || DB == nil {
 		return wiredDB{}, func() error { return nil }, err
 	}
 	// Create the wiredDB
-	wDB, cleanup := newWiredDB(DB, statusC, cl, p, datadir)
+	wDB, cleanup := newWiredDB(DB, statusC, cl, p, datadir, updateStatusSync)
 	if wDB.sDB == nil {
 		err = fmt.Errorf("failed to create StakeDatabase")
 	}
@@ -92,22 +96,22 @@ func NewWiredDB(db *sql.DB, statusC chan uint32, cl *rpcclient.Client,
 // InitWiredDB creates a new wiredDB from a file containing the data for a
 // sql.DB. The other parameters are same as those for NewWiredDB.
 func InitWiredDB(dbInfo *DBInfo, statusC chan uint32, cl *rpcclient.Client,
-	p *chaincfg.Params, datadir string) (wiredDB, func() error, error) {
+	p *chaincfg.Params, datadir string, updateStatusSync bool) (wiredDB, func() error, error) {
 	db, err := InitDB(dbInfo)
 	if err != nil {
 		return wiredDB{}, func() error { return nil }, err
 	}
 
-	wDB, cleanup := newWiredDB(db, statusC, cl, p, datadir)
+	wDB, cleanup := newWiredDB(db, statusC, cl, p, datadir, updateStatusSync)
 	if wDB.sDB == nil {
 		err = fmt.Errorf("failed to create StakeDatabase")
 	}
 	return wDB, cleanup, err
 }
 
-func (db *wiredDB) NewStakeDBChainMonitor(quit chan struct{}, wg *sync.WaitGroup,
-	blockChan chan *chainhash.Hash, reorgChan chan *stakedb.ReorgData) *stakedb.ChainMonitor {
-	return db.sDB.NewChainMonitor(quit, wg, blockChan, reorgChan)
+func (db *wiredDB) NewStakeDBChainMonitor(ctx context.Context, wg *sync.WaitGroup,
+	blockChan chan *chainhash.Hash, reorgChan chan *txhelpers.ReorgData) *stakedb.ChainMonitor {
+	return db.sDB.NewChainMonitor(ctx, wg, blockChan, reorgChan)
 }
 
 func (db *wiredDB) ChargePoolInfoCache(startHeight int64) error {
@@ -158,10 +162,15 @@ func (db *wiredDB) CheckConnectivity() error {
 }
 
 // SyncDBAsync is like SyncDB except it also takes a result channel where the
-// caller should wait to receive the result.
-func (db *wiredDB) SyncDBAsync(res chan dbtypes.SyncResult,
-	quit chan struct{}, blockGetter rpcutils.BlockGetter, fetchToHeight int64) {
-	// Ensure the db is working
+// caller should wait to receive the result. When a slave BlockGetter is in use,
+// fetchToHeight is used to indicate at what height the MasterBlockGetter will
+// start sending blocks for processing. e.g. When an auxiliary DB owns the
+// MasterBlockGetter, fetchToHeight should be one past the best block in the aux
+// DB, thus putting wiredDB sync into "catch up" mode where it just pulls blocks
+// from RPC until it matches the auxDB height and coordination begins.
+func (db *wiredDB) SyncDBAsync(ctx context.Context, res chan dbtypes.SyncResult, blockGetter rpcutils.BlockGetter, fetchToHeight int64,
+	updateExplorer chan *chainhash.Hash, barLoad chan *dbtypes.ProgressBarLoad) {
+	// Ensure the db is working.
 	if err := db.CheckConnectivity(); err != nil {
 		res <- dbtypes.SyncResult{
 			Height: -1,
@@ -171,11 +180,17 @@ func (db *wiredDB) SyncDBAsync(res chan dbtypes.SyncResult,
 	}
 	// Set the first height at which the smart client should wait for the block.
 	if !(blockGetter == nil || blockGetter.(*rpcutils.BlockGate) == nil) {
+		// Set the first block notification to come on the waitChan to
+		// fetchToHeight, which as described above should be set as the first
+		// block to be processed (and relayed to this BlockGetter) by the
+		// auxiliary DB sync function. e.g. (*ChainDB).SyncChainDB.
 		log.Debugf("Setting block gate height to %d", fetchToHeight)
 		db.initWaitChan(blockGetter.WaitForHeight(fetchToHeight))
 	}
+	// Begin sync in a goroutine, and return the result when done on the
+	// provided channel.
 	go func() {
-		height, err := db.resyncDB(quit, blockGetter, fetchToHeight)
+		height, err := db.resyncDB(ctx, blockGetter, fetchToHeight, updateExplorer, barLoad)
 		res <- dbtypes.SyncResult{
 			Height: height,
 			Error:  err,
@@ -183,10 +198,10 @@ func (db *wiredDB) SyncDBAsync(res chan dbtypes.SyncResult,
 	}()
 }
 
-func (db *wiredDB) SyncDB(wg *sync.WaitGroup, quit chan struct{},
-	blockGetter rpcutils.BlockGetter, fetchToHeight int64) (int64, error) {
-	// Ensure the db is working
-	defer wg.Done()
+// SyncDB is like SyncDBAsync, except it uses synchronous execution (the call to
+// resyncDB is a blocking call).
+func (db *wiredDB) SyncDB(ctx context.Context, blockGetter rpcutils.BlockGetter, fetchToHeight int64) (int64, error) {
+	// Ensure the db is working.
 	if err := db.CheckConnectivity(); err != nil {
 		return -1, fmt.Errorf("CheckConnectivity failed: %v", err)
 	}
@@ -196,7 +211,7 @@ func (db *wiredDB) SyncDB(wg *sync.WaitGroup, quit chan struct{},
 		log.Debugf("Setting block gate height to %d", fetchToHeight)
 		db.initWaitChan(blockGetter.WaitForHeight(fetchToHeight))
 	}
-	return db.resyncDB(quit, blockGetter, fetchToHeight)
+	return db.resyncDB(ctx, blockGetter, fetchToHeight, nil, nil)
 }
 
 func (db *wiredDB) GetStakeDB() *stakedb.StakeDatabase {
@@ -216,13 +231,26 @@ func (db *wiredDB) GetBestBlockHash() (string, error) {
 	return hash, err
 }
 
+// GetBestBlockHeightHash retrieves the DB's best block hash and height.
+func (db *wiredDB) GetBestBlockHeightHash() (chainhash.Hash, int64, error) {
+	bestBlockSummary := db.GetBestBlockSummary()
+	if bestBlockSummary == nil {
+		return chainhash.Hash{}, -1, fmt.Errorf("unable to retrieve best block summary")
+	}
+	height := int64(bestBlockSummary.Height)
+	hash, err := chainhash.NewHashFromStr(bestBlockSummary.Hash)
+	return *hash, height, err
+}
+
 func (db *wiredDB) GetChainParams() *chaincfg.Params {
 	return db.params
 }
 func (db *wiredDB) GetBlockHash(idx int64) (string, error) {
 	hash, err := db.RetrieveBlockHash(idx)
 	if err != nil {
-		log.Errorf("Unable to get block hash for block number %d: %v", idx, err)
+		if err != sql.ErrNoRows {
+			log.Errorf("Unable to get block hash for block number %d: %v", idx, err)
+		}
 		return "", err
 	}
 	return hash, nil
@@ -231,22 +259,24 @@ func (db *wiredDB) GetBlockHash(idx int64) (string, error) {
 func (db *wiredDB) GetBlockHeight(hash string) (int64, error) {
 	height, err := db.RetrieveBlockHeight(hash)
 	if err != nil {
-		log.Errorf("Unable to get block height for hash %s: %v", hash, err)
+		if err != sql.ErrNoRows {
+			log.Errorf("Unable to get block height for hash %s: %v", hash, err)
+		}
 		return -1, err
 	}
 	return height, nil
 }
 
 func (db *wiredDB) GetHeader(idx int) *pfcjson.GetBlockHeaderVerboseResult {
-	return rpcutils.GetBlockHeaderVerbose(db.client, db.params, int64(idx))
+	return rpcutils.GetBlockHeaderVerbose(db.client, int64(idx))
 }
 
 func (db *wiredDB) GetBlockVerbose(idx int, verboseTx bool) *pfcjson.GetBlockVerboseResult {
-	return rpcutils.GetBlockVerbose(db.client, db.params, int64(idx), verboseTx)
+	return rpcutils.GetBlockVerbose(db.client, int64(idx), verboseTx)
 }
 
 func (db *wiredDB) GetBlockVerboseByHash(hash string, verboseTx bool) *pfcjson.GetBlockVerboseResult {
-	return rpcutils.GetBlockVerboseByHash(db.client, db.params, hash, verboseTx)
+	return rpcutils.GetBlockVerboseByHash(db.client, hash, verboseTx)
 }
 
 func (db *wiredDB) CoinSupply() (supply *apitypes.CoinSupply) {
@@ -279,13 +309,13 @@ func (db *wiredDB) BlockSubsidy(height int64, voters uint16) *pfcjson.GetBlockSu
 }
 
 func (db *wiredDB) GetTransactionsForBlock(idx int64) *apitypes.BlockTransactions {
-	blockVerbose := rpcutils.GetBlockVerbose(db.client, db.params, idx, false)
+	blockVerbose := rpcutils.GetBlockVerbose(db.client, idx, false)
 
 	return makeBlockTransactions(blockVerbose)
 }
 
 func (db *wiredDB) GetTransactionsForBlockByHash(hash string) *apitypes.BlockTransactions {
-	blockVerbose := rpcutils.GetBlockVerboseByHash(db.client, db.params, hash, false)
+	blockVerbose := rpcutils.GetBlockVerboseByHash(db.client, hash, false)
 
 	return makeBlockTransactions(blockVerbose)
 }
@@ -345,35 +375,29 @@ func (db *wiredDB) GetAllTxOut(txid string) []*apitypes.TxOut {
 		return nil
 	}
 
-	tx, err := db.client.GetRawTransaction(txhash)
+	tx, err := db.client.GetRawTransactionVerbose(txhash)
 	if err != nil {
 		log.Warnf("Unknown transaction %s", txid)
 		return nil
 	}
 
-	allTxOut0 := tx.MsgTx().TxOut
-	allTxOut := make([]*apitypes.TxOut, len(allTxOut0))
-	for i := range allTxOut {
-		var addresses []string
-		_, txAddrs, _, err := txscript.ExtractPkScriptAddrs(
-			allTxOut0[i].Version, allTxOut0[i].PkScript, db.params)
-		if err != nil {
-			log.Warnf("Unable to extract addresses from PkScript: %v", err)
-		} else {
-			addresses = make([]string, 0, len(txAddrs))
-			for i := range txAddrs {
-				addresses = append(addresses, txAddrs[i].String())
-			}
-		}
-
-		txOut := &apitypes.TxOut{
-			Value:     pfcutil.Amount(allTxOut0[i].Value).ToCoin(),
-			Version:   allTxOut0[i].Version,
-			PkScript:  hex.EncodeToString(allTxOut0[i].PkScript),
-			Addresses: addresses,
-		}
-
-		allTxOut[i] = txOut
+	txouts := tx.Vout
+	allTxOut := make([]*apitypes.TxOut, 0, len(txouts))
+	for i := range txouts {
+		// pfcjson.Vout and apitypes.TxOut are the same except for N.
+		spk := &tx.Vout[i].ScriptPubKey
+		allTxOut = append(allTxOut, &apitypes.TxOut{
+			Value:   txouts[i].Value,
+			Version: txouts[i].Version,
+			ScriptPubKeyDecoded: apitypes.ScriptPubKey{
+				Asm:       spk.Asm,
+				Hex:       spk.Hex,
+				ReqSigs:   spk.ReqSigs,
+				Type:      spk.Type,
+				Addresses: spk.Addresses,
+				CommitAmt: spk.CommitAmt,
+			},
+		})
 	}
 
 	return allTxOut
@@ -492,6 +516,7 @@ func (db *wiredDB) getRawTransaction(txid string) (*apitypes.Tx, string) {
 		spk := &tx.Vout[i].ScriptPubKeyDecoded
 		spkRaw := &txraw.Vout[i].ScriptPubKey
 		spk.Asm = spkRaw.Asm
+		spk.Hex = spkRaw.Hex
 		spk.ReqSigs = spkRaw.ReqSigs
 		spk.Type = spkRaw.Type
 		spk.Addresses = make([]string, len(spkRaw.Addresses))
@@ -630,12 +655,22 @@ func (db *wiredDB) GetSummaryByHash(hash string) *apitypes.BlockDataBasic {
 	return blockSummary
 }
 
+// GetBestBlockSummary retrieves data for the best block in the DB. If there are
+// no blocks in the table (yet), a nil pointer is returned.
 func (db *wiredDB) GetBestBlockSummary() *apitypes.BlockDataBasic {
+	// Attempt to retrieve height of best block in DB.
 	dbBlkHeight, err := db.GetBlockSummaryHeight()
 	if err != nil {
 		log.Errorf("GetBlockSummaryHeight failed: %v", err)
 		return nil
 	}
+
+	// Empty table is not an error.
+	if dbBlkHeight == -1 {
+		return nil
+	}
+
+	// Retrieve the block data.
 	blockSummary, err := db.RetrieveBlockSummary(dbBlkHeight)
 	if err != nil {
 		log.Errorf("Unable to retrieve block %d summary: %v", dbBlkHeight, err)
@@ -774,6 +809,17 @@ func (db *wiredDB) GetSDiff(idx int) float64 {
 	return sdiff
 }
 
+// RetreiveDifficulty fetches the difficulty value in the last 24hrs or
+// immediately after 24hrs.
+func (db *wiredDB) RetreiveDifficulty(timestamp int64) float64 {
+	sdiff, err := db.RetrieveDiff(timestamp)
+	if err != nil {
+		log.Errorf("Unable to retrieve difficulty: %v", err)
+		return -1
+	}
+	return sdiff
+}
+
 func (db *wiredDB) GetSDiffRange(idx0, idx1 int) []float64 {
 	sdiffs, err := db.RetrieveSDiffRange(int64(idx0), int64(idx1))
 	if err != nil {
@@ -821,8 +867,15 @@ func (db *wiredDB) GetAddressTransactionsWithSkip(addr string, count, skip int) 
 		return nil
 	}
 	txs, err := db.client.SearchRawTransactionsVerbose(address, skip, count, false, true, nil)
+	if err != nil && err.Error() == "-32603: No Txns available" {
+		log.Debugf("GetAddressTransactionsWithSkip: No transactions found for address %s: %v", addr, err)
+		return &apitypes.Address{
+			Address:      addr,
+			Transactions: make([]*apitypes.AddressTxShort, 0), // not nil for JSON formatting
+		}
+	}
 	if err != nil {
-		log.Warnf("GetAddressTransactions failed for address %s: %v", addr, err)
+		log.Errorf("GetAddressTransactionsWithSkip failed for address %s: %v", addr, err)
 		return nil
 	}
 	tx := make([]*apitypes.AddressTxShort, 0, len(txs))
@@ -888,6 +941,7 @@ func (db *wiredDB) GetAddressTransactionsRawWithSkip(addr string, count int, ski
 			spk := &tx.Vout[j].ScriptPubKeyDecoded
 			spkRaw := &txs[i].Vout[j].ScriptPubKey
 			spk.Asm = spkRaw.Asm
+			spk.Hex = spkRaw.Hex
 			spk.ReqSigs = spkRaw.ReqSigs
 			spk.Type = spkRaw.Type
 			spk.Addresses = make([]string, len(spkRaw.Addresses))
@@ -905,12 +959,15 @@ func (db *wiredDB) GetAddressTransactionsRawWithSkip(addr string, count int, ski
 	return txarray
 }
 
-func makeExplorerBlockBasic(data *pfcjson.GetBlockVerboseResult) *explorer.BlockBasic {
+func makeExplorerBlockBasic(data *pfcjson.GetBlockVerboseResult, params *chaincfg.Params) *explorer.BlockBasic {
+	index := dbtypes.CalculateWindowIndex(data.Height, params.StakeDiffWindowSize)
 	block := &explorer.BlockBasic{
+		WindowIndx:     index,
 		Height:         data.Height,
 		Hash:           data.Hash,
 		Size:           data.Size,
 		Valid:          true, // we do not know this, TODO with DB v2
+		MainChain:      true,
 		Voters:         data.Voters,
 		Transactions:   len(data.RawTx),
 		FreshStake:     data.FreshStake,
@@ -974,6 +1031,13 @@ func makeExplorerAddressTx(data *pfcjson.SearchRawTransactionsResult, address st
 	tx.FormattedTime = t.Format("2006-01-02 15:04:05")
 	tx.Confirmations = data.Confirmations
 
+	msgTx, err := txhelpers.MsgTxFromHex(data.Hex)
+	if err == nil {
+		tx.TxType = txhelpers.DetermineTxTypeString(msgTx)
+	} else {
+		log.Warn("makeExplorerAddressTx cannot get tx type", err)
+	}
+
 	for i := range data.Vin {
 		if data.Vin[i].PrevOut != nil && len(data.Vin[i].PrevOut.Addresses) > 0 {
 			if data.Vin[i].PrevOut.Addresses[0] == address {
@@ -1000,7 +1064,23 @@ func (db *wiredDB) GetExplorerBlocks(start int, end int) []*explorer.BlockBasic 
 		data := db.GetBlockVerbose(i, true)
 		block := new(explorer.BlockBasic)
 		if data != nil {
-			block = makeExplorerBlockBasic(data)
+			block = makeExplorerBlockBasic(data, db.params)
+		}
+		summaries = append(summaries, block)
+	}
+	return summaries
+}
+
+func (db *wiredDB) GetExplorerFullBlocks(start int, end int) []*explorer.BlockInfo {
+	if start < end {
+		return nil
+	}
+	summaries := make([]*explorer.BlockInfo, 0, start-end)
+	for i := start; i > end; i-- {
+		data := db.GetBlockVerbose(i, true)
+		block := new(explorer.BlockInfo)
+		if data != nil {
+			block = db.GetExplorerBlock(data.Hash)
 		}
 		summaries = append(summaries, block)
 	}
@@ -1014,9 +1094,11 @@ func (db *wiredDB) GetExplorerBlock(hash string) *explorer.BlockInfo {
 		return nil
 	}
 
+	b := makeExplorerBlockBasic(data, db.params)
+
 	// Explorer Block Info
 	block := &explorer.BlockInfo{
-		BlockBasic:            makeExplorerBlockBasic(data),
+		BlockBasic:            b,
 		Version:               data.Version,
 		Confirmations:         data.Confirmations,
 		StakeRoot:             data.StakeRoot,
@@ -1033,11 +1115,13 @@ func (db *wiredDB) GetExplorerBlock(hash string) *explorer.BlockInfo {
 		PreviousHash:          data.PreviousHash,
 		NextHash:              data.NextHash,
 		StakeValidationHeight: db.params.StakeValidationHeight,
+		AllTxs:                (uint32(b.Voters) + uint32(b.Transactions) + uint32(b.FreshStake)),
+		Subsidy:               db.BlockSubsidy(b.Height, b.Voters),
 	}
 
-	votes := make([]*explorer.TxBasic, 0, block.Voters)
-	revocations := make([]*explorer.TxBasic, 0, block.Revocations)
-	tickets := make([]*explorer.TxBasic, 0, block.FreshStake)
+	votes := make([]*explorer.TrimmedTxInfo, 0, block.Voters)
+	revocations := make([]*explorer.TrimmedTxInfo, 0, block.Revocations)
+	tickets := make([]*explorer.TrimmedTxInfo, 0, block.FreshStake)
 
 	for _, tx := range data.RawSTx {
 		msgTx, err := txhelpers.MsgTxFromHex(tx.Hex)
@@ -1047,41 +1131,44 @@ func (db *wiredDB) GetExplorerBlock(hash string) *explorer.BlockInfo {
 		}
 		switch stake.DetermineTxType(msgTx) {
 		case stake.TxTypeSSGen:
-			stx := makeExplorerTxBasic(tx, msgTx, db.params)
+			stx := trimmedTxInfoFromMsgTx(tx, msgTx, db.params)
 			// Fees for votes should be zero, but if the transaction was created
 			// with unmatched inputs/outputs then the remainder becomes a fee.
 			// Account for this possibility by calculating the fee for votes as
 			// well.
 			votes = append(votes, stx)
 		case stake.TxTypeSStx:
-			stx := makeExplorerTxBasic(tx, msgTx, db.params)
+			stx := trimmedTxInfoFromMsgTx(tx, msgTx, db.params)
 			tickets = append(tickets, stx)
 		case stake.TxTypeSSRtx:
-			stx := makeExplorerTxBasic(tx, msgTx, db.params)
+			stx := trimmedTxInfoFromMsgTx(tx, msgTx, db.params)
 			revocations = append(revocations, stx)
 		}
 	}
 
-	txs := make([]*explorer.TxBasic, 0, block.Transactions)
+	txs := make([]*explorer.TrimmedTxInfo, 0, block.Transactions)
 	for _, tx := range data.RawTx {
 		msgTx, err := txhelpers.MsgTxFromHex(tx.Hex)
 		if err != nil {
-			continue
+			log.Errorf("Unknown transaction %s: %v", tx.Txid, err)
+			return nil
 		}
-		exptx := makeExplorerTxBasic(tx, msgTx, db.params)
+
+		exptx := trimmedTxInfoFromMsgTx(tx, msgTx, db.params)
 		for _, vin := range tx.Vin {
 			if vin.IsCoinBase() {
-				exptx.Fee, exptx.FeeRate = 0.0, 0.0
+				exptx.Fee, exptx.FeeRate, exptx.Fees = 0.0, 0.0, 0.0
 			}
 		}
 		txs = append(txs, exptx)
 	}
+
 	block.Tx = txs
 	block.Votes = votes
 	block.Revs = revocations
 	block.Tickets = tickets
 
-	sortTx := func(txs []*explorer.TxBasic) {
+	sortTx := func(txs []*explorer.TrimmedTxInfo) {
 		sort.Slice(txs, func(i, j int) bool {
 			return txs[i].Total > txs[j].Total
 		})
@@ -1092,13 +1179,13 @@ func (db *wiredDB) GetExplorerBlock(hash string) *explorer.BlockInfo {
 	sortTx(block.Revs)
 	sortTx(block.Tickets)
 
-	getTotalFee := func(txs []*explorer.TxBasic) (total pfcutil.Amount) {
+	getTotalFee := func(txs []*explorer.TrimmedTxInfo) (total pfcutil.Amount) {
 		for _, tx := range txs {
 			total += tx.Fee
 		}
 		return
 	}
-	getTotalSent := func(txs []*explorer.TxBasic) (total pfcutil.Amount) {
+	getTotalSent := func(txs []*explorer.TrimmedTxInfo) (total pfcutil.Amount) {
 		for _, tx := range txs {
 			amt, err := pfcutil.NewAmount(tx.Total)
 			if err != nil {
@@ -1110,10 +1197,28 @@ func (db *wiredDB) GetExplorerBlock(hash string) *explorer.BlockInfo {
 	}
 	block.TotalSent = (getTotalSent(block.Tx) + getTotalSent(block.Revs) +
 		getTotalSent(block.Tickets) + getTotalSent(block.Votes)).ToCoin()
-	block.MiningFee = getTotalFee(block.Tx) + getTotalFee(block.Revs) +
-		getTotalFee(block.Tickets) + getTotalFee(block.Votes)
+	block.MiningFee = (getTotalFee(block.Tx) + getTotalFee(block.Revs) +
+		getTotalFee(block.Tickets) + getTotalFee(block.Votes)).ToCoin()
 
 	return block
+}
+
+func trimmedTxInfoFromMsgTx(txraw pfcjson.TxRawResult, msgTx *wire.MsgTx, params *chaincfg.Params) *explorer.TrimmedTxInfo {
+	txBasic := makeExplorerTxBasic(txraw, msgTx, params)
+
+	voteValid := false
+	if txBasic.VoteInfo != nil {
+		voteValid = txBasic.VoteInfo.Validation.Validity
+	}
+
+	tx := &explorer.TrimmedTxInfo{
+		TxBasic:   txBasic,
+		Fees:      txBasic.Fee.ToCoin(),
+		VinCount:  len(txraw.Vin),
+		VoutCount: len(txraw.Vout),
+		VoteValid: voteValid,
+	}
+	return tx
 }
 
 func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
@@ -1124,7 +1229,7 @@ func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
 	}
 	txraw, err := db.client.GetRawTransactionVerbose(txhash)
 	if err != nil {
-		log.Errorf("GetRawTransactionVerbose failed for %v: %v", txhash, err)
+		log.Warnf("GetRawTransactionVerbose failed for %v: %v", txhash, err)
 		return nil
 	}
 	msgTx, err := txhelpers.MsgTxFromHex(txraw.Hex)
@@ -1172,6 +1277,7 @@ func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
 			},
 			Addresses:       addresses,
 			FormattedAmount: humanize.Commaf(ValueIn.ToCoin()),
+			Index:           uint32(i),
 		})
 	}
 	tx.Vin = inputs
@@ -1225,6 +1331,7 @@ func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
 			OP_RETURN:       opReturn,
 			Type:            vout.ScriptPubKey.Type,
 			Spent:           txout == nil,
+			Index:           vout.N,
 		})
 	}
 	tx.Vout = outputs
@@ -1235,51 +1342,45 @@ func (db *wiredDB) GetExplorerTx(txid string) *explorer.TxInfo {
 	return tx
 }
 
-func (db *wiredDB) GetExplorerAddress(address string, count, offset int64) *explorer.AddressInfo {
-	addr, err := pfcutil.DecodeAddress(address)
-	if err != nil {
-		log.Infof("Invalid address %s: %v", address, err)
-		return nil
-	}
-
-	{
-		// Short circuit the transaction and balance queries if the provided address
-		// is the zero pubkey hash address commonly used for zero value
-		// sstxchange-tagged outputs.
-		isDummyAddress := IsZeroHashP2PHKAddress(address, db.params)
-		if isDummyAddress {
-			return &explorer.AddressInfo{
-				Address:         address,
-				Balance:         new(explorer.AddressBalance),
-				UnconfirmedTxns: new(explorer.AddressTransactions),
-				IsDummyAddress:  true,
-				Fullmode:        true,
-			}
-		}
+func (db *wiredDB) GetExplorerAddress(address string, count, offset int64) (*explorer.AddressInfo, error) {
+	// Validate the address.
+	addr, _, addrErr := txhelpers.AddressValidation(address, db.params)
+	switch addrErr {
+	case txhelpers.AddressErrorNoError:
+		// All good!
+	case txhelpers.AddressErrorZeroAddress:
+		// Short circuit the transaction and balance queries if the provided
+		// address is the zero pubkey hash address commonly used for zero
+		// value sstxchange-tagged outputs.
+		return &explorer.AddressInfo{
+			Address:         address,
+			IsDummyAddress:  true,
+			Balance:         new(explorer.AddressBalance),
+			UnconfirmedTxns: new(explorer.AddressTransactions),
+			Fullmode:        true,
+		}, nil
+	default:
+		return nil, addrErr
 	}
 
 	maxcount := explorer.MaxAddressRows
 	txs, err := db.client.SearchRawTransactionsVerbose(addr,
 		int(offset), int(maxcount), true, true, nil)
-	if err != nil && err.Error() == "-32603: No Txns available" {
-		log.Warnf("GetAddressTransactionsRaw failed for address %s: %v", addr, err)
-
-		if !ValidateNetworkAddress(addr, db.params) {
-			log.Warnf("Address %s is not valid for this network", address)
-			return nil
+	if err != nil {
+		if err.Error() == "-32603: No Txns available" {
+			log.Tracef("GetExplorerAddress: No transactions found for address %s: %v", addr, err)
+			return &explorer.AddressInfo{
+				Address:    address,
+				MaxTxLimit: maxcount,
+			}, nil
 		}
-		return &explorer.AddressInfo{
-			Address:    address,
-			MaxTxLimit: maxcount,
-		}
-	} else if err != nil {
-		log.Warnf("GetAddressTransactionsRaw failed for address %s: %v", addr, err)
-		return nil
+		log.Warnf("GetExplorerAddress: SearchRawTransactionsVerbose failed for address %s: %v", addr, err)
+		return nil, txhelpers.AddressErrorUnknown
 	}
 
 	addressTxs := make([]*explorer.AddressTx, 0, len(txs))
 	for i, tx := range txs {
-		if int64(i) == count {
+		if int64(i) == count { // count >= len(txs)
 			break
 		}
 		addressTxs = append(addressTxs, makeExplorerAddressTx(tx, address))
@@ -1344,25 +1445,7 @@ func (db *wiredDB) GetExplorerAddress(address string, count, offset int64) *expl
 		KnownTransactions: numberMaxOfTx,
 		KnownFundingTxns:  numReceiving,
 		KnownSpendingTxns: numSpending,
-	}
-}
-
-// IsZeroHashP2PHKAddress checks if the given address is the dummy (zero pubkey
-// hash) address. See https://github.com/picfight/pfcdata/issues/358 for details.
-func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) bool {
-	zeroed := [20]byte{}
-	// expecting DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg address for mainnet
-	address, err := pfcutil.NewAddressPubKeyHash(zeroed[:], params, 0)
-	if err != nil {
-		log.Errorf("Incorrect pub key hash or invalid network params %v", params)
-		return false
-	}
-	zeroAddress := address.String()
-	return checkAddressString == zeroAddress
-}
-
-func ValidateNetworkAddress(address pfcutil.Address, p *chaincfg.Params) bool {
-	return address.IsForNet(p)
+	}, nil
 }
 
 // CountUnconfirmedTransactions returns the number of unconfirmed transactions

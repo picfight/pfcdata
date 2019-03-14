@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/picfight/pfcd/pfcjson"
-	apitypes "github.com/picfight/pfcdata/api/types"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
 // MempoolDataCache models the basic data for the mempool cache

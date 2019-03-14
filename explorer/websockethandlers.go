@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"golang.org/x/net/websocket"
 )
 
+// ErrWsClosed is the error message text used websocket Conn.Close tries to
+// close an already closed connection.
 var ErrWsClosed = "use of closed network connection"
 
 // RootWebsocket is the websocket handler for all pages
@@ -59,21 +62,22 @@ func (exp *explorerUI) RootWebsocket(w http.ResponseWriter, r *http.Request) {
 
 				// handle received message according to event ID
 				var webData WebSocketMessage
+				//  If the request sent is past the limit continue to the next iteration.
+				if len(msg.Message) > requestLimit {
+					log.Debug("Request size over limit")
+					webData.Message = "Request too large"
+					continue
+				}
+
 				switch msg.EventId {
 				case "decodetx":
-					webData.EventId = msg.EventId + "Resp"
-					if len(msg.Message) > requestLimit {
-						log.Debug("Request size over limit")
-						webData.Message = "Request too large"
-						break
-					}
 					log.Debugf("Received decodetx signal for hex: %.40s...", msg.Message)
 					tx, err := exp.blockData.DecodeRawTransaction(msg.Message)
 					if err == nil {
 						message, err := json.MarshalIndent(tx, "", "    ")
 						if err != nil {
 							log.Warn("Invalid JSON message: ", err)
-							webData.Message = fmt.Sprintf("Error: Could not encode JSON message")
+							webData.Message = "Error: Could not encode JSON message"
 							break
 						}
 						webData.Message = string(message)
@@ -81,13 +85,8 @@ func (exp *explorerUI) RootWebsocket(w http.ResponseWriter, r *http.Request) {
 						log.Debugf("Could not decode raw tx")
 						webData.Message = fmt.Sprintf("Error: %v", err)
 					}
+
 				case "sendtx":
-					webData.EventId = msg.EventId + "Resp"
-					if len(msg.Message) > requestLimit {
-						log.Debugf("Request size over limit")
-						webData.Message = "Request too large"
-						break
-					}
 					log.Debugf("Received sendtx signal for hex: %.40s...", msg.Message)
 					txid, err := exp.blockData.SendRawTransaction(msg.Message)
 					if err != nil {
@@ -95,19 +94,76 @@ func (exp *explorerUI) RootWebsocket(w http.ResponseWriter, r *http.Request) {
 					} else {
 						webData.Message = fmt.Sprintf("Transaction sent: %s", txid)
 					}
-				case "getmempooltxs":
-					webData.EventId = msg.EventId + "Resp"
 
-					exp.MempoolData.RLock()
-					msg, err := json.Marshal(exp.MempoolData)
-					exp.MempoolData.RUnlock()
+				case "getmempooltxs":
+					// construct mempool object with properties required in template
+					mempoolInfo := exp.TrimmedMempoolInfo()
+					// mempool fees appear incorrect, temporarily set to zero for now
+					mempoolInfo.Fees = 0
+
+					exp.pageData.RLock()
+					mempoolInfo.Subsidy = exp.pageData.HomeInfo.NBlockSubsidy
+					exp.pageData.RUnlock()
+
+					msg, err := json.Marshal(mempoolInfo)
 
 					if err != nil {
 						log.Warn("Invalid JSON message: ", err)
-						webData.Message = fmt.Sprintf("Error: Could not encode JSON message")
+						webData.Message = "Error: Could not encode JSON message"
 						break
 					}
 					webData.Message = string(msg)
+
+				case "getticketpooldata":
+					// Retrieve chart data on the given interval.
+					interval := dbtypes.ChartGroupingFromStr(msg.Message)
+					// Chart height is returned since the cache may be stale,
+					// although it is automatically updated by the first caller
+					// who requests data from a stale cache.
+					cData, gData, chartHeight, err := exp.explorerSource.TicketPoolVisualization(interval)
+					if err != nil {
+						if strings.HasPrefix(err.Error(), "unknown interval") {
+							log.Debugf("invalid ticket pool interval provided "+
+								"via TicketPoolVisualization: %s", msg.Message)
+							webData.Message = "Error: " + err.Error()
+							break
+						}
+						log.Errorf("TicketPoolVisualization error: %v", err)
+						webData.Message = "Error: failed to fetch ticketpool data"
+						break
+					}
+
+					var mp dbtypes.PoolTicketsData
+					exp.MempoolData.RLock()
+					if len(exp.MempoolData.Tickets) > 0 {
+						mp.Time = append(mp.Time, uint64(exp.MempoolData.Tickets[0].Time))
+						mp.Price = append(mp.Price, exp.MempoolData.Tickets[0].TotalOut)
+						mp.Mempool = append(mp.Mempool, uint64(len(exp.MempoolData.Tickets)))
+					} else {
+						log.Debug("No tickets exists in the mempool")
+					}
+					exp.MempoolData.RUnlock()
+
+					var data = struct {
+						ChartHeight uint64                     `json:"chartHeight"`
+						BarGraphs   []*dbtypes.PoolTicketsData `json:"barGraphs"`
+						DonutChart  *dbtypes.PoolTicketsData   `json:"donutChart"`
+						Mempool     *dbtypes.PoolTicketsData   `json:"mempool"`
+					}{
+						chartHeight,
+						cData,
+						gData,
+						&mp,
+					}
+
+					msg, err := json.Marshal(data)
+					if err != nil {
+						log.Warn("Invalid JSON message: ", err)
+						webData.Message = "Error: Could not encode JSON message"
+						break
+					}
+					webData.Message = string(msg)
+
 				case "ping":
 					log.Tracef("We've been pinged: %.40s...", msg.Message)
 					continue
@@ -115,6 +171,8 @@ func (exp *explorerUI) RootWebsocket(w http.ResponseWriter, r *http.Request) {
 					log.Warnf("Unrecognized event ID: %v", msg.EventId)
 					continue
 				}
+
+				webData.EventId = msg.EventId + "Resp"
 
 				// send the response back on the websocket
 				ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
@@ -160,12 +218,13 @@ func (exp *explorerUI) RootWebsocket(w http.ResponseWriter, r *http.Request) {
 				enc := json.NewEncoder(buff)
 				switch sig {
 				case sigNewBlock:
-					exp.NewBlockDataMtx.RLock()
+					exp.pageData.RLock()
 					enc.Encode(WebsocketBlock{
-						Block: exp.NewBlockData,
-						Extra: exp.ExtraInfo,
+						Block: exp.pageData.BlockInfo,
+						Extra: exp.pageData.HomeInfo,
 					})
-					exp.NewBlockDataMtx.RUnlock()
+					exp.pageData.RUnlock()
+
 					webData.Message = buff.String()
 				case sigMempoolUpdate:
 					exp.MempoolData.RLock()
@@ -179,6 +238,9 @@ func (exp *explorerUI) RootWebsocket(w http.ResponseWriter, r *http.Request) {
 					clientData.RLock()
 					enc.Encode(clientData.newTxs)
 					clientData.RUnlock()
+					webData.Message = buff.String()
+				case sigSyncStatus:
+					enc.Encode(SyncStatus())
 					webData.Message = buff.String()
 				}
 

@@ -5,6 +5,8 @@
 package api
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,18 +14,19 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/rpcclient"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/explorer"
-	m "github.com/picfight/pfcdata/middleware"
-	notify "github.com/picfight/pfcdata/notification"
-	"github.com/picfight/pfcdata/txhelpers"
-	appver "github.com/picfight/pfcdata/version"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/explorer"
+	m "github.com/picfight/pfcdata/v3/middleware"
+	notify "github.com/picfight/pfcdata/v3/notification"
+	"github.com/picfight/pfcdata/v3/txhelpers"
+	appver "github.com/picfight/pfcdata/v3/version"
 )
 
 // DataSourceLite specifies an interface for collecting data from the built-in
@@ -77,7 +80,7 @@ type DataSourceLite interface {
 	GetAddressTransactionsWithSkip(addr string, count, skip int) *apitypes.Address
 	GetAddressTransactionsRawWithSkip(addr string, count, skip int) []*apitypes.AddressTxRaw
 	SendRawTransaction(txhex string) (string, error)
-	GetExplorerAddress(address string, count, offset int64) *explorer.AddressInfo
+	GetExplorerAddress(address string, count, offset int64) (*explorer.AddressInfo, error)
 }
 
 // DataSourceAux specifies an interface for advanced data collection using the
@@ -93,6 +96,8 @@ type DataSourceAux interface {
 	VotesInBlock(hash string) (int16, error)
 	GetTxHistoryData(address string, addrChart dbtypes.HistoryChart,
 		chartGroupings dbtypes.ChartGrouping) (*dbtypes.ChartsData, error)
+	TicketPoolVisualization(interval dbtypes.ChartGrouping) (
+		[]*dbtypes.PoolTicketsData, *dbtypes.PoolTicketsData, uint64, error)
 }
 
 // pfcdata application context used by all route handlers
@@ -135,7 +140,7 @@ func NewContext(client *rpcclient.Client, params *chaincfg.Params, dataSource Da
 
 // StatusNtfnHandler keeps the appContext's Status up-to-date with changes in
 // node and DB status.
-func (c *appContext) StatusNtfnHandler(wg *sync.WaitGroup, quit chan struct{}) {
+func (c *appContext) StatusNtfnHandler(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 out:
 	for {
@@ -175,7 +180,7 @@ out:
 
 			summary := c.BlockData.GetBestBlockSummary()
 			if summary == nil {
-				log.Errorf("BlockData summary is nil")
+				log.Errorf("BlockData summary is nil for height %d.", height)
 				break keepon
 			}
 
@@ -197,11 +202,9 @@ out:
 			log.Errorf("New DB height (%d) and stored block data (%d, %d) not consistent.",
 				height, bdHeight, summary.Height)
 
-		case _, ok := <-quit:
-			if !ok {
-				log.Debugf("Got quit signal. Exiting block connected handler for STATUS monitor.")
-				break out
-			}
+		case <-ctx.Done():
+			log.Debugf("Got quit signal. Exiting block connected handler for STATUS monitor.")
+			break out
 		}
 	}
 }
@@ -411,6 +414,50 @@ func (c *appContext) getVoteInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, voteVersionInfo, c.getIndentQuery(r))
 }
 
+// setOutputSpends retrieves spending transaction information for each output of
+// the specified transaction. This sets the vouts[i].Spend fields for each
+// output that is spent. For unspent outputs, the Spend field remains a nil
+// pointer.
+func (c *appContext) setOutputSpends(txid string, vouts []apitypes.Vout) error {
+	if c.LiteMode {
+		apiLog.Warnf("Not setting spending transaction data in lite mode.")
+		return nil
+	}
+
+	// For each output of this transaction, look up any spending transactions,
+	// and the index of the spending transaction input.
+	spendHashes, spendVinInds, voutInds, err := c.AuxDataSource.SpendingTransactions(txid)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("unable to get spending transaction info for outputs of %s", txid)
+	}
+	if len(voutInds) > len(vouts) {
+		return fmt.Errorf("invalid spending transaction data for %s", txid)
+	}
+	for i, vout := range voutInds {
+		if int(vout) >= len(vouts) {
+			return fmt.Errorf("invalid spending transaction data (%s:%d)", txid, vout)
+		}
+		vouts[vout].Spend = &apitypes.TxInputID{
+			Hash:  spendHashes[i],
+			Index: spendVinInds[i],
+		}
+	}
+	return nil
+}
+
+// setTxSpends retrieves spending transaction information for each output of the
+// given transaction. This sets the tx.Vout[i].Spend fields for each output that
+// is spent. For unspent outputs, the Spend field remains a nil pointer.
+func (c *appContext) setTxSpends(tx *apitypes.Tx) error {
+	return c.setOutputSpends(tx.TxID, tx.Vout)
+}
+
+// setTrimmedTxSpends is like setTxSpends except that it operates on a TrimmedTx
+// instead of a Tx.
+func (c *appContext) setTrimmedTxSpends(tx *apitypes.TrimmedTx) error {
+	return c.setOutputSpends(tx.TxID, tx.Vout)
+}
+
 func (c *appContext) getTransaction(w http.ResponseWriter, r *http.Request) {
 	txid := m.GetTxIDCtx(r)
 	if txid == "" {
@@ -423,6 +470,21 @@ func (c *appContext) getTransaction(w http.ResponseWriter, r *http.Request) {
 		apiLog.Errorf("Unable to get transaction %s", txid)
 		http.Error(w, http.StatusText(422), 422)
 		return
+	}
+
+	// Look up any spending transactions for each output of this transaction.
+	// This is only done in full mode, and when the client requests spends with
+	// the URL query ?spends=true.
+	spendParam := r.URL.Query().Get("spends")
+	withSpends := spendParam == "1" || strings.EqualFold(spendParam, "true")
+
+	if withSpends && !c.LiteMode {
+		if err := c.setTxSpends(tx); err != nil {
+			apiLog.Errorf("Unable to get spending transaction info for outputs of %s: %v", txid, err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError),
+				http.StatusInternalServerError)
+			return
+		}
 	}
 
 	writeJSON(w, tx, c.getIndentQuery(r))
@@ -454,6 +516,21 @@ func (c *appContext) getDecodedTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look up any spending transactions for each output of this transaction.
+	// This is only done in full mode, and when the client requests spends with
+	// the URL query ?spends=true.
+	spendParam := r.URL.Query().Get("spends")
+	withSpends := spendParam == "1" || strings.EqualFold(spendParam, "true")
+
+	if withSpends && !c.LiteMode {
+		if err := c.setTrimmedTxSpends(tx); err != nil {
+			apiLog.Errorf("Unable to get spending transaction info for outputs of %s: %v", txid, err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError),
+				http.StatusInternalServerError)
+			return
+		}
+	}
+
 	writeJSON(w, tx, c.getIndentQuery(r))
 }
 
@@ -464,6 +541,12 @@ func (c *appContext) getTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look up any spending transactions for each output of this transaction.
+	// This is only done in full mode, and when the client requests spends with
+	// the URL query ?spends=true.
+	spendParam := r.URL.Query().Get("spends")
+	withSpends := spendParam == "1" || strings.EqualFold(spendParam, "true")
+
 	txns := make([]*apitypes.Tx, 0, len(txids))
 	for i := range txids {
 		tx := c.BlockData.GetRawTransaction(txids[i])
@@ -472,6 +555,17 @@ func (c *appContext) getTransactions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(422), 422)
 			return
 		}
+
+		if withSpends && !c.LiteMode {
+			if err := c.setTxSpends(tx); err != nil {
+				apiLog.Errorf("Unable to get spending transaction info for outputs of %s: %v",
+					txids[i], err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError),
+					http.StatusInternalServerError)
+				return
+			}
+		}
+
 		txns = append(txns, tx)
 	}
 
@@ -720,6 +814,41 @@ func (c *appContext) getSSTxDetails(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, sstxDetails, c.getIndentQuery(r))
+}
+
+func (c *appContext) getTicketPoolByDate(w http.ResponseWriter, r *http.Request) {
+	if c.LiteMode {
+		// not available in lite mode
+		http.Error(w, "not available in lite mode", 422)
+		return
+	}
+
+	tp := m.GetTpCtx(r)
+	// default to day if no grouping was sent
+	if tp == "" {
+		tp = "day"
+	}
+
+	// The db queries are fast enough that it makes sense to call
+	// TicketPoolVisualization here even though it returns a lot of data not
+	// needed by this request.
+	interval := dbtypes.ChartGroupingFromStr(tp)
+	barCharts, _, height, err := c.AuxDataSource.TicketPoolVisualization(interval)
+	if err != nil {
+		apiLog.Errorf("Unable to get ticket pool by date: %v", err)
+		http.Error(w, http.StatusText(422), 422)
+		return
+	}
+
+	tpResponse := struct {
+		Height     uint64                   `json:"height"`
+		PoolByDate *dbtypes.PoolTicketsData `json:"ticket_pool_data"`
+	}{
+		height,
+		barCharts[0], // purchase time distribution
+	}
+
+	writeJSON(w, tpResponse, c.getIndentQuery(r))
 }
 
 func (c *appContext) getBlockSize(w http.ResponseWriter, r *http.Request) {
@@ -1172,7 +1301,7 @@ func (c *appContext) getTicketPriceChartData(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	chartData, ok := explorer.GetChartTypeData("ticket-price")
+	chartData, ok := explorer.ChartTypeData("ticket-price")
 	if !ok {
 		http.NotFound(w, r)
 		log.Warnf(`No data matching "ticket-price" chart Type was found`)
@@ -1181,14 +1310,14 @@ func (c *appContext) getTicketPriceChartData(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, chartData, c.getIndentQuery(r))
 }
 
-func (c *appContext) getChartTypeData(w http.ResponseWriter, r *http.Request) {
+func (c *appContext) ChartTypeData(w http.ResponseWriter, r *http.Request) {
 	if c.LiteMode {
 		http.Error(w, "not available in lite mode", 422)
 		return
 	}
 
 	chartType := m.GetChartTypeCtx(r)
-	chartData, ok := explorer.GetChartTypeData(chartType)
+	chartData, ok := explorer.ChartTypeData(chartType)
 	if !ok {
 		http.NotFound(w, r)
 		log.Warnf(`No data matching "%s" chart Type was found`, chartType)
@@ -1296,10 +1425,11 @@ func (c *appContext) getBlockHeightCtx(r *http.Request) int64 {
 func (c *appContext) getBlockHashCtx(r *http.Request) string {
 	hash := m.GetBlockHashCtx(r)
 	if hash == "" {
+		idx := int64(m.GetBlockIndexCtx(r))
 		var err error
-		hash, err = c.BlockData.GetBlockHash(int64(m.GetBlockIndexCtx(r)))
+		hash, err = c.BlockData.GetBlockHash(idx)
 		if err != nil {
-			apiLog.Errorf("Unable to GetBlockHash: %v", err)
+			apiLog.Errorf("Unable to GetBlockHash(%d): %v", idx, err)
 		}
 	}
 	return hash

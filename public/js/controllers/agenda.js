@@ -44,6 +44,7 @@ function barchartPlotter(e) {
         }, 0)
         data.series.forEach((series) => {
             let percentage = ((series.y*100)/total).toFixed(2)
+            html = `<span style="color:#2d2d2d;">`+html+`</span>`
             html += `<br>${series.dashHTML}<span style="color: ${series.color};">${series.labelHTML}: ${series.yHTML} (${percentage}%)</span>`
         });
         return html
@@ -94,7 +95,7 @@ function barchartPlotter(e) {
 
         connect() {
             var _this = this
-            $.getScript("/js/dygraph.min.js", function() { 
+            $.getScript("/js/dygraphs.min.js", function() {
                 _this.drawCharts()
             })
         }
@@ -127,5 +128,4 @@ function barchartPlotter(e) {
             );
         }
     })
-
 })()

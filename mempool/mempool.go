@@ -5,6 +5,7 @@ package mempool
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +21,7 @@ import (
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
-	apitypes "github.com/picfight/pfcdata/api/types"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
 // NewTx models data for a new transaction
@@ -38,6 +39,7 @@ type MempoolInfo struct {
 }
 
 type mempoolMonitor struct {
+	ctx            context.Context
 	mpoolInfo      MempoolInfo
 	newTicketLimit int32
 	minInterval    time.Duration
@@ -45,16 +47,15 @@ type mempoolMonitor struct {
 	collector      *mempoolDataCollector
 	dataSavers     []MempoolDataSaver
 	newTxHash      chan *NewTx
-	quit           chan struct{}
 	wg             *sync.WaitGroup
 }
 
 // NewMempoolMonitor creates a new mempoolMonitor
-func NewMempoolMonitor(collector *mempoolDataCollector,
-	savers []MempoolDataSaver, newTxChan chan *NewTx,
-	quit chan struct{}, wg *sync.WaitGroup, newTicketLimit int32,
+func NewMempoolMonitor(ctx context.Context, collector *mempoolDataCollector, savers []MempoolDataSaver,
+	newTxChan chan *NewTx, wg *sync.WaitGroup, newTicketLimit int32,
 	mini time.Duration, maxi time.Duration, mpi *MempoolInfo) *mempoolMonitor {
 	return &mempoolMonitor{
+		ctx:            ctx,
 		mpoolInfo:      *mpi,
 		newTicketLimit: newTicketLimit,
 		minInterval:    mini,
@@ -62,7 +63,6 @@ func NewMempoolMonitor(collector *mempoolDataCollector,
 		collector:      collector,
 		dataSavers:     savers,
 		newTxHash:      newTxChan,
-		quit:           quit,
 		wg:             wg,
 	}
 }
@@ -217,7 +217,7 @@ func (p *mempoolMonitor) TxHandler(client *rpcclient.Client) {
 				}
 			}
 
-		case <-p.quit:
+		case <-p.ctx.Done():
 			log.Debugf("Quitting OnTxAccepted (new tx in mempool) handler.")
 			return
 		}
@@ -302,7 +302,7 @@ func (m *MempoolData) GetNumTickets() uint32 {
 }
 
 type mempoolDataCollector struct {
-	mtx          sync.Mutex
+	sync.Mutex
 	pfcdChainSvr *rpcclient.Client
 	activeChain  *chaincfg.Params
 }
@@ -310,7 +310,6 @@ type mempoolDataCollector struct {
 // NewMempoolDataCollector creates a new mempoolDataCollector.
 func NewMempoolDataCollector(pfcdChainSvr *rpcclient.Client, params *chaincfg.Params) *mempoolDataCollector {
 	return &mempoolDataCollector{
-		mtx:          sync.Mutex{},
 		pfcdChainSvr: pfcdChainSvr,
 		activeChain:  params,
 	}
@@ -320,8 +319,8 @@ func NewMempoolDataCollector(pfcdChainSvr *rpcclient.Client, params *chaincfg.Pa
 func (t *mempoolDataCollector) Collect() (*MempoolData, error) {
 	// In case of a very fast block, make sure previous call to collect is not
 	// still running, or pfcd may be mad.
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
+	t.Lock()
+	defer t.Unlock()
 
 	// Time this function
 	defer func(start time.Time) {

@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	m "github.com/picfight/pfcdata/middleware"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	m "github.com/picfight/pfcdata/v3/middleware"
 )
 
 type contextKey int

@@ -37,3 +37,10 @@ test-data-repo
 pfcdata-testdata-gitlfs
 pfcdata-testdata
 .vendor-new
+v3
+tmp/runner-build
+node_modules/
+package-lock.json
+public/dist/
+public/js/dist/
+public/**/*.gz

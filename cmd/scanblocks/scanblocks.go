@@ -13,9 +13,9 @@ import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	"github.com/picfight/pfcdata/rpcutils"
-	"github.com/picfight/pfcdata/txhelpers"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 var host = flag.String("host", "127.0.0.1:9709", "node RPC host:port")
@@ -95,7 +95,7 @@ func mainCore() int {
 			Difficulty: diffRatio,
 			StakeDiff:  pfcutil.Amount(header.SBits).ToCoin(),
 			Time:       header.Timestamp.Unix(),
-			PoolInfo: apitypes.TicketPoolInfo{
+			PoolInfo: &apitypes.TicketPoolInfo{
 				Size: header.PoolSize,
 			},
 		}

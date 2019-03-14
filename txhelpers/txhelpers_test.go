@@ -9,11 +9,13 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcdata/semver"
+	"github.com/picfight/pfcdata/v3/semver"
+	"github.com/picfight/pfcdata/v3/testutil"
 )
 
 type TxGetter struct {
@@ -211,5 +213,76 @@ func TestFilterHashSlice(t *testing.T) {
 
 	if HashInSlice(blackList[2], hashList) {
 		t.Errorf("filtered slice still has hash %v", blackList[2])
+	}
+}
+
+func TestGenesisTxHash(t *testing.T) {
+	// Mainnet
+	genesisTxHash := GenesisTxHash(&chaincfg.MainNetParams).String()
+	if genesisTxHash == "" {
+		t.Errorf("Failed to get genesis transaction hash for mainnet.")
+	}
+	t.Logf("Genesis transaction hash (mainnet): %s", genesisTxHash)
+
+	mainnetExpectedTxHash := "e7dfbceac9fccd6025c70a1dfa9302b3e7b5aa22fa51c98a69164ad403d60a2c"
+	if genesisTxHash != mainnetExpectedTxHash {
+		t.Errorf("Incorrect genesis transaction hash (mainnet). Expected %s, got %s",
+			mainnetExpectedTxHash, genesisTxHash)
+	}
+
+	// Simnet
+	genesisTxHash = GenesisTxHash(&chaincfg.SimNetParams).String()
+	if genesisTxHash == "" {
+		t.Errorf("Failed to get genesis transaction hash for simnet.")
+	}
+	t.Logf("Genesis transaction hash (mainnet): %s", genesisTxHash)
+
+	simnetExpectedTxHash := "a216ea043f0d481a072424af646787794c32bcefd3ed181a090319bbf8a37105"
+	if genesisTxHash != simnetExpectedTxHash {
+		t.Errorf("Incorrect genesis transaction hash (simnet). Expected %s, got %s",
+			mainnetExpectedTxHash, genesisTxHash)
+	}
+}
+
+func TestAddressErrors(t *testing.T) {
+	if AddressErrorNoError != nil {
+		t.Errorf("txhelpers.AddressErrorNoError must be <nil>")
+	}
+}
+
+func TestIsZeroHashP2PHKAddress(t *testing.T) {
+	testutil.BindCurrentTestSetup(t)
+
+	mainnetDummy := "DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg"
+	testnetDummy := "TsR28UZRprhgQQhzWns2M6cAwchrNVvbYq2"
+	simnetDummy := "SsUMGgvWLcixEeHv3GT4TGYyez4kY79RHth"
+
+	positiveTest := true
+	negativeTest := !positiveTest
+
+	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.MainNetParams, positiveTest)
+	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.TestNet3Params, positiveTest)
+	testIsZeroHashP2PHKAddress(simnetDummy, &chaincfg.SimNetParams, positiveTest)
+
+	// wrong network
+	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.SimNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.MainNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress(simnetDummy, &chaincfg.TestNet3Params, negativeTest)
+
+	// wrong address
+	testIsZeroHashP2PHKAddress("", &chaincfg.SimNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress("", &chaincfg.MainNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress("", &chaincfg.TestNet3Params, negativeTest)
+
+}
+
+func testIsZeroHashP2PHKAddress(expectedAddress string, params *chaincfg.Params, expectedTestResult bool) {
+	result := IsZeroHashP2PHKAddress(expectedAddress, params)
+	if expectedTestResult != result {
+		testutil.ReportTestFailed(
+			"IsZeroHashP2PHKAddress(%v) returned <%v>, expected <%v>",
+			expectedAddress,
+			result,
+			expectedTestResult)
 	}
 }

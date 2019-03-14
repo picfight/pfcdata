@@ -6,14 +6,13 @@
 <body class="{{ theme }}">
     {{template "navbar" . }}
     {{with .Data}}
-    {{$heights := $.ConfirmHeight}}
     {{$TxnCount := .TxnCount}}
     {{$txType := .TxnType}}
     <div class="container main" data-controller="address">
         <div class="row">
             <div class="col-md-8 col-sm-6">
                 <h4>Address</h4>
-                <div class="mono" data-target="address.addr"
+                <div class="mono" data-target="address.addr" data-address="{{.Address}}"
                     id="{{$.OldestTxTime}}" style="margin-bottom: 12px;">
                     {{.Address}}<a
                         id="qrcode-init"
@@ -30,18 +29,19 @@
                 </div>
                 {{if .IsDummyAddress}}
                   <br/>
-                  This a is dummy address, typically used for unspendable ticket change outputs.<br/>
+                  This is a dummy address, typically used for unspendable ticket change outputs.<br/>
                   <br/>
-                {{end}}
-                <div class="btn-group mr-auto mb-0 align-bottom address-btn" 
-                    data-toggle="buttons" 
-                    data-target="address.btns" 
+                {{else}}
+                <div class="btn-group mr-auto mb-0 align-bottom address-btn"
+                    data-toggle="buttons"
+                    data-target="address.btns"
                     data-action="click->address#changeView"
                 >
                     <input id="addr-btn" type="button" class="btn btn_sm btn-active" value="List" name="list">
                     <input id="addr-btn" type="button" class="btn btn_sm" value="Charts"
                     name="chart" {{if $.IsLiteMode}}disabled{{end}}>
-                </div> 
+                </div>
+                {{end}}
             </div>
             <div class="col-md-4 col-sm-6 d-flex pb-3">
                 <table>
@@ -49,7 +49,7 @@
                         <td id="{{.Balance.TotalUnspent}}" class="pr-2 lh1rem vam text-right xs-w91"
                             data-target="address.unspent">TOTAL UNSPENT</td>
                         {{if .Fullmode}}
-                            <td class="fs28 mono nowrap fs16-decimal d-flex align-items-center justify-content-end">
+                            <td class="fs28 mono nowrap fs16-decimal d-flex align-items-center justify-content-end rm-spacing">
                                 {{if .Balance}}
                                     {{template "decimalParts" (amountAsDecimalParts .Balance.TotalUnspent true)}}<span class="pl-1 unit">PFC</span>
                                 {{else}}
@@ -67,7 +67,7 @@
                     <tr>
                         <td class="text-right pr-2">RECEIVED</td>
                         {{if .Fullmode}}
-                            <td class="mono nowrap text-right">
+                            <td class="mono nowrap text-right rm-spacing justify-content-end">
                                 {{if .Balance}}
                                     {{$received := add .Balance.TotalSpent .Balance.TotalUnspent}}
                                     {{template "decimalParts" (amountAsDecimalParts $received true)}}<span class="pl-1 unit">PFC</span>
@@ -86,7 +86,7 @@
                     <tr>
                         <td class="text-right pr-2">SPENT</td>
                         {{if .Fullmode}}
-                            <td class="mono nowrap text-right">
+                            <td class="mono nowrap text-right rm-spacing justify-content-end">
                                 {{if .Balance}}
                                     {{template "decimalParts" (amountAsDecimalParts .Balance.TotalSpent true)}}<span class="pl-1 unit">PFC</span>
                                 {{else}}
@@ -113,6 +113,7 @@
             </div>
         </div>
 
+        {{if not .IsDummyAddress}}
         <div class="row">
             <div class="col">
                 <div class="d-flex flex-wrap align-items-center justify-content-end mb-1">
@@ -207,6 +208,7 @@
                     {{if .Transactions}}
                     <table class="table table-mono-cells table-sm striped" style="width: 100%;">
                         <thead>
+                            <th>Tx Type</th>
                             <th>Input/Output ID</th>
                             {{if eq $txType "merged_debit"}}
                                 <th># of Input(s)</th>
@@ -219,26 +221,29 @@
                                 <th>Debit PFC</th>
                             {{end}}
                             <th>Time UTC</th>
-                            <th>Age</th>
+                            <th class="jsonly">Age</th>
                             <th>Confirms</th>
                             <th>Size</th>
                         </thead>
                         <tbody>
                             {{range $i, $v := .Transactions}}
-                            <tr>
+                            <tr {{if eq .Confirmations 0}} data-addr-tx-pending="{{.TxID}}" {{end}}>
                                 {{with $v}}
-                                <td><a href="/tx/{{.TxID}}" class="hash" data-keynav-priority>{{.IOID $txType}}</a></td>
+                                <td>{{.TxType}}</td>
+                                <td><a href="/tx/{{.TxID}}/{{if .IsFunding}}out{{else}}in{{end}}/{{.InOutID}}" class="hash" data-keynav-priority>{{.IOID $txType}}</a></td>
                                 {{if eq $txType "merged_debit"}}
                                     <td class="text-right">{{.MergedTxnCount}}</td>
                                 {{else}}
                                     {{if ne .ReceivedTotal 0.0}}
-                                        <td class="text-right">{{template "decimalParts" (float64AsDecimalParts .ReceivedTotal 8 false)}}</td>
+                                        <td class="text-right fs15">
+                                        <span class="rm-spacing-tb">{{template "decimalParts" (float64AsDecimalParts .ReceivedTotal 8 false)}}</span>
+                                        </td>
                                     {{else}}
                                         {{if eq .SentTotal 0.0}}
                                         <td class="text-right">sstxcommitment</td>
                                         {{else}}
                                             {{if ne .MatchedTx ""}}
-                                            <td class="text-right"><a href="/tx/{{.MatchedTx}}" class="hash">source</a></td>
+                                            <td class="text-right"><a href="/tx/{{.MatchedTx}}/out/{{.MatchedTxIndex}}" class="matchhash">source</a></td>
                                             {{else}}
                                             <td class="text-right">N/A</td>
                                             {{end}}
@@ -248,35 +253,45 @@
                                 {{if ne .SentTotal 0.0}}
                                     {{if lt 0.0 .SentTotal}}
                                     {{if eq $txType "merged_debit"}}
-                                            <td class="text-right"> {{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}</td>
+                                            <td class="text-right fs15">
+                                            <span class="rm-spacing">{{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}</span>
+                                            </td>
                                         {{else}}
-                                            <td>{{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}</td>
+                                            <td class="fs15">
+                                            <span class="rm-spacing">{{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}</span>
+                                            </td>
                                         {{end}}
                                     {{else}}
-                                        <td class="text-right">N/A</td>
+                                        <td class="text-right fs15">N/A</td>
                                     {{end}}
                                 {{else}}
                                     {{if ne .MatchedTx ""}}
-                                        <td><a href="/tx/{{.MatchedTx}}" class="hash">spent</a></td>
+                                        <td><a href="/tx/{{.MatchedTx}}/in/{{.MatchedTxIndex}}" class="matchhash">spent</a></td>
                                     {{else}}
                                         <td>unspent</td>
                                     {{end}}
                                 {{end}}
-                                <td>
+                                <td class="addr-tx-time">
                                     {{if eq .Confirmations 0}}
                                         Unconfirmed
                                     {{else}}
                                         {{.FormattedTime}}
                                     {{end}}
                                 </td>
-                                <td>
+                                <td class="jsonly addr-tx-age">
                                 {{if eq .Time 0}}
                                     N/A
                                 {{else}}
                                     <span data-controller="main" data-target="main.age" data-age="{{.Time}}"></span>
                                 {{end}}
                                 </td>
-                                <td data-confirmation-block-height="{{index $.ConfirmHeight $i}}">{{.Confirmations}}</td>
+                                <td
+                                  {{if eq .Confirmations 0}}
+                                    class="addr-tx-confirms"
+                                  {{else}}
+                                    data-tx-block-height="{{index $.TxBlockHeights $i}}"
+                                  {{end}}
+                                  >{{.Confirmations}}</td>
                                 <td class="text-right">{{.FormattedSize}}</td>
                                 {{end}}
                             </tr>
@@ -295,7 +310,7 @@
                     <div
                         id="txntype-wrapper"
                         class="d-flex align-items-center justify-content-end"
-                    > 
+                    >
                         <label class="mb-0 mr-1" for="txntype">Type</label>
                         <select
                             name="txntype"
@@ -338,12 +353,13 @@
                 </div>
                 <div class="chart-display d-hide">
                     <div id="history-chart" style="width:100%; height:500px; margin-top:20 auto;"></div>
-                    <h5 id="no-bal" class="mt-2 bal-d" style="margin:7% auto 0 auto;">There are no transactions to display.</h5>
+                    <h5 id="no-bal" class="mt-2 bal-d" style="margin:7% auto 0 auto;">There are no confirmed transactions to display.</h5>
                 </div>
-            </div>
-        </div>
-    </div>
-    
+            </div> <!-- col -->
+        </div> <!-- row -->
+        {{end}}
+    </div> <!-- container main -->
+
     <script>
         $(".jsonly").show()
         $('#list-display').hide()
@@ -385,6 +401,22 @@
                 opacity: 0
             })
             .html("")
+        }
+        $('.matchhash').hover(function() {
+            hashHighLight( $(this).attr('href'), true);
+        },function() {
+            hashHighLight( $(this).attr('href'), false);
+        });
+
+        function hashHighLight(matchHash, hoverOn) {
+            $('.hash').each(function() {
+                var thisHash =$(this).attr('href');
+                if(thisHash == matchHash && hoverOn) {
+                    $(this).addClass("matching-hash");
+                }else{
+                    $(this).removeClass("matching-hash");
+                }
+            })
         }
 
         $('input[type=button]').on('click', function(){

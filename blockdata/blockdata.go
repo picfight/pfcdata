@@ -14,9 +14,9 @@ import (
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	"github.com/picfight/pfcdata/stakedb"
-	"github.com/picfight/pfcdata/txhelpers"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // BlockData contains all the data collected by a Collector and stored
@@ -27,7 +27,7 @@ type BlockData struct {
 	FeeInfo          pfcjson.FeeInfoBlock
 	CurrentStakeDiff pfcjson.GetStakeDifficultyResult
 	EstStakeDiff     pfcjson.EstimateStakeDiffResult
-	PoolInfo         apitypes.TicketPoolInfo
+	PoolInfo         *apitypes.TicketPoolInfo
 	ExtraInfo        apitypes.BlockExplorerExtraInfo
 	PriceWindowNum   int
 	IdxBlockInWindow int
@@ -97,7 +97,7 @@ func (b *BlockData) ToBlockExplorerSummary() apitypes.BlockExplorerBasic {
 
 // Collector models a structure for the source of the blockdata
 type Collector struct {
-	mtx          sync.Mutex
+	sync.Mutex
 	pfcdChainSvr *rpcclient.Client
 	netParams    *chaincfg.Params
 	stakeDB      *stakedb.StakeDatabase
@@ -107,7 +107,6 @@ type Collector struct {
 func NewCollector(pfcdChainSvr *rpcclient.Client, params *chaincfg.Params,
 	stakeDB *stakedb.StakeDatabase) *Collector {
 	return &Collector{
-		mtx:          sync.Mutex{},
 		pfcdChainSvr: pfcdChainSvr,
 		netParams:    params,
 		stakeDB:      stakeDB,
@@ -142,6 +141,7 @@ func (t *Collector) CollectAPITypes(hash *chainhash.Hash) (*apitypes.BlockDataBa
 func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataBasic,
 	*pfcjson.FeeInfoBlock, *pfcjson.GetBlockHeaderVerboseResult,
 	*apitypes.BlockExplorerExtraInfo, *wire.MsgBlock, error) {
+	// Retrieve block from pfcd.
 	msgBlock, err := t.pfcdChainSvr.GetBlock(hash)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -149,6 +149,9 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 	height := msgBlock.Header.Height
 	block := pfcutil.NewBlock(msgBlock)
 	txLen := len(block.Transactions())
+
+	// Coin supply and block subsidy. If either RPC fails, do not immediately
+	// return. Attempt acquisition of other data for this block.
 	coinSupply, err := t.pfcdChainSvr.GetCoinSupply()
 	if err != nil {
 		log.Error("GetCoinSupply failed: ", err)
@@ -157,16 +160,30 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 	if err != nil {
 		log.Errorf("GetBlockSubsidy for %d failed: %v", msgBlock.Header.Height, err)
 	}
+
+	// Block header
+	blockHeaderResults, err := t.pfcdChainSvr.GetBlockHeaderVerbose(hash)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	isSideChain := blockHeaderResults.Confirmations == -1
+
 	// Ticket pool info (value, size, avg)
 	var ticketPoolInfo *apitypes.TicketPoolInfo
 	var found bool
 	if ticketPoolInfo, found = t.stakeDB.PoolInfo(*hash); !found {
-		log.Infof("Unable to find block (%s) in pool info cache, trying best block.", hash.String())
+		// If unable to get ticket pool info for this block, stakedb does
+		// not have it. This is expected for side chain blocks, so do not
+		// log in that case.
+		if !isSideChain {
+			log.Infof("Unable to find block (%v) in pool info cache, trying best block.", hash)
+		}
 		ticketPoolInfo = t.stakeDB.PoolInfoBest()
 		if ticketPoolInfo.Height != height {
-			log.Warnf("Collected block height %d != stake db height %d. Pool "+
-				"info will not match the rest of this block's data.",
-				height, ticketPoolInfo.Height)
+			if !isSideChain {
+				log.Warnf("Ticket pool info not available for block %v.", hash)
+			}
+			ticketPoolInfo = nil
 		}
 	}
 
@@ -177,14 +194,9 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 	}
 
 	// Work/Stake difficulty
-	header := block.MsgBlock().Header
+	header := msgBlock.Header
 	diff := txhelpers.GetDifficultyRatio(header.Bits, t.netParams)
 	sdiff := pfcutil.Amount(header.SBits).ToCoin()
-
-	blockHeaderResults, err := t.pfcdChainSvr.GetBlockHeaderVerbose(hash)
-	if err != nil {
-		return nil, nil, nil, nil, nil, err
-	}
 
 	// Output
 	blockdata := &apitypes.BlockDataBasic{
@@ -194,7 +206,7 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 		Difficulty: diff,
 		StakeDiff:  sdiff,
 		Time:       header.Timestamp.Unix(),
-		PoolInfo:   *ticketPoolInfo,
+		PoolInfo:   ticketPoolInfo,
 	}
 	extrainfo := &apitypes.BlockExplorerExtraInfo{
 		TxLen:            txLen,
@@ -208,8 +220,8 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBlock, error) {
 	// In case of a very fast block, make sure previous call to collect is not
 	// still running, or pfcd may be mad.
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
+	t.Lock()
+	defer t.Unlock()
 
 	// Time this function
 	defer func(start time.Time) {
@@ -250,8 +262,8 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 	// In case of a very fast block, make sure previous call to collect is not
 	// still running, or pfcd may be mad.
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
+	t.Lock()
+	defer t.Unlock()
 
 	// Time this function
 	defer func(start time.Time) {

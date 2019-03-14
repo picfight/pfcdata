@@ -12,10 +12,10 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/db/pfcpg/internal"
-	"github.com/picfight/pfcdata/rpcutils"
-	"github.com/picfight/pfcdata/txhelpers"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // tableUpgradeType defines the types of upgrades that currently exists and
@@ -36,6 +36,10 @@ const (
 	vinsTxHistogramUpgrade
 	addressesTxHistogramUpgrade
 	agendasVotingMilestonesUpgrade
+	ticketsTableBlockTimeUpgrade
+	addressesTableValidMainchainPatch
+	addressesTableMatchingTxHashPatch
+	addressesTableBlockTimeSortedIndex
 )
 
 type TableUpgradeType struct {
@@ -186,12 +190,76 @@ func (pgb *ChainDB) CheckForAuxDBUpgrade(pfcdClient *rpcclient.Client) (bool, er
 		// Go on to next upgrade
 		fallthrough
 
-		// Upgrade from 3.5.0 --> 3.5.1
+	// Upgrade from 3.5.0 --> 3.5.1
 	case version.major == 3 && version.minor == 5 && version.patch == 0:
 		toVersion = TableVersion{3, 5, 1}
 
 		theseUpgrades := []TableUpgradeType{
 			{"agendas", agendasVotingMilestonesUpgrade},
+		}
+
+		isSuccess, er := pgb.initiatePgUpgrade(nil, theseUpgrades)
+		if !isSuccess {
+			return isSuccess, er
+		}
+
+		// Go on to next upgrade
+		fallthrough
+
+	// Upgrade from 3.5.1 --> 3.5.2
+	case version.major == 3 && version.minor == 5 && version.patch == 1:
+		toVersion = TableVersion{3, 5, 2}
+
+		theseUpgrades := []TableUpgradeType{
+			{"tickets", ticketsTableBlockTimeUpgrade},
+		}
+
+		isSuccess, er := pgb.initiatePgUpgrade(nil, theseUpgrades)
+		if !isSuccess {
+			return isSuccess, er
+		}
+
+		// Go on to next upgrade
+		fallthrough
+
+	// Upgrade from 3.5.2 --> 3.5.3
+	case version.major == 3 && version.minor == 5 && version.patch == 2:
+		toVersion = TableVersion{3, 5, 3}
+
+		theseUpgrades := []TableUpgradeType{
+			{"addresses", addressesTableValidMainchainPatch},
+		}
+
+		isSuccess, er := pgb.initiatePgUpgrade(nil, theseUpgrades)
+		if !isSuccess {
+			return isSuccess, er
+		}
+
+		// Go on to next upgrade
+		fallthrough
+
+	// Upgrade from 3.5.3 --> 3.5.4
+	case version.major == 3 && version.minor == 5 && version.patch == 3:
+		toVersion = TableVersion{3, 5, 4}
+
+		theseUpgrades := []TableUpgradeType{
+			{"addresses", addressesTableMatchingTxHashPatch},
+		}
+
+		isSuccess, er := pgb.initiatePgUpgrade(nil, theseUpgrades)
+		if !isSuccess {
+			return isSuccess, er
+		}
+
+		// Go on to next upgrade
+		fallthrough
+
+	// Upgrade from 3.5.4 --> 3.5.5
+	case version.major == 3 && version.minor == 5 && version.patch == 4:
+		toVersion = TableVersion{3, 5, 5}
+
+		theseUpgrades := []TableUpgradeType{
+			{"addresses", addressesTableBlockTimeSortedIndex},
 		}
 
 		isSuccess, er := pgb.initiatePgUpgrade(nil, theseUpgrades)
@@ -288,6 +356,18 @@ func (pgb *ChainDB) handleUpgrades(client *rpcutils.BlockGate,
 		// migration between pg version 3.2.0 and 3.5.0.
 		tableReady = true
 		tableName, upgradeTypeStr = "agendas", "voting milestones"
+	case ticketsTableBlockTimeUpgrade:
+		tableReady = true
+		tableName, upgradeTypeStr = "tickets", "new index"
+	case addressesTableValidMainchainPatch:
+		tableReady = true
+		tableName, upgradeTypeStr = "addresses", "patch valid_mainchain value"
+	case addressesTableMatchingTxHashPatch:
+		tableReady = true
+		tableName, upgradeTypeStr = "addresses", "patch matching_tx_hash value"
+	case addressesTableBlockTimeSortedIndex:
+		tableReady = true
+		tableName, upgradeTypeStr = "addresses", "reindex"
 	default:
 		return false, fmt.Errorf(`upgrade "%v" is unknown`, tableUpgrade)
 	}
@@ -380,7 +460,7 @@ func (pgb *ChainDB) handleUpgrades(client *rpcutils.BlockGate,
 		log.Infof("This an extremely I/O intensive operation on the database machine. It can take from 30-90 minutes.")
 		rowsUpdated, err = updateAllAddressesValidMainchain(pgb.db)
 
-	case votesTableBlockHashIndex:
+	case votesTableBlockHashIndex, ticketsTableBlockTimeUpgrade, addressesTableBlockTimeSortedIndex:
 		// no upgrade, just "reindex"
 	case vinsTxHistogramUpgrade, addressesTxHistogramUpgrade:
 		var height uint64
@@ -394,15 +474,23 @@ func (pgb *ChainDB) handleUpgrades(client *rpcutils.BlockGate,
 		rowsUpdated, err = pgb.handleTxTypeHistogramUpgrade(height, tableUpgrade)
 
 	case agendasVotingMilestonesUpgrade:
-		log.Infof("Set the agendas voting milestones...")
+		log.Infof("Setting the agendas voting milestones...")
 		rowsUpdated, err = pgb.handleAgendasVotingMilestonesUpgrade()
+
+	case addressesTableValidMainchainPatch:
+		log.Infof("Patching valid_mainchain in the addresses table...")
+		rowsUpdated, err = updateAddressesValidMainchainPatch(pgb.db)
+
+	case addressesTableMatchingTxHashPatch:
+		log.Infof("Patching matching_tx_hash in the addresses table...")
+		rowsUpdated, err = updateAddressesMatchingTxHashPatch(pgb.db)
 
 	default:
 		return false, fmt.Errorf(`upgrade "%v" unknown`, tableUpgrade)
 	}
 
-	if err != nil {
-		return false, fmt.Errorf(`%s upgrade of %s table ended prematurely after %d rows. `+
+	if err != nil && err != sql.ErrNoRows {
+		return false, fmt.Errorf(`%s upgrade of %s table ended prematurely after %d rows.`+
 			`Error: %v`, upgradeTypeStr, tableName, rowsUpdated, err)
 	}
 
@@ -427,6 +515,18 @@ func (pgb *ChainDB) handleUpgrades(client *rpcutils.BlockGate,
 		log.Infof("Indexing votes table on block hash...")
 		if err = IndexVotesTableOnBlockHash(pgb.db); err != nil {
 			return false, fmt.Errorf("failed to index votes table on block_hash: %v", err)
+		}
+
+	case ticketsTableBlockTimeUpgrade:
+		log.Infof("Index the tickets table on Pool status...")
+		if err = IndexTicketsTableOnPoolStatus(pgb.db); err != nil {
+			return false, fmt.Errorf("failed to index tickets table: %v", err)
+		}
+
+	case addressesTableBlockTimeSortedIndex:
+		log.Infof("Reindex the addresses table on block_time (sorted)...")
+		if err = pgb.ReindexAddressesBlockTime(); err != nil {
+			return false, fmt.Errorf("failed to reindex addresses table: %v", err)
 		}
 	}
 
@@ -476,7 +576,7 @@ func (pgb *ChainDB) handleVinsTableMainchainupgrade() (int64, error) {
 
 		numUpd, err := pgb.upgradeVinsMainchainForMany(vinDbIDsBlk, areValid, areMainchain)
 		if err != nil {
-			log.Warnf("Unable to set valid/mainchain for vins: %v", err)
+			log.Warnf("unable to set valid/mainchain for vins: %v", err)
 		}
 		rowsUpdated += numUpd
 		if i%10000 == 0 {
@@ -518,7 +618,6 @@ func (pgb *ChainDB) upgradeVinsMainchainOneTxn(vinDbIDs dbtypes.UInt64Array,
 		if err != nil {
 			return 0, err
 		}
-
 		rowsUpdated += c
 	}
 
@@ -689,6 +788,22 @@ func updateAllAddressesValidMainchain(db *sql.DB) (rowsUpdated int64, err error)
 		"failed to update addresses rows valid_mainchain status")
 }
 
+// updateAddressesValidMainchainPatch selectively sets valid_mainchain for
+// addresses table rows that are set incorrectly according to their
+// corresponding transaction.
+func updateAddressesValidMainchainPatch(db *sql.DB) (rowsUpdated int64, err error) {
+	return sqlExec(db, internal.UpdateAddressesGloballyInvalid,
+		"failed to update addresses rows valid_mainchain status")
+}
+
+// updateAddressesMatchingTxHashPatch selectively sets matching_tx_hash for
+// addresses table rows that are set incorrectly according to their
+// corresponding transaction.
+func updateAddressesMatchingTxHashPatch(db *sql.DB) (rowsUpdated int64, err error) {
+	return sqlExec(db, internal.UpdateAddressesFundingMatchingHash,
+		"failed to update addresses rows matching_tx_hash")
+}
+
 // handleBlocksTableMainchainUpgrade sets is_mainchain=true for all blocks in
 // the main chain, starting with the best block and working back to genesis.
 func (pgb *ChainDB) handleBlocksTableMainchainUpgrade(bestBlock string) (int64, error) {
@@ -844,7 +959,7 @@ type newColumn struct {
 func addNewColumnsIfNotFound(db *sql.DB, table string, newColumns []newColumn) (bool, error) {
 	for ic := range newColumns {
 		var isRowFound bool
-		err := db.QueryRow(`SELECT EXISTS( SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS 
+		err := db.QueryRow(`SELECT EXISTS( SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS
 			WHERE table_name = $1 AND column_name = $2 );`, table, newColumns[ic].Name).Scan(&isRowFound)
 		if err != nil {
 			return false, err
@@ -889,7 +1004,6 @@ func addAddressesColumnsForHistogramUpgrade(db *sql.DB) (bool, error) {
 	newColumns := []newColumn{
 		{"tx_type", "INT4", ""},
 	}
-
 	return addNewColumnsIfNotFound(db, "addresses", newColumns)
 }
 

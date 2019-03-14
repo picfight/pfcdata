@@ -12,9 +12,9 @@ import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/db/agendadb"
-	"github.com/picfight/pfcdata/db/dbtypes"
-	"github.com/picfight/pfcdata/txhelpers"
+	"github.com/picfight/pfcdata/v3/db/agendadb"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // statusType defines the various status types supported by the system.
@@ -25,8 +25,31 @@ const (
 	NotFoundStatusType       statusType = "Not Found"
 	NotSupportedStatusType   statusType = "Not Supported"
 	NotImplementedStatusType statusType = "Not Implemented"
+	WrongNetworkStatusType   statusType = "Wrong Network"
 	DeprecatedStatusType     statusType = "Deprecated"
+	BlockchainSyncingType    statusType = "Blocks Syncing"
+	P2PKAddresStatusType     statusType = "P2PK Address Type"
 )
+
+func (e statusType) IsNotFound() bool {
+	return e == NotFoundStatusType
+}
+
+func (e statusType) IsWrongNet() bool {
+	return e == WrongNetworkStatusType
+}
+
+func (e statusType) IsP2PKAddress() bool {
+	return e == P2PKAddresStatusType
+}
+
+func (e statusType) IsSyncing() bool {
+	return e == BlockchainSyncingType
+}
+
+// blockchainSyncStatus defines the status update displayed on the syncing status page
+// when new blocks are being appended into the db.
+var blockchainSyncStatus = new(syncStatus)
 
 // BlockBasic models data for the explorer's explorer page
 type BlockBasic struct {
@@ -34,8 +57,10 @@ type BlockBasic struct {
 	Hash           string `json:"hash"`
 	Size           int32  `json:"size"`
 	Valid          bool   `json:"valid"`
+	MainChain      bool   `json:"mainchain"`
 	Voters         uint16 `json:"votes"`
 	Transactions   int    `json:"tx"`
+	WindowIndx     int64  `json:"windowIndex"`
 	FreshStake     uint8  `json:"tickets"`
 	Revocations    uint32 `json:"revocations"`
 	BlockTime      int64  `json:"time"`
@@ -54,15 +79,10 @@ type TxBasic struct {
 	Coinbase      bool
 }
 
-// ChartDataCounter is a data cache for the historical charts.
-type ChartDataCounter struct {
-	sync.RWMutex
-	Data map[string]*dbtypes.ChartsData
-}
-
 // AddressTx models data for transactions on the address page
 type AddressTx struct {
 	TxID           string
+	TxType         string
 	InOutID        uint32
 	Size           uint32
 	FormattedSize  string
@@ -74,6 +94,7 @@ type AddressTx struct {
 	SentTotal      float64
 	IsFunding      bool
 	MatchedTx      string
+	MatchedTxIndex uint32
 	BlockTime      uint64
 	MergedTxnCount uint64 `json:",omitempty"`
 }
@@ -93,6 +114,15 @@ func (a *AddressTx) IOID(txType ...string) string {
 	}
 	// A transaction input referencing an outpoint being spent
 	return fmt.Sprintf("%s:in[%d]", a.TxID, a.InOutID)
+}
+
+// TrimmedTxInfo for use with /nexthome
+type TrimmedTxInfo struct {
+	*TxBasic
+	Fees      float64
+	VinCount  int
+	VoutCount int
+	VoteValid bool
 }
 
 // TxInfo models data needed for display on the tx page
@@ -170,6 +200,7 @@ type Vin struct {
 	*pfcjson.Vin
 	Addresses       []string
 	FormattedAmount string
+	Index           uint32
 }
 
 // Vout models basic data about a tx output for display
@@ -180,6 +211,20 @@ type Vout struct {
 	Type            string
 	Spent           bool
 	OP_RETURN       string
+	Index           uint32
+}
+
+// TrimmedBlockInfo models data needed to display block info on the new home page
+type TrimmedBlockInfo struct {
+	Time         int64
+	Height       int64
+	Total        float64
+	Fees         float64
+	Subsidy      *pfcjson.GetBlockSubsidyResult
+	Votes        []*TrimmedTxInfo
+	Tickets      []*TrimmedTxInfo
+	Revocations  []*TrimmedTxInfo
+	Transactions []*TrimmedTxInfo
 }
 
 // BlockInfo models data for display on the block page
@@ -190,10 +235,10 @@ type BlockInfo struct {
 	StakeRoot             string
 	MerkleRoot            string
 	TxAvailable           bool
-	Tx                    []*TxBasic
-	Tickets               []*TxBasic
-	Revs                  []*TxBasic
-	Votes                 []*TxBasic
+	Tx                    []*TrimmedTxInfo
+	Tickets               []*TrimmedTxInfo
+	Revs                  []*TrimmedTxInfo
+	Votes                 []*TrimmedTxInfo
 	Misses                []string
 	Nonce                 uint32
 	VoteBits              uint16
@@ -207,8 +252,10 @@ type BlockInfo struct {
 	PreviousHash          string
 	NextHash              string
 	TotalSent             float64
-	MiningFee             pfcutil.Amount
+	MiningFee             float64
 	StakeValidationHeight int64
+	AllTxs                uint32
+	Subsidy               *pfcjson.GetBlockSubsidyResult
 }
 
 // AddressTransactions collects the transactions for an address as AddressTx
@@ -224,9 +271,14 @@ type AddressInfo struct {
 	// Address is the picfight address on the current page
 	Address string
 
+	// IsDummyAddress is true when the address is the dummy address typically
+	// used for unspendable ticket change outputs. See
+	// https://github.com/picfight/pfcdata/v3/issues/358 for details.
+	IsDummyAddress bool
+
 	// Page parameters
-	MaxTxLimit    int64
 	Fullmode      bool
+	MaxTxLimit    int64
 	Path          string
 	Limit, Offset int64  // ?n=Limit&start=Offset
 	TxnType       string // ?txntype=TxnType
@@ -258,11 +310,6 @@ type AddressInfo struct {
 	// KnownMergedSpendingTxns refers to the total count of unique debit transactions
 	// that appear in the merged debit view.
 	KnownMergedSpendingTxns int64
-
-	// IsDummyAddress is true when the address is the dummy address typically
-	// used for unspendable ticket change outputs. See
-	// https://github.com/picfight/pfcdata/issues/358 for details.
-	IsDummyAddress bool
 }
 
 // TxnCount returns the number of transaction "rows" available.
@@ -314,6 +361,10 @@ type HomeInfo struct {
 	NBlockSubsidy         BlockSubsidy   `json:"subsidy"`
 	Params                ChainParams    `json:"params"`
 	PoolInfo              TicketPoolInfo `json:"pool_info"`
+	TotalLockedPFC        float64        `json:"total_locked_dcr"`
+	HashRate              float64        `json:"hash_rate"`
+	// HashRateChange defines the hashrate change in 24hrs
+	HashRateChange float64 `json:"hash_rate_change"`
 }
 
 // BlockSubsidy is an implementation of pfcjson.GetBlockSubsidyResult
@@ -322,6 +373,18 @@ type BlockSubsidy struct {
 	PoW   int64 `json:"pow"`
 	PoS   int64 `json:"pos"`
 	Dev   int64 `json:"dev"`
+}
+
+// TrimmedMempoolInfo models data needed to display mempool info on the new home page
+type TrimmedMempoolInfo struct {
+	Transactions []*TrimmedTxInfo
+	Tickets      []*TrimmedTxInfo
+	Votes        []*TrimmedTxInfo
+	Revocations  []*TrimmedTxInfo
+	Subsidy      BlockSubsidy
+	Total        float64
+	Time         int64
+	Fees         float64
 }
 
 // MempoolInfo models data to update mempool info on the home page
@@ -369,8 +432,8 @@ type VotingInfo struct {
 	votedTickets     map[string]bool
 }
 
-// ChainParams models simple data about the chain server's parameters used for some
-// info on the front page
+// ChainParams models simple data about the chain server's parameters used for
+// some info on the front page.
 type ChainParams struct {
 	WindowSize       int64 `json:"window_size"`
 	RewardWindowSize int64 `json:"reward_window_size"`
@@ -400,6 +463,7 @@ func ReduceAddressHistory(addrHist []*dbtypes.AddressRow) *AddressInfo {
 			BlockTime: addrOut.TxBlockTime,
 			InOutID:   addrOut.TxVinVoutIndex,
 			TxID:      addrOut.TxHash,
+			TxType:    txhelpers.TxTypeToString(int(addrOut.TxType)),
 			MatchedTx: addrOut.MatchingTxHash,
 			IsFunding: addrOut.IsFunding,
 		}
@@ -436,8 +500,8 @@ func ReduceAddressHistory(addrHist []*dbtypes.AddressRow) *AddressInfo {
 
 // WebsocketBlock wraps the new block info for use in the websocket
 type WebsocketBlock struct {
-	Block *BlockBasic `json:"block"`
-	Extra *HomeInfo   `json:"extra"`
+	Block *BlockInfo `json:"block"`
+	Extra *HomeInfo  `json:"extra"`
 }
 
 // TicketPoolInfo describes the live ticket pool
@@ -452,12 +516,17 @@ type TicketPoolInfo struct {
 
 // MempoolTx models the tx basic data for the mempool page
 type MempoolTx struct {
-	Hash     string    `json:"hash"`
-	Time     int64     `json:"time"`
-	Size     int32     `json:"size"`
-	TotalOut float64   `json:"total"`
-	Type     string    `json:"Type"`
-	VoteInfo *VoteInfo `json:"vote_info"`
+	TxID      string    `json:"txid"`
+	Fees      float64   `json:"fees"`
+	VinCount  int       `json:"vin_count"`
+	VoutCount int       `json:"vout_count"`
+	Coinbase  bool      `json:"coinbase"`
+	Hash      string    `json:"hash"`
+	Time      int64     `json:"time"`
+	Size      int32     `json:"size"`
+	TotalOut  float64   `json:"total"`
+	Type      string    `json:"Type"`
+	VoteInfo  *VoteInfo `json:"vote_info,omitempty"`
 }
 
 // NewMempoolTx models data sent from the notification handler
@@ -469,6 +538,7 @@ type NewMempoolTx struct {
 // ExtendedChainParams represents the data of ChainParams
 type ExtendedChainParams struct {
 	Params               *chaincfg.Params
+	MaximumBlockSize     int
 	ActualTicketPoolSize int64
 	AddressPrefix        []AddrPrefix
 }
@@ -483,8 +553,8 @@ type AddrPrefix struct {
 // AddressPrefixes generates an array AddrPrefix by using chaincfg.Params
 func AddressPrefixes(params *chaincfg.Params) []AddrPrefix {
 	Descriptions := []string{"P2PK address",
-		"P2PKH address prefix",
-		"P2PKH address prefix",
+		"P2PKH address prefix. Standard wallet address. 1 public key -> 1 private key",
+		"Ed25519 P2PKH address prefix",
 		"secp256k1 Schnorr P2PKH address prefix",
 		"P2SH address prefix",
 		"WIF private key prefix",
@@ -531,4 +601,64 @@ func AddressPrefixes(params *chaincfg.Params) []AddrPrefix {
 // GetAgendaInfo gets the all info for the specified agenda ID.
 func GetAgendaInfo(agendaId string) (*agendadb.AgendaTagged, error) {
 	return agendadb.GetAgendaInfo(agendaId)
+}
+
+// isSyncExplorerUpdate helps determine when the explorer should be updated
+// when the blockchain sync is running in the background and no explorer page
+// view restriction on the running webserver is activated.
+// explore.DisplaySyncStatusPage must be false for this to used.
+var isSyncExplorerUpdate = new(syncUpdateExplorer)
+
+type syncUpdateExplorer struct {
+	sync.RWMutex
+	DoStatusUpdate bool
+}
+
+// SetSyncExplorerUpdateStatus is a thread-safe way to set when the explorer
+// should be updated with the latest blocks synced.
+func SetSyncExplorerUpdateStatus(status bool) {
+	isSyncExplorerUpdate.Lock()
+	defer isSyncExplorerUpdate.Unlock()
+
+	isSyncExplorerUpdate.DoStatusUpdate = status
+}
+
+// SyncExplorerUpdateStatus is thread-safe to check the current set explorer update status.
+func SyncExplorerUpdateStatus() bool {
+	isSyncExplorerUpdate.RLock()
+	defer isSyncExplorerUpdate.RUnlock()
+
+	return isSyncExplorerUpdate.DoStatusUpdate
+}
+
+// syncStatus makes it possible to update the user on the progress of the
+// blockchain db syncing that is running after new blocks were detected on
+// system startup. ProgressBars is an array whose every entry is one of the
+// progress bars data that will be displayed on the sync status page.
+type syncStatus struct {
+	sync.RWMutex
+	ProgressBars []SyncStatusInfo
+}
+
+// SyncStatusInfo defines information for a single progress bar.
+type SyncStatusInfo struct {
+	// PercentComplete is the percentage of sync complete for a given progress bar.
+	PercentComplete float64 `json:"percentage_complete"`
+	// BarMsg holds the main bar message about the currect sync.
+	BarMsg string `json:"bar_msg"`
+	// BarSubtitle holds any other information about the current main sync. This
+	// value may include but not limited to; db indexing, deleting duplicates etc.
+	BarSubtitle string `json:"subtitle"`
+	// Time is the estimated time in seconds to the sync should be complete.
+	Time int64 `json:"seconds_to_complete"`
+	// ProgressBarID is the given entry progress bar id needed on the UI page.
+	ProgressBarID string `json:"progress_bar_id"`
+}
+
+// SyncStatus defines a thread-safe way to read the sync status updates
+func SyncStatus() []SyncStatusInfo {
+	blockchainSyncStatus.RLock()
+	defer blockchainSyncStatus.RUnlock()
+
+	return blockchainSyncStatus.ProgressBars
 }

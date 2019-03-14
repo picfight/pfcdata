@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	m "github.com/picfight/pfcdata/middleware"
+	m "github.com/picfight/pfcdata/v3/middleware"
 	"github.com/rs/cors"
 )
 
@@ -17,11 +17,13 @@ type apiMux struct {
 	*chi.Mux
 }
 
-func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
+// NewAPIRouter creates a new HTTP request path router/mux for the given API,
+// appContext.
+func NewAPIRouter(app *appContext, useRealIP bool) apiMux {
 	// chi router
 	mux := chi.NewRouter()
 
-	if userRealIP {
+	if useRealIP {
 		mux.Use(middleware.RealIP)
 	}
 	mux.Use(middleware.Logger)
@@ -186,7 +188,12 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 	mux.Route("/chart", func(r chi.Router) {
 		// Return default chart data (ticket price)
 		r.Get("/", app.getTicketPriceChartData)
-		r.With(m.ChartTypeCtx).Get("/{charttype}", app.getChartTypeData)
+		r.With(m.ChartTypeCtx).Get("/{charttype}", app.ChartTypeData)
+	})
+
+	mux.Route("/ticketpool", func(r chi.Router) {
+		r.Get("/", app.getTicketPoolByDate)
+		r.With(m.TicketPoolCtx).Get("/bydate/{tp}", app.getTicketPoolByDate)
 	})
 
 	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +206,7 @@ func NewAPIRouter(app *appContext, userRealIP bool) apiMux {
 	// 	buf.WriteTo(os.Stdout)
 
 	// 	fmt.Println(docgen.MarkdownRoutesDoc(mux, docgen.MarkdownOpts{
-	// 		ProjectPath: "github.com/picfight/pfcdata",
+	// 		ProjectPath: "github.com/picfight/pfcdata/v3",
 	// 		Intro:       "pfcdata HTTP router directory",
 	// 	}))
 	// 	return

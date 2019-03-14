@@ -10,8 +10,8 @@ import (
 
 	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/wire"
-	apitypes "github.com/picfight/pfcdata/api/types"
-	"github.com/picfight/pfcdata/blockdata"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/blockdata"
 )
 
 // BlockDataToMemdb models the block data and block data basic as maps

@@ -1,3 +1,6 @@
+// Copyright (c) 2018, The Decred developers
+// See LICENSE for details.
+
 package dbtypes
 
 import (
@@ -7,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/picfight/pfcdata/db/dbtypes/internal"
+	"github.com/picfight/pfcdata/v3/db/dbtypes/internal"
 )
 
 // Tickets have 6 states, 5 possible fates:
@@ -91,6 +94,51 @@ const (
 	UnknownGrouping
 )
 
+const (
+	// InitialDBLoad is a sync where data is first loaded from the chain db into
+	// the respective dbs currently supported. Runs on both liteMode and fullMode.
+	// InitialDBLoad value references the first progress bar id on the status page.
+	InitialDBLoad = "initial-load"
+	// AddressesTableSync is a sync that runs immediately after initialDBLoad. Data
+	// previously loaded into vins table is sync'd with the addresses table.
+	// Runs only in fullMode. AddressesTableSync value references the second
+	// progress bar id on the status page.
+	AddressesTableSync = "addresses-sync"
+)
+
+// ProgressBarLoad contains the raw data needed to populate the status sync updates.
+// It is used to update the status sync through a channel.
+type ProgressBarLoad struct {
+	From      int64
+	To        int64
+	Msg       string
+	Subtitle  string
+	BarID     string
+	Timestamp int64
+}
+
+// BlocksGroupedInfo contains the data about a stake difficulty (ticket price) window,
+// including intrinsic properties (e.g. window index, ticket price, start block, etc.),
+// and aggregate transaction counts (e.g. number of votes, regular transactions,
+// new tickets, etc.)
+type BlocksGroupedInfo struct {
+	// intrinsic properties
+	WindowIndx    int64
+	EndBlock      int64
+	Difficulty    float64
+	TicketPrice   int64
+	StartTime     int64
+	Size          int64
+	FormattedTime string
+	FormattedSize string
+	// Aggregate properties
+	Voters       uint64
+	Transactions uint64
+	FreshStake   uint64
+	Revocations  uint64
+	BlocksCount  int64
+}
+
 // ChartGroupings helps maping a given chart grouping to its standard string value.
 var ChartGroupings = map[ChartGrouping]string{
 	AllChartGrouping:   "all",
@@ -135,6 +183,7 @@ const (
 
 type TicketPoolStatus int16
 
+// NB:PoolStatusLive also defines immature tickets in addition to defining live tickets.
 const (
 	PoolStatusLive TicketPoolStatus = iota
 	PoolStatusVoted
@@ -421,6 +470,19 @@ type VinTxProperty struct {
 	Time        int64  `json:"time"`
 }
 
+// PoolTicketsData defines the real time data
+// needed for ticket pool visualization charts.
+type PoolTicketsData struct {
+	Time     []uint64  `json:"time,omitempty"`
+	Price    []float64 `json:"price,omitempty"`
+	Mempool  []uint64  `json:"mempool,omitempty"`
+	Immature []uint64  `json:"immature,omitempty"`
+	Live     []uint64  `json:"live,omitempty"`
+	Solo     uint64    `json:"solo,omitempty"`
+	Pooled   uint64    `json:"pooled,omitempty"`
+	TxSplit  uint64    `json:"txsplit,omitempty"`
+}
+
 // Vin models a transaction input.
 type Vin struct {
 	//txDbID      int64
@@ -524,4 +586,20 @@ type BlockDataBasic struct {
 	StakeDiff  float64 `json:"sdiff,omitemtpy"`
 	Time       int64   `json:"time,omitemtpy"`
 	NumTx      uint32  `json:"txlength,omitempty"`
+}
+
+// BlockStatus describes a block's status in the block chain.
+type BlockStatus struct {
+	IsValid     bool   `json:"is_valid"`
+	IsMainchain bool   `json:"is_mainchain"`
+	Height      uint32 `json:"height"`
+	PrevHash    string `json:"previous_hash"`
+	Hash        string `json:"hash"`
+	NextHash    string `json:"next_hash"`
+}
+
+// SideChain represents blocks of a side chain, in ascending height order.
+type SideChain struct {
+	Hashes  []string
+	Heights []int64
 }

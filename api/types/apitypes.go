@@ -5,7 +5,7 @@ package types
 
 import (
 	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcdata/txhelpers"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // much of the time, pfcdata will be using the types in pfcjson, but others are
@@ -43,8 +43,7 @@ type TxShort struct {
 	Vout     []Vout        `json:"vout"`
 }
 
-// TrimmedTx models data to resemble to result of the decoderawtransaction
-// call
+// TrimmedTx models data to resemble to result of the decoderawtransaction RPC.
 type TrimmedTx struct {
 	TxID     string        `json:"txid"`
 	Version  int32         `json:"version"`
@@ -98,11 +97,19 @@ type Vout struct {
 	N                   uint32       `json:"n"`
 	Version             uint16       `json:"version"`
 	ScriptPubKeyDecoded ScriptPubKey `json:"scriptPubKey"`
+	Spend               *TxInputID   `json:"spend,omitempty"`
+}
+
+// TxInputID specifies a transaction input as hash:vin_index.
+type TxInputID struct {
+	Hash  string `json:"hash"`
+	Index uint32 `json:"vin_index"`
 }
 
 // ScriptPubKey is the result of decodescript(ScriptPubKeyHex)
 type ScriptPubKey struct {
 	Asm       string   `json:"asm"`
+	Hex       string   `json:"hex"`
 	ReqSigs   int32    `json:"reqSigs,omitempty"`
 	Type      string   `json:"type"`
 	Addresses []string `json:"addresses,omitempty"`
@@ -111,10 +118,9 @@ type ScriptPubKey struct {
 
 // TxOut defines a picfight transaction output.
 type TxOut struct {
-	Value     float64  `json:"value"`
-	Version   uint16   `json:"version"`
-	PkScript  string   `json:"pkscript"`
-	Addresses []string `json:"addresses,omitempty"`
+	Value               float64      `json:"value"`
+	Version             uint16       `json:"version"`
+	ScriptPubKeyDecoded ScriptPubKey `json:"scriptPubKey"`
 }
 
 // TxIn defines a picfight transaction input.
@@ -279,8 +285,15 @@ type BlockDataBasic struct {
 	StakeDiff  float64 `json:"sdiff,omitemtpy"`
 	Time       int64   `json:"time,omitemtpy"`
 	NumTx      uint32  `json:"txlength,omitempty"`
-	//TicketPoolInfo
-	PoolInfo TicketPoolInfo `json:"ticket_pool,omitempty"`
+	// TicketPoolInfo may be nil for side chain blocks.
+	PoolInfo *TicketPoolInfo `json:"ticket_pool,omitempty"`
+}
+
+// NewBlockDataBasic constructs a *BlockDataBasic with pointer fields allocated.
+func NewBlockDataBasic() *BlockDataBasic {
+	return &BlockDataBasic{
+		PoolInfo: new(TicketPoolInfo),
+	}
 }
 
 // BlockExplorerBasic models primary information about block at height Height
@@ -340,7 +353,15 @@ type StakeInfoExtended struct {
 	StakeDiff        float64              `json:"stakediff"`
 	PriceWindowNum   int                  `json:"window_number"`
 	IdxBlockInWindow int                  `json:"window_block_index"`
-	PoolInfo         TicketPoolInfo       `json:"ticket_pool"`
+	PoolInfo         *TicketPoolInfo      `json:"ticket_pool"`
+}
+
+// NewStakeInfoExtended constructs a *StakeInfoExtended with pointer fields
+// allocated.
+func NewStakeInfoExtended() *StakeInfoExtended {
+	return &StakeInfoExtended{
+		PoolInfo: new(TicketPoolInfo),
+	}
 }
 
 // StakeInfoExtendedEstimates is similar to StakeInfoExtended but includes stake
@@ -350,7 +371,7 @@ type StakeInfoExtendedEstimates struct {
 	StakeDiff        StakeDiff            `json:"stakediff"`
 	PriceWindowNum   int                  `json:"window_number"`
 	IdxBlockInWindow int                  `json:"window_block_index"`
-	PoolInfo         TicketPoolInfo       `json:"ticket_pool"`
+	PoolInfo         *TicketPoolInfo      `json:"ticket_pool"`
 }
 
 // MempoolTicketFeeInfo models statistical ticket fee info at block height

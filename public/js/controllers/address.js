@@ -38,6 +38,7 @@
         data.series.map(function(series){
             if (series.color==undefined) return '';
             var l = `<span style="color: ` + series.color + ';"> ' + series.labelHTML;
+            html = `<span style="color:#2d2d2d;">`+html+`</span>`
             html += '<br>' + series.dashHTML  + l + ': ' + (isNaN(series.y) ? '': series.y) + '</span>';
         });
         return html;
@@ -49,11 +50,12 @@
             if (series.color==undefined) return '';
             if (series.y === 0 && series.labelHTML.includes('Net')) return '';
             var l = `<span style="color: ` + series.color + ';"> ' + series.labelHTML;
+            html = `<span style="color:#2d2d2d;">`+html+`</span>`
             html += '<br>' + series.dashHTML  + l + ': ' + (isNaN(series.y) ? '': series.y + ' PFC') + '</span> ';
         });
         return html;
     }
-   
+
     function plotGraph(processedData, otherOptions){
         var commonOptions = {
             digitsAfterDecimal: 8,
@@ -145,37 +147,43 @@
                 url: '/api/address/' + _this.addr + '/' + graphType +'/'+ interval,
                 beforeSend: function() {},
                 success: function(data) {
-                    var newData = []
-                    var options = {}
+                    if(!_.isEmpty(data)) {
+                        var newData = []
+                        var options = {}
 
-                    switch(graphType){
-                        case 'types':
-                            newData = txTypesFunc(data)
-                            options = _this.typesGraphOptions
-                            break
+                        switch(graphType){
+                            case 'types':
+                                newData = txTypesFunc(data)
+                                options = _this.typesGraphOptions
+                                break
 
-                        case 'amountflow':
-                            newData = amountFlowFunc(data)
-                            options = _this.amountFlowGraphOptions
-                            $('#toggle-charts').removeClass('d-hide');
-                            break
+                            case 'amountflow':
+                                newData = amountFlowFunc(data)
+                                options = _this.amountFlowGraphOptions
+                                $('#toggle-charts').removeClass('d-hide');
+                                break
 
-                        case 'unspent':
-                            newData = unspentAmountFunc(data)
-                            options = _this.unspentGraphOptions
-                            break
+                            case 'unspent':
+                                newData = unspentAmountFunc(data)
+                                options = _this.unspentGraphOptions
+                                break
+                        }
+
+                        if (_this.graph == undefined) {
+                            _this.graph = plotGraph(newData, options)
+                        } else {
+                            _this.graph.updateOptions({
+                                ...{'file': newData},
+                                ...options})
+                            _this.graph.resetZoom()
+                        }
+                        _this.updateFlow()
+                        _this.xVal = _this.graph.xAxisExtremes()
+                    }else{
+                        $('#no-bal').removeClass('d-hide');
+                        $('#history-chart').addClass('d-hide');
+                        $('#toggle-charts').removeClass('d-hide');
                     }
-
-                    if (_this.graph == undefined) {
-                        _this.graph = plotGraph(newData, options)
-                    } else {
-                        _this.graph.updateOptions({
-                            ...{'file': newData},
-                            ...options})
-                        _this.graph.resetZoom()
-                    }
-                    _this.updateFlow()
-                    _this.xVal = _this.graph.xAxisExtremes()
 
                     $('body').removeClass('loading');
                 }
@@ -216,6 +224,9 @@
         }
 
         onZoom(){
+            if (this.graph == undefined) {
+                return
+            }
             $('body').addClass('loading');
             this.graph.resetZoom();
             if (this.zoom > 0 && this.zoom < this.xVal[1]) {
@@ -227,7 +238,7 @@
         }
 
         disableBtnsIfNotApplicable(){
-            var val = parseInt(this.addrTarget.id)
+            var val = parseInt(this.addrTarget.id)*1000
             var d = new Date()
 
             var pastYear = d.getFullYear() - 1;
@@ -239,11 +250,11 @@
             var setApplicableBtns = (className, ts) => {
                 var isDisabled = (val > Number(new Date(ts))) ||
                     (this.options === 'unspent' && this.unspent == "0")
-                var zoomElem = this.zoomTarget.getElementsByClassName(className)[0]
-                zoomElem.disabled = isDisabled
 
-                var intervalElem = this.intervalTarget.getElementsByClassName(className)[0]
-                intervalElem.disabled = isDisabled
+                if (isDisabled) {
+                    this.zoomTarget.getElementsByClassName(className)[0].setAttribute("disabled", isDisabled)
+                    this.intervalTarget.getElementsByClassName(className)[0].setAttribute("disabled", isDisabled)
+                }
 
                 if (className !== "year" && !isDisabled){
                     this.enabledButtons.push(className)
@@ -255,7 +266,7 @@
             setApplicableBtns('week', new Date().setDate(pastWeek))
             setApplicableBtns('day', new Date().setDate(pastDay))
 
-            if (parseInt(this.intervalTarget.dataset.txcount) < 20) {
+            if (parseInt(this.intervalTarget.dataset.txcount) < 20 || this.enabledButtons.length === 0) {
                 this.enabledButtons[0] = "all"
             }
 
@@ -269,7 +280,7 @@
         }
 
         get addr(){
-            return this.addrTarget.outerText
+            return this.addrTarget.dataset.address
         }
 
         get unspent(){
