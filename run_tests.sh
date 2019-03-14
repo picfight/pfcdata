@@ -48,7 +48,7 @@ if [ ! "$DOCKER" ]; then
 fi
 
 # use Travis cache with docker
-DOCKER_IMAGE_TAG=picfight-golang-builder-$GOVERSION
+DOCKER_IMAGE_TAG=pfcdata-golang-builder-$GOVERSION
 mkdir -p ~/.cache
 if [ -f ~/.cache/$DOCKER_IMAGE_TAG.tar ]; then
   # load via cache
