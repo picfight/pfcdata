@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 		tx_tree INT2,
 		is_valid BOOLEAN,
 		is_mainchain BOOLEAN,
-		block_time TIMESTAMPTZ,
+		block_time INT8,
 		prev_tx_hash TEXT,
 		prev_tx_index INT8,
 		prev_tx_tree INT2,
@@ -67,13 +67,13 @@ const (
 				FROM vins) t
 			WHERE t.rnum > 1);`
 
-	IndexVinTableOnVins = `CREATE UNIQUE INDEX ` + IndexOfVinsTableOnVin +
-		` ON vins(tx_hash, tx_index, tx_tree);`
-	DeindexVinTableOnVins = `DROP INDEX ` + IndexOfVinsTableOnVin + `;`
+	IndexVinTableOnVins = `CREATE UNIQUE INDEX uix_vin
+		ON vins(tx_hash, tx_index, tx_tree);`
+	DeindexVinTableOnVins = `DROP INDEX uix_vin;`
 
-	IndexVinTableOnPrevOuts = `CREATE INDEX ` + IndexOfVinsTableOnPrevOut +
-		` ON vins(prev_tx_hash, prev_tx_index);`
-	DeindexVinTableOnPrevOuts = `DROP INDEX ` + IndexOfVinsTableOnPrevOut + `;`
+	IndexVinTableOnPrevOuts = `CREATE INDEX uix_vin_prevout
+		ON vins(prev_tx_hash, prev_tx_index);`
+	DeindexVinTableOnPrevOuts = `DROP INDEX uix_vin_prevout;`
 
 	SelectVinIDsALL = `SELECT id FROM vins;`
 	CountVinsRows   = `SELECT reltuples::BIGINT AS estimate FROM pg_class WHERE relname='vins';`
@@ -101,15 +101,6 @@ const (
 	SelectAllVinInfoByID             = `SELECT tx_hash, tx_index, tx_tree, is_valid, is_mainchain, block_time,
 		prev_tx_hash, prev_tx_index, prev_tx_tree, value_in, tx_type FROM vins WHERE id = $1;`
 	SelectVinVoutPairByID = `SELECT tx_hash, tx_index, prev_tx_hash, prev_tx_index FROM vins WHERE id = $1;`
-
-	SelectUTXOs = `SELECT vouts.tx_hash, vouts.tx_index,  -- outpoint
-			vouts.script_addresses, vouts.value           -- value and addresses of output
-		FROM vouts LEFT OUTER JOIN vins                   -- LEFT JOIN to identify when there is no matching input (spend)
-		ON vouts.tx_hash=vins.prev_tx_hash
-			AND vouts.tx_index=vins.prev_tx_index
-		WHERE vins.prev_tx_hash IS NULL                   -- unspent
-			AND cardinality(script_addresses)>0
-			AND value>0;`
 
 	SetIsValidIsMainchainByTxHash = `UPDATE vins SET is_valid = $1, is_mainchain = $2
 		WHERE tx_hash = $3 AND block_time = $4 AND tx_tree = $5;`
@@ -202,21 +193,17 @@ const (
 
 	// IndexVoutTableOnTxHashIdx creates the unique index uix_vout_txhash_ind on
 	// (tx_hash, tx_index, tx_tree).
-	IndexVoutTableOnTxHashIdx = `CREATE UNIQUE INDEX ` + IndexOfVoutsTableOnTxHashInd +
-		` ON vouts(tx_hash, tx_index, tx_tree);`
-	DeindexVoutTableOnTxHashIdx = `DROP INDEX ` + IndexOfVoutsTableOnTxHashInd + `;`
+	IndexVoutTableOnTxHashIdx = `CREATE UNIQUE INDEX uix_vout_txhash_ind
+		ON vouts(tx_hash, tx_index, tx_tree);`
+	DeindexVoutTableOnTxHashIdx = `DROP INDEX uix_vout_txhash_ind;`
 
 	SelectAddressByTxHash = `SELECT script_addresses, value FROM vouts
 		WHERE tx_hash = $1 AND tx_index = $2 AND tx_tree = $3;`
 
 	SelectPkScriptByID       = `SELECT version, pkscript FROM vouts WHERE id=$1;`
 	SelectPkScriptByOutpoint = `SELECT version, pkscript FROM vouts WHERE tx_hash=$1 and tx_index=$2;`
-	SelectPkScriptByVinID    = `SELECT version, pkscript FROM vouts
-		JOIN vins ON vouts.tx_hash=vins.prev_tx_hash and vouts.tx_index=vins.prev_tx_index
-		WHERE vins.id=$1;`
-
-	SelectVoutIDByOutpoint = `SELECT id FROM vouts WHERE tx_hash=$1 and tx_index=$2;`
-	SelectVoutByID         = `SELECT * FROM vouts WHERE id=$1;`
+	SelectVoutIDByOutpoint   = `SELECT id FROM vouts WHERE tx_hash=$1 and tx_index=$2;`
+	SelectVoutByID           = `SELECT * FROM vouts WHERE id=$1;`
 
 	RetrieveVoutValue  = `SELECT value FROM vouts WHERE tx_hash=$1 and tx_index=$2;`
 	RetrieveVoutValues = `SELECT value, tx_index, tx_tree FROM vouts WHERE tx_hash=$1;`
@@ -286,7 +273,7 @@ func MakeVoutInsertStatement(checked, updateOnConflict bool) string {
 }
 
 func makeARRAYOfVouts(vouts []*dbtypes.Vout) string {
-	rowSubStmts := make([]string, 0, len(vouts))
+	var rowSubStmts []string
 	for i := range vouts {
 		hexPkScript := hex.EncodeToString(vouts[i].ScriptPubKey)
 		rowSubStmts = append(rowSubStmts,

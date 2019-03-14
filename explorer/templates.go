@@ -16,10 +16,7 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcec"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/explorer/types"
 )
 
 type pageTemplate struct {
@@ -29,19 +26,19 @@ type pageTemplate struct {
 
 type templates struct {
 	templates map[string]pageTemplate
-	common    []string
+	defaults  []string
 	folder    string
 	helpers   template.FuncMap
 }
 
-func newTemplates(folder string, common []string, helpers template.FuncMap) templates {
-	com := make([]string, 0, len(common))
-	for _, file := range common {
-		com = append(com, filepath.Join(folder, file+".tmpl"))
+func newTemplates(folder string, defaults []string, helpers template.FuncMap) templates {
+	var defs []string
+	for _, file := range defaults {
+		defs = append(defs, filepath.Join(folder, file+".tmpl"))
 	}
 	return templates{
 		templates: make(map[string]pageTemplate),
-		common:    com,
+		defaults:  defs,
 		folder:    folder,
 		helpers:   helpers,
 	}
@@ -49,7 +46,7 @@ func newTemplates(folder string, common []string, helpers template.FuncMap) temp
 
 func (t *templates) addTemplate(name string) error {
 	fileName := filepath.Join(t.folder, name+".tmpl")
-	files := append(t.common, fileName)
+	files := append(t.defaults, fileName)
 	temp, err := template.New(name).Funcs(t.helpers).ParseFiles(files...)
 	if err == nil {
 		t.templates[name] = pageTemplate{
@@ -154,90 +151,6 @@ func float64Formatting(v float64, numPlaces int, useCommas bool, boldNumPlaces .
 	return []string{integer, dec[:places], dec[places:], trailingZeros}
 }
 
-func amountAsDecimalPartsTrimmed(v, numPlaces int64, useCommas bool) []string {
-
-	// Filter numPlaces to only allow up to 8 decimal places trimming (eg. 1.12345678)
-	if numPlaces > 8 {
-		numPlaces = 8
-	}
-
-	// Separate values passed in into int.dec parts.
-	intpart := v / 1e8
-	decpart := v % 1e8
-
-	// Format left side.
-	left := strconv.FormatInt(intpart, 10)
-	rightWithTail := fmt.Sprintf("%08d", decpart)
-
-	// Reduce precision according to numPlaces.
-	if len(rightWithTail) > int(numPlaces) {
-		rightWithTail = rightWithTail[0:numPlaces]
-	}
-
-	// Separate trailing zeros.
-	right := strings.TrimRight(rightWithTail, "0")
-	tail := strings.TrimPrefix(rightWithTail, right)
-
-	// Add commas (eg. 3,444.33)
-	if useCommas && (len(left) > 3) {
-		integerAsInt64, err := strconv.ParseInt(left, 10, 64)
-		if err != nil {
-			log.Errorf("amountAsDecimalParts comma formatting failed. Input: %v Error: %v", v, err.Error())
-			left = "ERROR"
-			right = "VALUE"
-			tail = ""
-			return []string{left, right, tail}
-		}
-		left = humanize.Comma(integerAsInt64)
-	}
-
-	return []string{left, right, tail}
-}
-
-// threeSigFigs returns a representation of the float formatted to three
-// significant figures, with an appropriate magnitude prefix (k, M, B).
-// For (k, M, G) prefixes for file/memory sizes, use humanize.Bytes.
-func threeSigFigs(v float64) string {
-	if v >= 1e11 {
-		return fmt.Sprintf("%dB", int(math.Round(v/1e9)))
-	} else if v >= 1e10 {
-		return fmt.Sprintf("%.1fB", math.Round(v/1e8)/10)
-	} else if v >= 1e9 {
-		return fmt.Sprintf("%.2fB", math.Round(v/1e7)/1e2)
-	} else if v >= 1e8 {
-		return fmt.Sprintf("%dM", int(math.Round(v/1e6)))
-	} else if v >= 1e7 {
-		return fmt.Sprintf("%.1fM", math.Round(v/1e5)/10)
-	} else if v >= 1e6 {
-		return fmt.Sprintf("%.2fM", math.Round(v/1e4)/1e2)
-	} else if v >= 1e5 {
-		return fmt.Sprintf("%dk", int(math.Round(v/1e3)))
-	} else if v >= 1e4 {
-		return fmt.Sprintf("%.1fk", math.Round(v/100)/10)
-	} else if v >= 1e3 {
-		return fmt.Sprintf("%.2fk", math.Round(v/10)/1e2)
-	} else if v >= 100 {
-		return fmt.Sprintf("%d", int(math.Round(v)))
-	} else if v >= 10 {
-		return fmt.Sprintf("%.1f", math.Round(v*10)/10)
-	} else if v >= 1 {
-		return fmt.Sprintf("%.2f", math.Round(v*1e2)/1e2)
-	} else if v >= 0.1 {
-		return fmt.Sprintf("%.3f", math.Round(v*1e3)/1e3)
-	} else if v >= 0.01 {
-		return fmt.Sprintf("%.4f", math.Round(v*1e4)/1e4)
-	} else if v >= 0.001 {
-		return fmt.Sprintf("%.5f", math.Round(v*1e5)/1e5)
-	} else if v >= 0.0001 {
-		return fmt.Sprintf("%.6f", math.Round(v*1e6)/1e6)
-	} else if v >= 0.00001 {
-		return fmt.Sprintf("%.7f", math.Round(v*1e7)/1e7)
-	} else if v == 0 {
-		return "0"
-	}
-	return fmt.Sprintf("%.8f", math.Round(v*1e8)/1e8)
-}
-
 func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 	netTheme := "theme-" + strings.ToLower(netName(params))
 
@@ -273,15 +186,8 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			t, _ := time.Now().Zone()
 			return t
 		},
-		"timezoneOffset": func() int {
-			_, secondsEastOfUTC := time.Now().Zone()
-			return secondsEastOfUTC
-		},
 		"percentage": func(a, b int64) float64 {
 			return (float64(a) / float64(b)) * 100
-		},
-		"x100": func(v float64) float64 {
-			return v * 100
 		},
 		"int64": toInt64,
 		"intComma": func(v interface{}) string {
@@ -305,7 +211,6 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 		"toFloat64Amount": func(intAmount int64) float64 {
 			return pfcutil.Amount(intAmount).ToCoin()
 		},
-		"threeSigFigs": threeSigFigs,
 		"remaining": func(idx int, max, t int64) string {
 			x := (max - int64(idx)) * t
 			allsecs := int(time.Duration(x).Seconds())
@@ -335,7 +240,6 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			}
 			return str + "remaining"
 		},
-		"amountAsDecimalPartsTrimmed": amountAsDecimalPartsTrimmed,
 		"TimeDurationFormat": func(duration time.Duration) (formatedDuration string) {
 			durationhr := int(duration.Minutes() / 60)
 			durationmin := int(duration.Minutes()) % 60
@@ -359,71 +263,13 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			result = int(a) * b
 			return
 		},
-		"TimeConversion": func(a uint64) string {
-			if a == 0 {
-				return "N/A"
-			}
+		"TimeConversion": func(a uint64) (result string) {
 			dateTime := time.Unix(int64(a), 0).UTC()
-			return dateTime.Format("2006-01-02 15:04:05 MST")
-		},
-		"timeWithoutDateAndTimeZone": func(a uint64) string {
-			if a == 0 {
-				return "N/A"
-			}
-			dateTime := time.Unix(int64(a), 0).UTC()
-			return dateTime.Format("2006-01-02")
+			result = dateTime.Format("2006-01-02 15:04:05 MST")
+			return
 		},
 		"toLowerCase": func(a string) string {
 			return strings.ToLower(a)
-		},
-		"toTitleCase": func(a string) string {
-			return strings.Title(a)
-		},
-		"toDecimalPlaces": func(a float64, b int) float64 {
-			pow := math.Pow10(b)
-			return math.Floor(a*pow) / pow
-		},
-		"fetchRowLinkURL": func(groupingStr string, start, end time.Time) string {
-			// fetchRowLinkURL creates links url to be used in the blocks list views
-			// in heirachical order i.e. /years -> /months -> weeks -> /days -> /blocks
-			// (/years -> /months) simply means that on "/years" page every row has a
-			// link to the "/months" page showing the number of months that are
-			// expected to comprise a given row in "/years" page i.e each row has a
-			// link like "/months?offset=14&rows=12" with the offset unique for each row.
-			var matchedGrouping string
-			val := dbtypes.TimeGroupingFromStr(groupingStr)
-
-			switch val {
-			case dbtypes.YearGrouping:
-				matchedGrouping = "months"
-
-			case dbtypes.MonthGrouping:
-				matchedGrouping = "weeks"
-
-			case dbtypes.WeekGrouping:
-				matchedGrouping = "days"
-
-			// for dbtypes.DayGrouping and any other groupings default to blocks.
-			default:
-				matchedGrouping = "blocks"
-			}
-
-			matchingVal := dbtypes.TimeGroupingFromStr(matchedGrouping)
-			intervalVal, err := dbtypes.TimeBasedGroupingToInterval(matchingVal)
-			if err != nil {
-				log.Debugf("Resolving the new group interval failed: error : %v", err)
-				return "/blocks?offset=0&rows=20"
-			}
-
-			rowsCount := int64(end.Sub(start).Seconds()/intervalVal) + 1
-			offset := int64(time.Since(end).Seconds() / intervalVal)
-
-			if offset != 0 {
-				offset++
-			}
-
-			return fmt.Sprintf("/%s?offset=%d&rows=%d",
-				matchedGrouping, offset, rowsCount)
 		},
 		"theme": func() string {
 			return netTheme
@@ -437,62 +283,12 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			}
 			return make([]int, length)
 		},
-		"clipSlice": func(arr []*types.TrimmedTxInfo, n int) []*types.TrimmedTxInfo {
+		"clipSlice": func(arr []*TrimmedTxInfo, n int) []*TrimmedTxInfo {
 			if len(arr) >= n {
 				return arr[:n]
+			} else {
+				return arr
 			}
-			return arr
-		},
-		"hashlink": func(hash string, link string) [2]string {
-			return [2]string{hash, link}
-		},
-		"hashStart": func(hash string) string {
-			clipLen := 6
-			hashLen := len(hash) - clipLen
-			if hashLen < 1 {
-				return ""
-			}
-			return hash[0:hashLen]
-		},
-		"hashEnd": func(hash string) string {
-			clipLen := 6
-			hashLen := len(hash) - clipLen
-			if hashLen < 0 {
-				return hash
-			}
-			return hash[hashLen:]
-		},
-		"redirectToMainnet": func(netName string, message string) bool {
-			if netName != "Mainnet" && strings.Contains(message, "mainnet") {
-				return true
-			}
-			return false
-		},
-		"redirectToTestnet": func(netName string, message string) bool {
-			if netName != "Testnet" && strings.Contains(message, "testnet") {
-				return true
-			}
-			return false
-		},
-		"PKAddr2PKHAddr": func(address string) (p2pkh string) {
-			// Attempt to decode the pay-to-pubkey address.
-			var addr pfcutil.Address
-			addr, err := pfcutil.DecodeAddress(address)
-			if err != nil {
-				log.Errorf(err.Error())
-				return ""
-			}
-
-			// Extract the pubkey hash.
-			addrHash := addr.Hash160()
-
-			// Create a new pay-to-pubkey-hash address.
-			addrPKH, err := pfcutil.NewAddressPubKeyHash(addrHash[:], addr.Net(), pfcec.STEcdsaSecp256k1)
-			if err != nil {
-				log.Errorf(err.Error())
-				return ""
-			}
-			return addrPKH.EncodeAddress()
 		},
 	}
 }

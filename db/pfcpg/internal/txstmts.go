@@ -12,8 +12,8 @@ const (
 		/*block_db_id INT4,*/
 		block_hash TEXT,
 		block_height INT8,
-		block_time TIMESTAMPTZ,
-		time TIMESTAMPTZ,
+		block_time INT8,
+		time INT8,
 		tx_type INT4,
 		version INT4,
 		tree INT2,
@@ -84,16 +84,16 @@ const (
 
 	// IndexTransactionTableOnHashes creates the unique index uix_tx_hashes on
 	// (tx_hash, block_hash).
-	IndexTransactionTableOnHashes = `CREATE UNIQUE INDEX ` + IndexOfTransactionsTableOnHashes +
-		` ON transactions(tx_hash, block_hash);`
-	DeindexTransactionTableOnHashes = `DROP INDEX ` + IndexOfTransactionsTableOnHashes + `;`
+	IndexTransactionTableOnHashes = `CREATE UNIQUE INDEX uix_tx_hashes
+		 ON transactions(tx_hash, block_hash);`
+	DeindexTransactionTableOnHashes = `DROP INDEX uix_tx_hashes;`
 
 	// Investigate removing this. block_hash is already indexed. It would be
 	// unique with just (block_hash, block_index). And tree is likely not
 	// important to index.  NEEDS TESTING BEFORE REMOVAL.
-	IndexTransactionTableOnBlockIn = `CREATE UNIQUE INDEX ` + IndexOfTransactionsTableOnBlockInd +
-		` ON transactions(block_hash, block_index, tree);`
-	DeindexTransactionTableOnBlockIn = `DROP INDEX ` + IndexOfTransactionsTableOnBlockInd + `;`
+	IndexTransactionTableOnBlockIn = `CREATE UNIQUE INDEX uix_tx_block_in
+		ON transactions(block_hash, block_index, tree);`
+	DeindexTransactionTableOnBlockIn = `DROP INDEX uix_tx_block_in;`
 
 	SelectTxByHash = `SELECT id, block_hash, block_index, tree
 		FROM transactions
@@ -107,6 +107,9 @@ const (
 		WHERE tx_hash = $1
 		ORDER BY is_mainchain DESC, is_valid DESC, block_time DESC
 		LIMIT 1;`
+
+	SelectTxsPerDay = `SELECT to_timestamp(time)::date as date, count(*) FROM transactions
+		GROUP BY date ORDER BY date;`
 
 	SelectFullTxByHash = `SELECT id, block_hash, block_height, block_time, 
 		time, tx_type, version, tree, tx_hash, block_index, lock_time, expiry, 

@@ -5,20 +5,18 @@ package blockdata
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient/v2"
+	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
-	apitypes "github.com/picfight/pfcdata/v4/api/types"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/stakedb"
-	"github.com/picfight/pfcdata/v4/txhelpers"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // BlockData contains all the data collected by a Collector and stored
@@ -31,7 +29,6 @@ type BlockData struct {
 	EstStakeDiff     pfcjson.EstimateStakeDiffResult
 	PoolInfo         *apitypes.TicketPoolInfo
 	ExtraInfo        apitypes.BlockExplorerExtraInfo
-	BlockchainInfo   *pfcjson.GetBlockChainInfoResult
 	PriceWindowNum   int
 	IdxBlockInWindow int
 	WinningTickets   []string
@@ -41,7 +38,6 @@ type BlockData struct {
 // blockdata
 func (b *BlockData) ToStakeInfoExtended() apitypes.StakeInfoExtended {
 	return apitypes.StakeInfoExtended{
-		Hash:             b.Header.Hash,
 		Feeinfo:          b.FeeInfo,
 		StakeDiff:        b.CurrentStakeDiff.CurrentStakeDifficulty,
 		PriceWindowNum:   b.PriceWindowNum,
@@ -54,7 +50,6 @@ func (b *BlockData) ToStakeInfoExtended() apitypes.StakeInfoExtended {
 // object from the blockdata
 func (b *BlockData) ToStakeInfoExtendedEstimates() apitypes.StakeInfoExtendedEstimates {
 	return apitypes.StakeInfoExtendedEstimates{
-		Hash:    b.Header.Hash,
 		Feeinfo: b.FeeInfo,
 		StakeDiff: apitypes.StakeDiff{
 			GetStakeDifficultyResult: b.CurrentStakeDiff,
@@ -71,22 +66,23 @@ func (b *BlockData) ToStakeInfoExtendedEstimates() apitypes.StakeInfoExtendedEst
 
 // ToBlockSummary returns an apitypes.BlockDataBasic object from the blockdata
 func (b *BlockData) ToBlockSummary() apitypes.BlockDataBasic {
-	t := dbtypes.NewTimeDefFromUNIX(b.Header.Time)
 	return apitypes.BlockDataBasic{
 		Height:     b.Header.Height,
 		Size:       b.Header.Size,
 		Hash:       b.Header.Hash,
 		Difficulty: b.Header.Difficulty,
 		StakeDiff:  b.Header.SBits,
-		Time:       apitypes.TimeAPI{S: t},
+		Time:       b.Header.Time,
 		PoolInfo:   b.PoolInfo,
 	}
 }
 
 // ToBlockExplorerSummary returns a BlockExplorerBasic
 func (b *BlockData) ToBlockExplorerSummary() apitypes.BlockExplorerBasic {
+	t := time.Unix(b.Header.Time, 0)
+	ftime := t.Format("2006-01-02 15:04:05")
 	extra := b.ExtraInfo
-	t := dbtypes.NewTimeDefFromUNIX(b.Header.Time)
+	extra.FormattedTime = ftime
 	return apitypes.BlockExplorerBasic{
 		Height:                 b.Header.Height,
 		Size:                   b.Header.Size,
@@ -95,13 +91,13 @@ func (b *BlockData) ToBlockExplorerSummary() apitypes.BlockExplorerBasic {
 		FreshStake:             b.Header.FreshStake,
 		StakeDiff:              b.Header.SBits,
 		BlockExplorerExtraInfo: extra,
-		Time:                   t,
+		Time:                   b.Header.Time,
 	}
 }
 
 // Collector models a structure for the source of the blockdata
 type Collector struct {
-	mtx          sync.Mutex
+	sync.Mutex
 	pfcdChainSvr *rpcclient.Client
 	netParams    *chaincfg.Params
 	stakeDB      *stakedb.StakeDatabase
@@ -129,7 +125,6 @@ func (t *Collector) CollectAPITypes(hash *chainhash.Hash) (*apitypes.BlockDataBa
 	winSize := t.netParams.StakeDiffWindowSize
 
 	stakeInfoExtended := &apitypes.StakeInfoExtended{
-		Hash:             blockDataBasic.Hash,
 		Feeinfo:          *feeInfoBlock,
 		StakeDiff:        blockDataBasic.StakeDiff,
 		PriceWindowNum:   int(height / winSize),
@@ -210,7 +205,7 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 		Hash:       hash.String(),
 		Difficulty: diff,
 		StakeDiff:  sdiff,
-		Time:       apitypes.TimeAPI{S: dbtypes.NewTimeDef(header.Timestamp)},
+		Time:       header.Timestamp.Unix(),
 		PoolInfo:   ticketPoolInfo,
 	}
 	extrainfo := &apitypes.BlockExplorerExtraInfo{
@@ -225,8 +220,8 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBlock, error) {
 	// In case of a very fast block, make sure previous call to collect is not
 	// still running, or pfcd may be mad.
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
+	t.Lock()
+	defer t.Unlock()
 
 	// Time this function
 	defer func(start time.Time) {
@@ -234,8 +229,7 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 	}(time.Now())
 
 	// Info specific to the block hash
-	blockDataBasic, feeInfoBlock, blockHeaderVerbose, extra, msgBlock, err :=
-		t.CollectBlockInfo(hash)
+	blockDataBasic, feeInfoBlock, blockHeaderVerbose, extra, msgBlock, err := t.CollectBlockInfo(hash)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -244,17 +238,6 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 	numConn, err := t.pfcdChainSvr.GetConnectionCount()
 	if err != nil {
 		log.Warn("Unable to get connection count: ", err)
-	}
-
-	// Blockchain info (e.g. syncheight, verificationprogress, chainwork,
-	// bestblockhash, initialblockdownload, maxblocksize, deployments, etc.).
-	chainInfo, err := t.pfcdChainSvr.GetBlockChainInfo()
-	if err != nil {
-		log.Warn("Unable to get blockchain info: ", err)
-	}
-	// GetBlockChainInfo is only valid for for chain tip.
-	if chainInfo.BestBlockHash != hash.String() {
-		chainInfo = nil
 	}
 
 	// Output
@@ -268,7 +251,6 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 		EstStakeDiff:     pfcjson.EstimateStakeDiffResult{},
 		PoolInfo:         blockDataBasic.PoolInfo,
 		ExtraInfo:        *extra,
-		BlockchainInfo:   chainInfo,
 		PriceWindowNum:   int(height / winSize),
 		IdxBlockInWindow: int(height%winSize) + 1,
 	}
@@ -280,45 +262,33 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 	// In case of a very fast block, make sure previous call to collect is not
 	// still running, or pfcd may be mad.
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
+	t.Lock()
+	defer t.Unlock()
 
 	// Time this function
 	defer func(start time.Time) {
 		log.Debugf("Collector.Collect() completed in %v", time.Since(start))
 	}(time.Now())
 
-	// Run first client call with a timeout.
-	type bciRes struct {
-		err            error
-		blockchainInfo *pfcjson.GetBlockChainInfoResult
+	// Run first client call with a timeout
+	type bbhRes struct {
+		err  error
+		hash *chainhash.Hash
 	}
-	toch := make(chan bciRes)
+	toch := make(chan bbhRes)
 
-	// Pull and store relevant data about the blockchain (e.g. syncheight,
-	// verificationprogress, chainwork, bestblockhash, initialblockdownload,
-	// maxblocksize, deployments, etc.).
+	// Pull and store relevant data about the blockchain.
 	go func() {
-		blockchainInfo, err := t.pfcdChainSvr.GetBlockChainInfo()
-		toch <- bciRes{err, blockchainInfo}
+		bestBlockHash, err := t.pfcdChainSvr.GetBestBlockHash()
+		toch <- bbhRes{err, bestBlockHash}
 	}()
 
-	var bci bciRes
+	var bbs bbhRes
 	select {
-	case bci = <-toch:
+	case bbs = <-toch:
 	case <-time.After(time.Second * 10):
 		log.Errorf("Timeout waiting for pfcd.")
 		return nil, nil, errors.New("Timeout")
-	}
-
-	if bci.err != nil {
-		return nil, nil, fmt.Errorf("unable to get blockchain info: %v", bci.err)
-	}
-
-	hash, err := chainhash.NewHashFromStr(bci.blockchainInfo.BestBlockHash)
-	if err != nil {
-		return nil, nil,
-			fmt.Errorf("invalid best block hash from getblockchaininfo: %v", err)
 	}
 
 	// Stake difficulty
@@ -335,8 +305,7 @@ func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 	}
 
 	// Info specific to the block hash
-	blockDataBasic, feeInfoBlock, blockHeaderVerbose, extra, msgBlock, err :=
-		t.CollectBlockInfo(hash)
+	blockDataBasic, feeInfoBlock, blockHeaderVerbose, extra, msgBlock, err := t.CollectBlockInfo(bbs.hash)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -357,7 +326,6 @@ func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 		CurrentStakeDiff: *stakeDiff,
 		EstStakeDiff:     *estStakeDiff,
 		ExtraInfo:        *extra,
-		BlockchainInfo:   bci.blockchainInfo,
 		PoolInfo:         blockDataBasic.PoolInfo,
 		PriceWindowNum:   int(height / winSize),
 		IdxBlockInWindow: int(height%winSize) + 1,

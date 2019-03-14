@@ -1,26 +1,21 @@
-// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
 package pfcpg
 
 import (
-	"context"
-	"sort"
-
-	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	apitypes "github.com/picfight/pfcdata/v4/api/types"
-	"github.com/picfight/pfcdata/v4/db/cache"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/rpcutils"
-	"github.com/picfight/pfcdata/v4/txhelpers"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/explorer"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // GetRawTransaction gets a pfcjson.TxRawResult for the specified transaction
 // hash.
-func (pgb *ChainDBRPC) GetRawTransaction(txid *chainhash.Hash) (*pfcjson.TxRawResult, error) {
+func (pgb *ChainDBRPC) GetRawTransaction(txid string) (*pfcjson.TxRawResult, error) {
 	txraw, err := rpcutils.GetTransactionVerboseByID(pgb.Client, txid)
 	if err != nil {
 		log.Errorf("GetRawTransactionVerbose failed for: %s", txid)
@@ -31,14 +26,18 @@ func (pgb *ChainDBRPC) GetRawTransaction(txid *chainhash.Hash) (*pfcjson.TxRawRe
 
 // GetBlockHeight returns the height of the block with the specified hash.
 func (pgb *ChainDB) GetBlockHeight(hash string) (int64, error) {
-	ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	defer cancel()
-	height, err := RetrieveBlockHeight(ctx, pgb.db, hash)
+	height, err := RetrieveBlockHeight(pgb.db, hash)
 	if err != nil {
 		log.Errorf("Unable to get block height for hash %s: %v", hash, err)
-		return -1, pgb.replaceCancelError(err)
+		return -1, err
 	}
 	return height, nil
+}
+
+// GetHeight returns the current best block height.
+func (pgb *ChainDB) GetHeight() int {
+	height, _, _, _ := RetrieveBestBlockHeight(pgb.db)
+	return int(height)
 }
 
 // SendRawTransaction attempts to decode the input serialized transaction,
@@ -57,99 +56,32 @@ func (pgb *ChainDBRPC) SendRawTransaction(txhex string) (string, error) {
 	return hash.String(), err
 }
 
-type txSortable struct {
-	Hash chainhash.Hash
-	Time int64
+// InsightPgGetAddressTransactions performs a db query to pull all txids for the
+// specified addresses ordered desc by time.
+func (pgb *ChainDB) InsightPgGetAddressTransactions(addr []string,
+	recentBlockHeight int64) ([]string, []string) {
+	return RetrieveAddressTxnsOrdered(pgb.db, addr, recentBlockHeight)
 }
 
-func sortTxsByTimeAndHash(txns []txSortable) {
-	sort.Slice(txns, func(i, j int) bool {
-		if txns[i].Time == txns[j].Time {
-			return txns[i].Hash.String() < txns[j].Hash.String()
-		}
-		return txns[i].Time > txns[j].Time
-	})
+// RetrieveAddressSpentUnspent retrieves balance information for a specific
+// address.
+func (pgb *ChainDB) RetrieveAddressSpentUnspent(address string) (int64, int64, int64, int64, int64, error) {
+	return RetrieveAddressSpentUnspent(pgb.db, address)
 }
 
-// InsightAddressTransactions performs a db query to pull all txids for the
-// specified addresses ordered desc by time. It also returns a list of recently
-// (defined as greater than recentBlockHeight) confirmed transactions that can
-// be used to validate mempool status.
-func (pgb *ChainDB) InsightAddressTransactions(addr []string, recentBlockHeight int64) (txs, recentTxs []chainhash.Hash, err error) {
-	// Time of a "recent" block
-	recentBlocktime, err0 := pgb.BlockTimeByHeight(recentBlockHeight)
-	if err0 != nil {
-		return nil, nil, err0
-	}
-
-	// Retrieve all merged address rows for these addresses.
-	var txns []chainhash.Hash // []txSortable
-	var numRecent int
-	for i := range addr {
-		rows, err := pgb.AddressRowsMerged(addr[i])
-		if err != nil {
-			return nil, nil, err
-		}
-		// merged credit rows
-		// rows = cache.AllCreditAddressRows(rows)
-		for _, r := range rows {
-			if !r.IsFunding() {
-				continue
-			}
-			//txns = append(txns, txSortable{r.TxHash, r.TxBlockTime})
-			txns = append(txns, r.TxHash)
-			// Count the number of "recent" txns.
-			if r.TxBlockTime > recentBlocktime {
-				numRecent++
-			}
-		}
-	}
-
-	// Sort by block time (DESC) then hash (ASC).
-	//sortTxsByTimeAndHash(txns)
-	// wasSorted := sort.SliceIsSorted(txns, func(i, j int) bool {
-	// 	if txns[i].Time == txns[j].Time {
-	// 		return txns[i].Hash < txns[j].Hash
-	// 	}
-	// 	return txns[i].Time > txns[j].Time
-	// })
-	// fmt.Println(wasSorted)
-
-	txs = make([]chainhash.Hash, 0, len(txns))
-	recentTxs = make([]chainhash.Hash, 0, numRecent)
-
-	for i := range txns {
-		txs = append(txs, txns[i])
-		if i < numRecent {
-			recentTxs = append(recentTxs, txns[i])
-		}
-	}
-
-	return
-
-	// Perform the DB query in the absence of all cached data.
-	// ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	// defer cancel()
-	// txs, recentTxs, err = RetrieveAddressTxnsOrdered(ctx, pgb.db, addr, recentBlocktime)
-	// err = pgb.replaceCancelError(err)
-	// return
-}
-
-// AddressIDsByOutpoint fetches all address row IDs for a given outpoint
+// RetrieveAddressIDsByOutpoint fetches all address row IDs for a given outpoint
 // (txHash:voutIndex). TODO: Update the vin due to the issue with amountin
 // invalid for unconfirmed txns.
-func (pgb *ChainDB) AddressIDsByOutpoint(txHash string, voutIndex uint32) ([]uint64, []string, int64, error) {
-	ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	defer cancel()
-	ids, addrs, val, err := RetrieveAddressIDsByOutpoint(ctx, pgb.db, txHash, voutIndex)
-	return ids, addrs, val, pgb.replaceCancelError(err)
+func (pgb *ChainDB) RetrieveAddressIDsByOutpoint(txHash string,
+	voutIndex uint32) ([]uint64, []string, int64, error) {
+	return RetrieveAddressIDsByOutpoint(pgb.db, txHash, voutIndex)
 } // Update Vin due to PFCD AMOUNTIN - END
 
-// InsightSearchRPCAddressTransactions performs a searchrawtransactions for the
+// InsightGetAddressTransactions performs a searchrawtransactions for the
 // specfied address, max number of transactions, and offset into the transaction
 // list. The search results are in reverse temporal order.
 // TODO: Does this really need all the prev vout extra data?
-func (pgb *ChainDBRPC) InsightSearchRPCAddressTransactions(addr string, count,
+func (pgb *ChainDBRPC) InsightGetAddressTransactions(addr string, count,
 	skip int) []*pfcjson.SearchRawTransactionsResult {
 	address, err := pfcutil.DecodeAddress(addr)
 	if err != nil {
@@ -169,7 +101,7 @@ func (pgb *ChainDBRPC) InsightSearchRPCAddressTransactions(addr string, count,
 
 // GetTransactionHex returns the full serialized transaction for the specified
 // transaction hash as a hex encode string.
-func (pgb *ChainDBRPC) GetTransactionHex(txid *chainhash.Hash) string {
+func (pgb *ChainDBRPC) GetTransactionHex(txid string) string {
 	txraw, err := rpcutils.GetTransactionVerboseByID(pgb.Client, txid)
 
 	if err != nil {
@@ -209,76 +141,57 @@ func makeBlockTransactions(blockVerbose *pfcjson.GetBlockVerboseResult) *apitype
 // GetBlockHash returns the hash of the block at the specified height. TODO:
 // create GetBlockHashes to return all blocks at a given height.
 func (pgb *ChainDB) GetBlockHash(idx int64) (string, error) {
-	ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	defer cancel()
-	hash, err := RetrieveBlockHash(ctx, pgb.db, idx)
+	hash, err := RetrieveBlockHash(pgb.db, idx)
 	if err != nil {
 		log.Errorf("Unable to get block hash for block number %d: %v", idx, err)
-		return "", pgb.replaceCancelError(err)
+		return "", err
 	}
 	return hash, nil
 }
 
-// BlockSummaryTimeRange returns the blocks created within a specified time
+// GetAddressBalance returns a *explorer.AddressBalance for the specified
+// address, transaction count limit, and transaction number offset.
+func (pgb *ChainDB) GetAddressBalance(address string, N, offset int64) *explorer.AddressBalance {
+	_, balance, err := pgb.AddressHistoryAll(address, N, offset)
+	if err != nil {
+		return nil
+	}
+	return balance
+}
+
+// GetBlockSummaryTimeRange returns the blocks created within a specified time
 // range (min, max time), up to limit transactions.
-func (pgb *ChainDB) BlockSummaryTimeRange(min, max int64, limit int) ([]dbtypes.BlockDataBasic, error) {
-	ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	defer cancel()
-	blockSummary, err := RetrieveBlockSummaryByTimeRange(ctx, pgb.db, min, max, limit)
-	return blockSummary, pgb.replaceCancelError(err)
+func (pgb *ChainDB) GetBlockSummaryTimeRange(min, max int64, limit int) []dbtypes.BlockDataBasic {
+	blockSummary, err := RetrieveBlockSummaryByTimeRange(pgb.db, min, max, limit)
+	if err != nil {
+		log.Errorf("Unable to retrieve block summary using time %d: %v", min, err)
+	}
+	return blockSummary
 }
 
-// AddressUTXO returns the unspent transaction outputs (UTXOs) paying to the
+// GetAddressUTXO returns the unspent transaction outputs (UTXOs) paying to the
 // specified address in a []apitypes.AddressTxnOutput.
-func (pgb *ChainDB) AddressUTXO(address string) ([]apitypes.AddressTxnOutput, bool, error) {
-	// Check the cache first.
-	bestHash, height := pgb.BestBlock()
-	utxos, validHeight := pgb.AddressCache.UTXOs(address)
-	if utxos != nil && *bestHash == validHeight.Hash {
-		return utxos, false, nil
-	}
-
-	busy, wait, done := pgb.CacheLocks.utxo.TryLock(address)
-	if busy {
-		// Let others get the wait channel while we wait.
-		// To return stale cache data if it is available:
-		// utxos, _ := pgb.AddressCache.UTXOs(address)
-		// if utxos != nil {
-		// 	return utxos, nil
-		// }
-		<-wait
-
-		// Try again, starting with the cache.
-		return pgb.AddressUTXO(address)
-	} else {
-		// We will run the DB query, so block others from doing the same. When
-		// query and/or cache update is completed, broadcast to any waiters that
-		// the coast is clear.
-		defer done()
-	}
-
-	// Cache is empty or stale, so query the DB.
-	ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	defer cancel()
-	blockHeight := pgb.Height()
-	txnOutput, err := RetrieveAddressUTXOs(ctx, pgb.db, address, blockHeight)
+func (pgb *ChainDB) GetAddressUTXO(address string) []apitypes.AddressTxnOutput {
+	blockHeight, _, _, err := RetrieveBestBlockHeight(pgb.db)
 	if err != nil {
-		return nil, false, pgb.replaceCancelError(err)
+		log.Error(err)
+		return nil
 	}
-
-	// Update the address cache.
-	cacheUpdated := pgb.AddressCache.StoreUTXOs(address, txnOutput, cache.NewBlockID(bestHash, height))
-	return txnOutput, cacheUpdated, nil
+	txnOutput, err := RetrieveAddressUTXOs(pgb.db, address, int64(blockHeight))
+	if err != nil {
+		log.Error(err)
+		return nil
+	}
+	return txnOutput
 }
 
-// SpendDetailsForFundingTx will return the details of any spending transactions
-// (tx, index, block height) for a given funding transaction.
-func (pgb *ChainDB) SpendDetailsForFundingTx(fundHash string) ([]*apitypes.SpendByFundingHash, error) {
-	ctx, cancel := context.WithTimeout(pgb.ctx, pgb.queryTimeout)
-	defer cancel()
-	addrRow, err := RetrieveSpendingTxsByFundingTxWithBlockHeight(ctx, pgb.db, fundHash)
+// GetSpendDetailsByFundingHash will return the spending details (tx, index,
+// block height) by funding transaction
+func (pgb *ChainDB) GetSpendDetailsByFundingHash(fundHash string) []*apitypes.SpendByFundingHash {
+	AddrRow, err := RetrieveSpendingTxsByFundingTxWithBlockHeight(pgb.db, fundHash)
 	if err != nil {
-		return nil, pgb.replaceCancelError(err)
+		log.Error(err)
+		return nil
 	}
-	return addrRow, nil
+	return AddrRow
 }

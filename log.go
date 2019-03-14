@@ -11,32 +11,28 @@ import (
 
 	"github.com/decred/slog"
 	"github.com/jrick/logrotate/rotator"
-	"github.com/picfight/pfcd/rpcclient/v2"
-	"github.com/picfight/pfcdata/v4/api"
-	"github.com/picfight/pfcdata/v4/api/insight"
-	"github.com/picfight/pfcdata/v4/blockdata"
-	"github.com/picfight/pfcdata/v4/db/pfcpg"
-	"github.com/picfight/pfcdata/v4/db/pfcsqlite"
-	"github.com/picfight/pfcdata/v4/exchanges"
-	"github.com/picfight/pfcdata/v4/explorer"
-	"github.com/picfight/pfcdata/v4/gov/agendas"
-	"github.com/picfight/pfcdata/v4/gov/politeia"
-	"github.com/picfight/pfcdata/v4/mempool"
-	"github.com/picfight/pfcdata/v4/middleware"
-	notify "github.com/picfight/pfcdata/v4/notification"
-	"github.com/picfight/pfcdata/v4/pubsub"
-	"github.com/picfight/pfcdata/v4/rpcutils"
-	"github.com/picfight/pfcdata/v4/stakedb"
+	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcdata/v3/api"
+	"github.com/picfight/pfcdata/v3/api/insight"
+	"github.com/picfight/pfcdata/v3/blockdata"
+	"github.com/picfight/pfcdata/v3/db/pfcpg"
+	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
+	"github.com/picfight/pfcdata/v3/explorer"
+	"github.com/picfight/pfcdata/v3/mempool"
+	"github.com/picfight/pfcdata/v3/middleware"
+	notify "github.com/picfight/pfcdata/v3/notification"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/stakedb"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
 // the write-end pipe of an initialized log rotator.
 type logWriter struct{}
 
-// Write writes the data in p to standard out and the log rotator.
 func (logWriter) Write(p []byte) (n int, err error) {
 	os.Stdout.Write(p)
-	return logRotator.Write(p)
+	logRotator.Write(p)
+	return len(p), nil
 }
 
 // Loggers per subsystem.  A single backend logger is created and all subsytem
@@ -68,10 +64,6 @@ var (
 	apiLog        = backendLog.Logger("JAPI")
 	log           = backendLog.Logger("DATD")
 	iapiLog       = backendLog.Logger("IAPI")
-	pubsubLog     = backendLog.Logger("PUBS")
-	xcBotLog      = backendLog.Logger("XBOT")
-	agendasLog    = backendLog.Logger("AGDB")
-	proposalsLog  = backendLog.Logger("PRDB")
 )
 
 // Initialize package-global logger variables.
@@ -88,10 +80,6 @@ func init() {
 	insight.UseLogger(iapiLog)
 	middleware.UseLogger(apiLog)
 	notify.UseLogger(notifyLog)
-	pubsub.UseLogger(pubsubLog)
-	exchanges.UseLogger(xcBotLog)
-	agendas.UseLogger(agendasLog)
-	politeia.UseLogger(proposalsLog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
@@ -107,10 +95,6 @@ var subsystemLoggers = map[string]slog.Logger{
 	"JAPI": apiLog,
 	"IAPI": iapiLog,
 	"DATD": log,
-	"PUBS": pubsubLog,
-	"XBOT": xcBotLog,
-	"AGDB": agendasLog,
-	"PRDB": proposalsLog,
 }
 
 // initLogRotator initializes the logging rotater to write logs to logFile and

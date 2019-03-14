@@ -1,4 +1,3 @@
-// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
@@ -26,7 +25,6 @@ const (
 	ctxTxInOutId
 	ctxAddress
 	ctxAgendaId
-	ctxProposalToken
 )
 
 func (exp *explorerUI) BlockHashPathOrIndexCtx(next http.Handler) http.Handler {
@@ -41,37 +39,33 @@ func (exp *explorerUI) BlockHashPathOrIndexCtx(next http.Handler) http.Handler {
 			} else {
 				height, err = exp.explorerSource.BlockHeight(hash)
 			}
-			if exp.timeoutErrorPage(w, err, "BlockHashPathOrIndexCtx>BlockHeight") {
-				return
-			}
 			if err != nil {
 				if err != sql.ErrNoRows {
 					log.Warnf("BlockHeight(%s) failed: %v", hash, err)
 				}
-				exp.StatusPage(w, defaultErrorCode, "could not find that block", hash, ExpStatusNotFound)
+				exp.StatusPage(w, defaultErrorCode, "could not find that block", NotFoundStatusType)
 				return
 			}
 		} else {
 			// Check best DB block to recognize future blocks.
 			var maxHeight int64
 			if exp.liteMode {
-				maxHeight, err = exp.blockData.GetHeight()
+				maxHeight = int64(exp.blockData.GetHeight())
+			} else {
+				bestBlockHeight, err := exp.explorerSource.HeightDB()
 				if err != nil {
-					log.Errorf("GetHeight() failed: %v", err)
+					log.Errorf("HeightDB() failed: %v", err)
 					exp.StatusPage(w, defaultErrorCode,
-						"an unexpected error had occured while retrieving the best block",
-						"", ExpStatusNotFound)
+						"an unexpected error had occured while retrieving the best block", ErrorStatusType)
 					return
 				}
-			} else {
-				maxHeight = exp.explorerSource.Height()
+				maxHeight = int64(bestBlockHeight)
 			}
 
 			if height > maxHeight {
 				expectedTime := time.Duration(height-maxHeight) * exp.ChainParams.TargetTimePerBlock
 				message := fmt.Sprintf("This block is expected to arrive in approximately in %v. ", expectedTime)
-				exp.StatusPage(w, defaultErrorCode, message,
-					string(expectedTime), ExpStatusFutureBlock)
+				exp.StatusPage(w, defaultErrorCode, message, NotFoundStatusType)
 				return
 			}
 
@@ -84,27 +78,26 @@ func (exp *explorerUI) BlockHashPathOrIndexCtx(next http.Handler) http.Handler {
 				}
 				if err != nil {
 					log.Errorf("%s(%d) failed: %v", f, height, err)
-					exp.StatusPage(w, defaultErrorCode, "could not find that block",
-						string(height), ExpStatusNotFound)
+					exp.StatusPage(w, defaultErrorCode, "could not find that block", NotFoundStatusType)
 					return
 				}
 			}
 		}
 
 		ctx := context.WithValue(r.Context(), ctxBlockHash, hash)
-		ctx = context.WithValue(ctx, ctxBlockIndex, int(height)) // Must be int!
+		ctx = context.WithValue(ctx, ctxBlockIndex, height)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// SyncStatusPageIntercept serves only the syncing status page until it is
-// deactivated when ShowingSyncStatusPage is set to false. This page is served
+// SyncStatusPageActivation serves only the syncing status page until its
+// deactivated when DisplaySyncStatusPage is set to false. This page is served
 // for all the possible routes supported until the background syncing is done.
-func (exp *explorerUI) SyncStatusPageIntercept(next http.Handler) http.Handler {
+func (exp *explorerUI) SyncStatusPageActivation(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if exp.ShowingSyncStatusPage() {
-			exp.StatusPage(w, "Database Update Running. Please Wait.",
-				"Blockchain sync is running. Please wait.", "", ExpStatusSyncing)
+		if exp.DisplaySyncStatusPage() {
+			exp.StatusPage(w, "Database Update Running. Please Wait...",
+				"Blockchain sync is running. Please wait ...", BlockchainSyncingType)
 			return
 		}
 		// Otherwise, proceed to the next http handler.
@@ -112,25 +105,12 @@ func (exp *explorerUI) SyncStatusPageIntercept(next http.Handler) http.Handler {
 	})
 }
 
-// SyncStatusAPIIntercept returns a json response back instead of a web page
-// when display sync status is active for the api endpoints supported.
-func (exp *explorerUI) SyncStatusAPIIntercept(next http.Handler) http.Handler {
+// SyncStatusApiResponse returns a json response back instead of a web page when
+// display sync status is active for the api endpoints supported.
+func (exp *explorerUI) SyncStatusApiResponse(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if exp.ShowingSyncStatusPage() {
+		if exp.DisplaySyncStatusPage() {
 			exp.HandleApiRequestsOnSync(w, r)
-			return
-		}
-		// Otherwise, proceed to the next http handler.
-		next.ServeHTTP(w, r)
-	})
-}
-
-// SyncStatusFileIntercept triggers an HTTP error if a file is requested for
-// download before the DB is synced.
-func (exp *explorerUI) SyncStatusFileIntercept(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if exp.ShowingSyncStatusPage() {
-			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 			return
 		}
 		// Otherwise, proceed to the next http handler.
@@ -161,15 +141,6 @@ func getAgendaIDCtx(r *http.Request) string {
 	hash, ok := r.Context().Value(ctxAgendaId).(string)
 	if !ok {
 		log.Trace("Agendaid not set")
-		return ""
-	}
-	return hash
-}
-
-func getProposalTokenCtx(r *http.Request) string {
-	hash, ok := r.Context().Value(ctxProposalToken).(string)
-	if !ok {
-		log.Trace("Proposal token not set")
 		return ""
 	}
 	return hash
@@ -209,15 +180,6 @@ func AgendaPathCtx(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		agendaid := chi.URLParam(r, "agendaid")
 		ctx := context.WithValue(r.Context(), ctxAgendaId, agendaid)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// ProposalPathCtx embeds "proposalToken" into the request context
-func ProposalPathCtx(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proposalToken := chi.URLParam(r, "proposalToken")
-		ctx := context.WithValue(r.Context(), ctxProposalToken, proposalToken)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

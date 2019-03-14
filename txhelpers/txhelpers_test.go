@@ -1,23 +1,21 @@
 package txhelpers
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient/v2"
-	"github.com/picfight/pfcdata/v4/semver"
-	"github.com/picfight/pfcdata/v4/testutil"
+	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcdata/v3/semver"
+	"github.com/picfight/pfcdata/v3/testutil"
 )
 
 type TxGetter struct {
@@ -286,83 +284,5 @@ func testIsZeroHashP2PHKAddress(expectedAddress string, params *chaincfg.Params,
 			expectedAddress,
 			result,
 			expectedTestResult)
-	}
-}
-
-func TestFeeRate(t *testing.T) {
-	// Ensure invalid fee rate is -1.
-	if FeeRate(0, 0, 0) != -1 {
-		t.Errorf("Fee rate for 0 byte size must return -1.")
-	}
-
-	// (1-2)/500*1000 = -2
-	expected := int64(-2)
-	got := FeeRate(1, 2, 500)
-	if got != expected {
-		t.Errorf("Expected fee rate of %d, got %d.", expected, got)
-	}
-
-	// (10-0)/100*1000 = 100
-	expected = int64(100)
-	got = FeeRate(10, 0, 100)
-	if got != expected {
-		t.Errorf("Expected fee rate of %d, got %d.", expected, got)
-	}
-
-	// (10-10)/1e9*1000 = 0
-	expected = int64(0)
-	got = FeeRate(10, 10, 1e9)
-	if got != expected {
-		t.Errorf("Expected fee rate of %d, got %d.", expected, got)
-	}
-}
-
-func randomHash() chainhash.Hash {
-	var hash chainhash.Hash
-	if _, err := rand.Read(hash[:]); err != nil {
-		panic("boom")
-	}
-	return hash
-}
-
-func TestIsZeroHash(t *testing.T) {
-	tests := []struct {
-		name string
-		hash chainhash.Hash
-		want bool
-	}{
-		{"correctFromZeroByteArray", [chainhash.HashSize]byte{}, true},
-		{"correctFromZeroValueHash", chainhash.Hash{}, true},
-		{"incorrectByteArrayValues", [chainhash.HashSize]byte{0x22}, false},
-		{"incorrectRandomHash", randomHash(), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsZeroHash(tt.hash); got != tt.want {
-				t.Errorf("IsZeroHash() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestIsZeroHashStr(t *testing.T) {
-	tests := []struct {
-		name string
-		hash string
-		want bool
-	}{
-		{"correctFromStringsRepeat", strings.Repeat("00", chainhash.HashSize), true},
-		{"correctFromZeroHashStringer", zeroHash.String(), true},
-		{"correctFromZeroValueHashStringer", chainhash.Hash{}.String(), true},
-		{"incorrectEmptyString", "", false},
-		{"incorrectRandomHashString", randomHash().String(), false},
-		{"incorrectNotAHashAtAll", "this is totally not a hash let alone the zero hash string", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsZeroHashStr(tt.hash); got != tt.want {
-				t.Errorf("IsZeroHashStr() = %v, want %v", got, tt.want)
-			}
-		})
 	}
 }

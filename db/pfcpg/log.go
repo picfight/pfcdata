@@ -4,10 +4,7 @@
 
 package pfcpg
 
-import (
-	"github.com/decred/slog"
-	"github.com/picfight/pfcdata/v4/db/cache"
-)
+import "github.com/decred/slog"
 
 // log is a logger that is initialized with no output filters.  This
 // means the package will not perform any logging by default until the caller
@@ -23,5 +20,4 @@ func DisableLog() {
 // UseLogger uses a specified Logger to output package logging info.
 func UseLogger(logger slog.Logger) {
 	log = logger
-	cache.UseLogger(logger)
 }

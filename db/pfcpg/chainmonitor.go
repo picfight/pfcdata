@@ -12,7 +12,7 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/v4/txhelpers"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // ChainMonitor responds to block connection and chain reorganization.
@@ -60,7 +60,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 	// newChain does not include the common ancestor.
 	commonAncestorHeight := int64(reorgData.NewChainHeight) - int64(len(newChain))
 
-	mainTip := p.db.bestBlock.Height()
+	mainTip := int64(p.db.Height())
 	if mainTip != int64(reorgData.OldChainHeight) {
 		log.Warnf("StakeDatabase height is %d, expected %d. Rewinding as "+
 			"needed to complete reorg from ancestor at %d", mainTip,
@@ -79,7 +79,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 		numBlocksmoved, time.Since(startTime))
 
 	// Verify the tip is now the previous common ancestor
-	mainTip = p.db.bestBlock.Height()
+	mainTip = int64(p.db.Height())
 	if mainTip != commonAncestorHeight {
 		panic(fmt.Sprintf("disconnect blocks failed: tip height %d, expected %d",
 			mainTip, commonAncestorHeight))
@@ -117,21 +117,14 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 		}
 		winners := tpi.Winners
 
-		// Get the chainWork
-		blockHash := msgBlock.BlockHash()
-		chainWork, err := p.db.GetChainWork(&blockHash)
-		if err != nil {
-			return 0, nil, fmt.Errorf("GetChainWork failed (%s): %v", blockHash.String(), err)
-		}
-
 		// New blocks stored this way are considered part of mainchain. They are
 		// also considered valid unless invalidated by the next block
 		// (invalidation of previous handled inside StoreBlock).
 		isValid, isMainChain, updateExisting := true, true, true
-		_, _, _, err = p.db.StoreBlock(msgBlock, winners, isValid, isMainChain,
-			updateExisting, true, true, chainWork)
+		_, _, _, err := p.db.StoreBlock(msgBlock, winners, isValid, isMainChain,
+			updateExisting, true, true)
 		if err != nil {
-			return int32(p.db.bestBlock.Height()), p.db.bestBlock.Hash(),
+			return int32(p.db.Height()), p.db.Hash(),
 				fmt.Errorf("error connecting block %v", newChain[i])
 		}
 
@@ -146,7 +139,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 	log.Infof("Moved %d blocks from a side chain to the main chain in %v.",
 		numBlocksmoved, time.Since(startTime))
 
-	mainTip = p.db.bestBlock.Height()
+	mainTip = int64(p.db.Height())
 	if mainTip != int64(endHeight) {
 		panic(fmt.Sprintf("connected block height %d not db tip height %d",
 			endHeight, mainTip))
@@ -194,8 +187,7 @@ out:
 
 			p.db.InReorg = false
 
-			// Freshen project fund balance and clear ALL address cache data.
-			_ = p.db.FreshenAddressCaches(true, nil) // async update
+			_ = p.db.FreshenAddressCaches(true) // async update
 
 			reorgData.WG.Done()
 

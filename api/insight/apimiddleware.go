@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	apitypes "github.com/picfight/pfcdata/v4/api/types"
-	m "github.com/picfight/pfcdata/v4/middleware"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	m "github.com/picfight/pfcdata/v3/middleware"
 )
 
 type contextKey int
@@ -54,17 +54,16 @@ func (c *insightApiContext) StatusInfoCtx(next http.Handler) http.Handler {
 
 }
 
-func (c *insightApiContext) getBlockHashCtx(r *http.Request) (string, error) {
-	hash, err := m.GetBlockHashCtx(r)
-	if err != nil {
-		idx := int64(m.GetBlockIndexCtx(r))
-		hash, err = c.BlockData.ChainDB.GetBlockHash(idx)
+func (c *insightApiContext) getBlockHashCtx(r *http.Request) string {
+	hash := m.GetBlockHashCtx(r)
+	if hash == "" {
+		var err error
+		hash, err = c.BlockData.ChainDB.GetBlockHash(int64(m.GetBlockIndexCtx(r)))
 		if err != nil {
 			apiLog.Errorf("Unable to GetBlockHash: %v", err)
-			return "", err
 		}
 	}
-	return hash, nil
+	return hash
 }
 
 // GetRawHexTx retrieves the ctxRawHexTx data from the request context. If not

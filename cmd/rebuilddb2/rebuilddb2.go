@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/decred/slog"
-	"github.com/picfight/pfcd/rpcclient/v2"
-	"github.com/picfight/pfcdata/v4/db/pfcpg"
-	"github.com/picfight/pfcdata/v4/rpcutils"
-	"github.com/picfight/pfcdata/v4/stakedb"
+	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcdata/v3/db/pfcpg"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/stakedb"
 )
 
 var (
@@ -123,7 +123,7 @@ func mainCore() error {
 		DBName: cfg.DBName,
 	}
 	// Construct a ChainDB without a stakeDB to allow quick dropping of tables.
-	db, err := pfcpg.NewChainDB(&dbi, activeChain, nil, false, cfg.HidePGConfig, 0)
+	db, err := pfcpg.NewChainDB(&dbi, activeChain, nil, false)
 	if db != nil {
 		defer db.Close()
 	}
@@ -164,7 +164,8 @@ func mainCore() error {
 	signal.Notify(c, os.Interrupt)
 
 	// Check current height of DB
-	lastBlock, err := db.HeightDB()
+	bestHeight, err := db.HeightDB()
+	lastBlock := int64(bestHeight)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			lastBlock = -1
@@ -317,12 +318,6 @@ func mainCore() error {
 			return fmt.Errorf("GetBlock failed (%s): %v", blockHash, err)
 		}
 
-		// Grab the chainwork.
-		chainWork, err := rpcutils.GetChainWork(client, blockHash)
-		if err != nil {
-			return fmt.Errorf("GetChainWork failed (%s): %v", blockHash, err)
-		}
-
 		// stake db always has genesis, so do not connect it
 		var winners []string
 		if ib > 0 {
@@ -344,7 +339,7 @@ func mainCore() error {
 		isValid, isMainchain, updateExistingRecords := true, true, true
 		numVins, numVouts, _, err = db.StoreBlock(block.MsgBlock(), winners,
 			isValid, isMainchain, updateExistingRecords,
-			cfg.AddrSpendInfoOnline, !cfg.TicketSpendInfoBatch, chainWork)
+			cfg.AddrSpendInfoOnline, !cfg.TicketSpendInfoBatch)
 		if err != nil {
 			return fmt.Errorf("StoreBlock failed: %v", err)
 		}

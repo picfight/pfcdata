@@ -2,11 +2,11 @@
 <!DOCTYPE html>
 <html lang="en">
 
-{{template "html-head" "PicFight Blocks List"}}
+{{template "html-head" "PicFight Blocks"}}
 <body class="{{ theme }}">
     {{template "navbar" . }}
-    <div class="container main" data-controller="time pagenavigation blocklist">
-        <span class="h4">Blocks</span>
+    <div class="container main" data-controller="main">
+        <h4>Blocks</h4>
         {{$pendingBlocks := 0}}
         {{if gt (len $.Data) 0}}{{$pendingBlocks = ((index .Data 0).Height)}}{{end}}
 
@@ -18,16 +18,11 @@
             {{$Offset := (subtract .BestBlock $topBlock)}}
             {{$pendingBlocks := ((index .Data 0).Height)}}
             <div class="d-flex flex-wrap-reverse align-items-center justify-content-end list-display">
-                {{template "listViewRouting" "blocks"}}
-
                 <span class="fs12 nowrap text-right">
-                    <label class="mb-0 mr-1" for="blocksPagesize">Page Size</label>
+                    <label class="mb-0 mr-1" for="blocks-pagesize">Page size</label>
                     <select
-                        id="blocksPagesize"
-                        data-target="pagenavigation.pagesize"
-                        data-action="change->pagenavigation#setPageSize"
-                        data-offset="{{$pendingBlocks}}"
-                        data-offsetkey="height"
+                        id="blocks-pagesize"
+                        name="blocks-pagesize"
                         class="form-control-sm mb-2 mr-sm-2 mb-sm-0 {{if lt $blocksCount 20}}disabled{{end}}"
                         {{if lt $blocksCount 20}}disabled="disabled"{{end}}
                     >
@@ -36,27 +31,20 @@
                     {{if ge $pendingBlocks 50}}<option {{if eq $blocksCount 50}}selected{{end}} value="50">50</option>{{end}}
                     {{if ge $pendingBlocks 100}}<option {{if eq $blocksCount 100}}selected{{end}} value="100">100</option>{{end}}
                     {{if ge $pendingBlocks .WindowSize}}<option {{if eq $blocksCount .WindowSize}}selected{{end}} value="{{.WindowSize}}">{{.WindowSize}}</option>{{end}}
-                    {{if eq $blocksCount 20 30 50 100 .WindowSize}}{{else}}<option selected value="{{$blocksCount}}">{{$blocksCount}}</option>{{end}}
+                    {{if eq $blocksCount 20 30 50}}{{else}}<option selected value="{{$blocksCount}}">{{$blocksCount}}</option>{{end}}
                     </select>
                 </span>
-                <span class="fs12 nowrap text-right px-2">
+                <span class="fs12 nowrap text-right">
                     {{intComma (add $Offset 1)}} &ndash; {{intComma (add $Offset .Rows)}} of {{intComma (add .BestBlock 1) }} rows
                 </span>
-                <nav aria-label="blocks navigation" data-limit="{{.Rows}}" class="m-2">
+                <nav aria-label="blocks navigation" data-limit="{{.Rows}}" class="ml-2">
                     <ul class="pagination mb-0 pagination-sm">
-                         <li class="page-item {{if ge $topBlock .BestBlock}}disabled{{end}}">
+                        <li class="page-item {{if lt $topBlock .Rows}}disabled{{end}}">
                             <a
                                 class="page-link"
-                                href="/blocks?height={{.BestBlock}}&rows={{.Rows}}"
-                                id="next"
-                            > Newest</a>
-                        </li>
-                        <li class="page-item {{if ge $topBlock .BestBlock}}disabled{{end}}">
-                            <a
-                                class="page-link"
-                                href="/blocks?height={{ add $topBlock (int64 $blocksCount) }}&rows={{.Rows}}"
-                                id="next"
-                            > Newer</a>
+                                href="/blocks?height={{subtract .Rows 1}}&rows={{.Rows}}"
+                                id="prev"
+                            >Oldest</a>
                         </li>
                         <li class="page-item {{if lt $topBlock .Rows}}disabled{{end}}">
                             <a
@@ -65,12 +53,19 @@
                                 id="prev"
                             >Older</a>
                         </li>
-                        <li class="page-item {{if lt $topBlock .Rows}}disabled{{end}}">
+                        <li class="page-item {{if ge $topBlock .BestBlock}}disabled{{end}}">
                             <a
                                 class="page-link"
-                                href="/blocks?height={{subtract .Rows 1}}&rows={{.Rows}}"
-                                id="prev"
-                            >Oldest</a>
+                                href="/blocks?height={{ add $topBlock (int64 $blocksCount) }}&rows={{.Rows}}"
+                                id="next"
+                            > Newer</a>
+                        </li>
+                         <li class="page-item {{if ge $topBlock .BestBlock}}disabled{{end}}">
+                            <a
+                                class="page-link"
+                                href="/blocks?height={{.BestBlock}}&rows={{.Rows}}"
+                                id="next"
+                            > Newest</a>
                         </li>
                     </ul>
                 </nav>
@@ -82,52 +77,38 @@
         {{end}}
 
         <div class="row">
-            <div class="col-lg-24 mt-2">
-                <table class="table">
+            <div class="col-md-12">
+                <table class="table striped table-responsive-sm" id="explorertable">
                     <thead>
                         <tr>
+                            <th><span class="nowrap">Ticket Price</span> <span class="nowrap">Window #<span></th>
                             <th>Height</th>
-                            <th class="text-right d-none d-sm-table-cell">
-                                <span class="d-none d-md-inline">Regular</span>
-                                <span class="d-md-none position-relative" data-tooltip="regular transactions">R</span>
+                            <th>
+                                <span class="d-none d-md-inline">Transactions</span>
+                                <span class="d-md-none">Txn</span>
                             </th>
-                            <th class="text-right d-none d-sm-table-cell">
-                                <span class="d-none d-md-inline">Votes</span>
-                                <span class="d-md-none position-relative" data-tooltip="votes">V</span>
+                            <th>Vote<span class="d-none d-md-inline">s</span></th>
+                            <th>Ticket<span class="d-none d-md-inline">s</span></th>
+                            <th>
+                                <span>Revokes</span>
                             </th>
-                            <th class="text-right d-none d-sm-table-cell">
-                                <span class="d-none d-md-inline">Tickets</span>
-                                <span class="d-md-none position-relative" data-tooltip="tickets">T</span>
-                            </th>
-                            <th class="text-right d-none d-sm-table-cell">
-                                <span class="d-none d-md-inline">Revocations</span>
-                                <span class="d-md-none position-relative" data-tooltip="revocations">X</span>
-                            </th>
-                            <th class="text-right d-table-cell d-sm-none">Txns</th>
-                            <th class="text-right">PFC</th>
-                            <th class="text-right">Size</th>
-                            <th class="text-right">
-                                <span class="d-none d-md-inline">Version</span>
-                                <span class="d-md-none position-relative" data-tooltip="block version">Ver</span>
-                            </th>
-                            <th class="text-right" class="jsonly" >Age</th>
-                            <th class="text-right">Time</th>
+                            <th>Size</th>
+                            <th class="jsonly">Age</th>
+                            <th>Time ({{timezone}})</th>
                         </tr>
                     </thead>
-                    <tbody data-target="blocklist.table">
+                    <tbody>
                     {{range .Data}}
-                        <tr data-height="{{ .Height }}" data-link-class="fs16">
-                            <td data-type="height"><a href="/block/{{.Height}}" class="fs16">{{if not .Valid}}<span class="attention">&#9888;</span>{{end}}{{ .Height }}</a></td>
-                            <td class="text-right d-none d-sm-table-cell" data-type="tx" {{if not .Valid}}class="grayed" title="Regular transactions invalidated by stakeholders."{{end}}>{{.Transactions}}</td>
-                            <td class="text-right d-none d-sm-table-cell" data-type="votes">{{.Voters}}</td>
-                            <td class="text-right d-none d-sm-table-cell" data-type="tickets">{{.FreshStake}}</td>
-                            <td class="text-right d-none d-sm-table-cell" data-type="revocations">{{.Revocations}}</td>
-                            <td class="text-right d-table-cell d-sm-none" data-type="tx_count">{{.TxCount}}</td>
-                            <td class="text-right" data-type="value">{{threeSigFigs .Total}}</td>
-                            <td class="text-right" data-type="size">{{.FormattedBytes}}</td>
-                            <td class="text-right" data-type="version">{{.Version}}</td>
-                            <td class="text-right" data-type="age" class="jsonly" data-target="time.age" data-age="{{.BlockTime.UNIX}}"></td>
-                            <td class="text-right pr-1" data-type="time">{{.BlockTime}}</td>
+                        <tr id="{{ .Height }}">
+                            <td>{{.WindowIndx}}</td>
+                            <td><a href="/block/{{.Height}}" class="fs16 height">{{if not .Valid}}<span class="attention">&#9888;</span>{{end}}{{ .Height }}</a></td>
+                            <td {{if not .Valid}}class="grayed" title="Regular transactions invalidated by stakeholders."{{end}}>{{.Transactions}}</td>
+                            <td>{{.Voters}}</td>
+                            <td>{{.FreshStake}}</td>
+                            <td>{{.Revocations}}</td>
+                            <td>{{.FormattedBytes}}</td>
+                            <td data-target="main.age" data-age="{{.BlockTime}}" class="jsonly" ></td>
+                            <td>{{.FormattedTime}}</td>
                         </tr>
                     {{end}}
                     </tbody>
@@ -139,9 +120,25 @@
             {{template  "blocksPagination" .}}
         </div>
         {{end}}
-        <p class="text-center">Looking for <a href="/side">orphaned blocks</a> or <a href="/disapproved">PoS invalidated blocks?</a><p>
     </div>
+
 {{ template "footer" . }}
+
+<script>
+    $("#blocks-pagesize").change(function(ev) {
+        var pagesize = "20"
+        var height = {{$pendingBlocks}}
+        if (ev.currentTarget.id.indexOf("blocks-pagesize") != -1){
+            pagesize = $("#blocks-pagesize option:selected").val()
+        }
+
+        Turbolinks.visit(
+            window.location.pathname
+            + "?height="+ height
+            + "&rows=" + pagesize
+        )
+    })
+</script>
 </body>
 </html>
 {{ end }}

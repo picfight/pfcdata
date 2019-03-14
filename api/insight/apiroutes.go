@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, The Decred developers
+// Copyright (c) 2018, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
@@ -13,19 +13,20 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient/v2"
-	apitypes "github.com/picfight/pfcdata/v4/api/types"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/db/pfcpg"
-	m "github.com/picfight/pfcdata/v4/middleware"
-	"github.com/picfight/pfcdata/v4/semver"
-	"github.com/picfight/pfcdata/v4/txhelpers"
+	"github.com/picfight/pfcd/rpcclient"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/pfcpg"
+	m "github.com/picfight/pfcdata/v3/middleware"
+	"github.com/picfight/pfcdata/v3/semver"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // DataSourceLite specifies an interface for collecting data from the built-in
@@ -34,16 +35,13 @@ type DataSourceLite interface {
 	UnconfirmedTxnsForAddress(address string) (*txhelpers.AddressOutpoints, int64, error)
 }
 
-const defaultReqPerSecLimit = 20.0
-
 type insightApiContext struct {
-	nodeClient     *rpcclient.Client
-	BlockData      *pfcpg.ChainDBRPC
-	params         *chaincfg.Params
-	MemPool        DataSourceLite
-	Status         apitypes.Status
-	JSONIndent     string
-	ReqPerSecLimit float64
+	nodeClient *rpcclient.Client
+	BlockData  *pfcpg.ChainDBRPC
+	params     *chaincfg.Params
+	MemPool    DataSourceLite
+	Status     apitypes.Status
+	JSONIndent string
 }
 
 // NewInsightContext Constructor for insightApiContext
@@ -62,17 +60,9 @@ func NewInsightContext(client *rpcclient.Client, blockData *pfcpg.ChainDBRPC, pa
 			NodeConnections: conns,
 			APIVersion:      APIVersion,
 			PfcdataVersion:  version.String(),
-			NetworkName:     params.Name,
 		},
-		ReqPerSecLimit: defaultReqPerSecLimit,
 	}
 	return &newContext
-}
-
-// SetReqRateLimit is used to set the requests/second/IP for the Insight API's
-// rate limiter.
-func (c *insightApiContext) SetReqRateLimit(reqPerSecLimit float64) {
-	c.ReqPerSecLimit = reqPerSecLimit
 }
 
 func (c *insightApiContext) getIndentQuery(r *http.Request) (indent string) {
@@ -112,9 +102,10 @@ func writeInsightNotFound(w http.ResponseWriter, str string) {
 }
 
 func (c *insightApiContext) getTransaction(w http.ResponseWriter, r *http.Request) {
-	txid, err := m.GetTxIDCtx(r)
-	if err != nil {
-		writeInsightError(w, err.Error())
+	txid := m.GetTxIDCtx(r)
+	if txid == "" {
+		apiLog.Errorf("Txid cannot be empty")
+		writeInsightError(w, fmt.Sprintf("Txid cannot be empty"))
 		return
 	}
 
@@ -141,9 +132,9 @@ func (c *insightApiContext) getTransaction(w http.ResponseWriter, r *http.Reques
 }
 
 func (c *insightApiContext) getTransactionHex(w http.ResponseWriter, r *http.Request) {
-	txid, err := m.GetTxIDCtx(r)
-	if err != nil {
-		writeInsightError(w, err.Error())
+	txid := m.GetTxIDCtx(r)
+	if txid == "" {
+		writeInsightError(w, "TxId must not be empty")
 		return
 	}
 
@@ -171,11 +162,6 @@ func (c *insightApiContext) getBlockSummary(w http.ResponseWriter, r *http.Reque
 		}
 		var err error
 		hash, err = c.BlockData.ChainDB.GetBlockHash(int64(idx))
-		if dbtypes.IsTimeoutErr(err) {
-			apiLog.Errorf("GetBlockHash: %v", err)
-			http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-			return
-		}
 		if err != nil {
 			writeInsightError(w, "Unable to get block hash from index")
 			return
@@ -204,18 +190,11 @@ func (c *insightApiContext) getBlockHash(w http.ResponseWriter, r *http.Request)
 		writeInsightError(w, "No index found in query")
 		return
 	}
-
-	height := c.BlockData.ChainDB.Height()
-	if idx < 0 || idx > int(height) {
+	if idx < 0 || idx > c.BlockData.ChainDB.GetHeight() {
 		writeInsightError(w, "Block height out of range")
 		return
 	}
 	hash, err := c.BlockData.ChainDB.GetBlockHash(int64(idx))
-	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("GetBlockHash: %v", err)
-		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-		return
-	}
 	if err != nil || hash == "" {
 		writeInsightNotFound(w, "Not found")
 		return
@@ -229,17 +208,13 @@ func (c *insightApiContext) getBlockHash(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, blockOutput, c.getIndentQuery(r))
 }
 
-func (c *insightApiContext) getBlockChainHashCtx(r *http.Request) (*chainhash.Hash, error) {
-	hashStr, err := c.getBlockHashCtx(r)
-	if err != nil {
-		return nil, err
-	}
-	hash, err := chainhash.NewHashFromStr(hashStr)
+func (c *insightApiContext) getBlockChainHashCtx(r *http.Request) *chainhash.Hash {
+	hash, err := chainhash.NewHashFromStr(c.getBlockHashCtx(r))
 	if err != nil {
 		apiLog.Errorf("Failed to parse block hash: %v", err)
-		return nil, err
+		return nil
 	}
-	return hash, nil
+	return hash
 }
 
 func (c *insightApiContext) getRawBlock(w http.ResponseWriter, r *http.Request) {
@@ -253,11 +228,6 @@ func (c *insightApiContext) getRawBlock(w http.ResponseWriter, r *http.Request) 
 		}
 		var err error
 		hash, err = c.BlockData.ChainDB.GetBlockHash(int64(idx))
-		if dbtypes.IsTimeoutErr(err) {
-			apiLog.Errorf("GetBlockHash: %v", err)
-			http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-			return
-		}
 		if err != nil {
 			writeInsightError(w, "Unable to get block hash from index")
 			return
@@ -321,31 +291,25 @@ func (c *insightApiContext) broadcastTransactionRaw(w http.ResponseWriter, r *ht
 }
 
 func (c *insightApiContext) getAddressesTxnOutput(w http.ResponseWriter, r *http.Request) {
-	addresses, err := m.GetAddressCtx(r, c.params) // Required
-	if err != nil {
-		writeInsightError(w, err.Error())
+	address := m.GetAddressCtx(r) // Required
+	if address == "" {
+		writeInsightError(w, "Address cannot be empty")
 		return
 	}
+
+	// Allow Addresses to be single or multiple separated by a comma.
+	addresses := strings.Split(address, ",")
 
 	// Initialize Output Structure
 	txnOutputs := make([]apitypes.AddressTxnOutput, 0)
 
 	for _, address := range addresses {
-		confirmedTxnOutputs, _, err := c.BlockData.ChainDB.AddressUTXO(address)
-		if dbtypes.IsTimeoutErr(err) {
-			apiLog.Errorf("AddressUTXO: %v", err)
-			http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-			return
-		}
-		if err != nil {
-			apiLog.Errorf("Error getting UTXOs: %v", err)
-			continue
-		}
+
+		confirmedTxnOutputs := c.BlockData.ChainDB.GetAddressUTXO(address)
 
 		addressOuts, _, err := c.MemPool.UnconfirmedTxnsForAddress(address)
 		if err != nil {
-			apiLog.Errorf("Error getting unconfirmed transactions: %v", err)
-			continue
+			apiLog.Errorf("Error in getting unconfirmed transactions")
 		}
 
 		if addressOuts != nil {
@@ -420,19 +384,14 @@ func (c *insightApiContext) getAddressesTxnOutput(w http.ResponseWriter, r *http
 }
 
 func (c *insightApiContext) getTransactions(w http.ResponseWriter, r *http.Request) {
-	hash, blockerr := m.GetBlockHashCtx(r)
-	addresses, addrerr := m.GetAddressCtx(r, c.params)
-
-	if blockerr != nil && addrerr != nil {
+	hash := m.GetBlockHashCtx(r)
+	address := m.GetAddressCtx(r)
+	if hash == "" && address == "" {
 		writeInsightError(w, "Required query parameters (address or block) not present.")
 		return
 	}
-	if addrerr == nil && len(addresses) > 1 {
-		writeInsightError(w, "Only one address is allowed.")
-		return
-	}
 
-	if blockerr == nil {
+	if hash != "" {
 		blkTrans := c.BlockData.GetBlockVerboseByHash(hash, true)
 		if blkTrans == nil {
 			apiLog.Errorf("Unable to get block %s transactions", hash)
@@ -477,8 +436,7 @@ func (c *insightApiContext) getTransactions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if addrerr == nil {
-		address := addresses[0]
+	if address != "" {
 		// Validate Address
 		_, err := pfcutil.DecodeAddress(address)
 		if err != nil {
@@ -486,25 +444,13 @@ func (c *insightApiContext) getTransactions(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		addresses := []string{address}
-		rawTxs, recentTxs, err :=
-			c.BlockData.ChainDB.InsightAddressTransactions(addresses, int64(c.Status.GetHeight()-2))
-		if dbtypes.IsTimeoutErr(err) {
-			apiLog.Errorf("InsightAddressTransactions: %v", err)
-			http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-			return
-		}
-		if err != nil {
-			writeInsightError(w,
-				fmt.Sprintf("Error retrieving transactions for addresss %s (%v)",
-					addresses, err))
-			return
-		}
+		rawTxs, recentTxs := c.BlockData.ChainDB.InsightPgGetAddressTransactions(addresses, int64(c.Status.Height-2))
 
 		addressOuts, _, err := c.MemPool.UnconfirmedTxnsForAddress(address)
-		var UnconfirmedTxs []chainhash.Hash
+		UnconfirmedTxs := []string{}
 
 		if err != nil {
-			writeInsightError(w, fmt.Sprintf("Error gathering mempool transactions (%v)", err))
+			writeInsightError(w, fmt.Sprintf("Error gathering mempool transactions (%s)", err))
 			return
 		}
 
@@ -512,22 +458,22 @@ func (c *insightApiContext) getTransactions(w http.ResponseWriter, r *http.Reque
 		for _, f := range addressOuts.Outpoints {
 			// Confirm its not already in our recent transactions
 			for _, v := range recentTxs {
-				if v.IsEqual(&f.Hash) {
+				if v == f.Hash.String() {
 					continue FUNDING_TX_DUPLICATE_CHECK
 				}
 			}
-			UnconfirmedTxs = append(UnconfirmedTxs, f.Hash) // Funding tx
-			recentTxs = append(recentTxs, f.Hash)
+			UnconfirmedTxs = append(UnconfirmedTxs, f.Hash.String()) // Funding tx
+			recentTxs = append(recentTxs, f.Hash.String())
 		}
 	SPENDING_TX_DUPLICATE_CHECK:
 		for _, f := range addressOuts.PrevOuts {
 			for _, v := range recentTxs {
-				if v.IsEqual(&f.TxSpending) {
+				if v == f.TxSpending.String() {
 					continue SPENDING_TX_DUPLICATE_CHECK
 				}
 			}
-			UnconfirmedTxs = append(UnconfirmedTxs, f.TxSpending) // Spending tx
-			recentTxs = append(recentTxs, f.TxSpending)
+			UnconfirmedTxs = append(UnconfirmedTxs, f.TxSpending.String()) // Spending tx
+			recentTxs = append(recentTxs, f.TxSpending.String())
 		}
 
 		// Merge unconfirmed with confirmed transactions
@@ -541,7 +487,7 @@ func (c *insightApiContext) getTransactions(w http.ResponseWriter, r *http.Reque
 
 		txsOld := []*pfcjson.TxRawResult{}
 		for _, rawTx := range rawTxs {
-			txOld, err1 := c.BlockData.GetRawTransaction(&rawTx)
+			txOld, err1 := c.BlockData.GetRawTransaction(rawTx)
 			if err1 != nil {
 				apiLog.Errorf("Unable to get transaction %s", rawTx)
 				writeInsightError(w, fmt.Sprintf("Error gathering transaction details (%s)", err1))
@@ -567,9 +513,9 @@ func (c *insightApiContext) getTransactions(w http.ResponseWriter, r *http.Reque
 }
 
 func (c *insightApiContext) getAddressesTxn(w http.ResponseWriter, r *http.Request) {
-	addresses, err := m.GetAddressCtx(r, c.params) // Required
-	if err != nil {
-		writeInsightError(w, err.Error())
+	address := m.GetAddressCtx(r) // Required
+	if address == "" {
+		writeInsightError(w, "Address cannot be empty")
 		return
 	}
 
@@ -582,23 +528,14 @@ func (c *insightApiContext) getAddressesTxn(w http.ResponseWriter, r *http.Reque
 		to = from + 10
 	}
 
+	// Allow Addresses to be single or multiple separated by a comma.
+	addresses := strings.Split(address, ",")
+
 	// Initialize Output Structure
 	addressOutput := new(apitypes.InsightMultiAddrsTxOutput)
-	var UnconfirmedTxs []chainhash.Hash
+	UnconfirmedTxs := []string{}
 
-	rawTxs, recentTxs, err :=
-		c.BlockData.ChainDB.InsightAddressTransactions(addresses, int64(c.Status.GetHeight()-2))
-	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("InsightAddressTransactions: %v", err)
-		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-		return
-	}
-	if err != nil {
-		writeInsightError(w,
-			fmt.Sprintf("Error retrieving transactions for addresss %s (%s)",
-				addresses, err))
-		return
-	}
+	rawTxs, recentTxs := c.BlockData.ChainDB.InsightPgGetAddressTransactions(addresses, int64(c.Status.Height-2))
 
 	// Confirm all addresses are valid and pull unconfirmed transactions for all addresses
 	for _, addr := range addresses {
@@ -617,22 +554,22 @@ func (c *insightApiContext) getAddressesTxn(w http.ResponseWriter, r *http.Reque
 		for _, f := range addressOuts.Outpoints {
 			// Confirm its not already in our recent transactions
 			for _, v := range recentTxs {
-				if v.IsEqual(&f.Hash) {
+				if v == f.Hash.String() {
 					continue FUNDING_TX_DUPLICATE_CHECK
 				}
 			}
-			UnconfirmedTxs = append(UnconfirmedTxs, f.Hash) // Funding tx
-			recentTxs = append(recentTxs, f.Hash)
+			UnconfirmedTxs = append(UnconfirmedTxs, f.Hash.String()) // Funding tx
+			recentTxs = append(recentTxs, f.Hash.String())
 		}
 	SPENDING_TX_DUPLICATE_CHECK:
 		for _, f := range addressOuts.PrevOuts {
 			for _, v := range recentTxs {
-				if v.IsEqual(&f.TxSpending) {
+				if v == f.TxSpending.String() {
 					continue SPENDING_TX_DUPLICATE_CHECK
 				}
 			}
-			UnconfirmedTxs = append(UnconfirmedTxs, f.TxSpending) // Spending tx
-			recentTxs = append(recentTxs, f.TxSpending)
+			UnconfirmedTxs = append(UnconfirmedTxs, f.TxSpending.String()) // Spending tx
+			recentTxs = append(recentTxs, f.TxSpending.String())
 		}
 	}
 
@@ -670,7 +607,7 @@ func (c *insightApiContext) getAddressesTxn(w http.ResponseWriter, r *http.Reque
 
 	txsOld := []*pfcjson.TxRawResult{}
 	for _, rawTx := range rawTxs {
-		txOld, err := c.BlockData.GetRawTransaction(&rawTx)
+		txOld, err := c.BlockData.GetRawTransaction(rawTx)
 		if err != nil {
 			apiLog.Errorf("Unable to get transaction %s", rawTx)
 			writeInsightError(w, fmt.Sprintf("Error gathering transaction details (%s)", err))
@@ -695,20 +632,14 @@ func (c *insightApiContext) getAddressesTxn(w http.ResponseWriter, r *http.Reque
 }
 
 func (c *insightApiContext) getAddressBalance(w http.ResponseWriter, r *http.Request) {
-	addresses, err := m.GetAddressCtx(r, c.params)
-	if err != nil || len(addresses) > 1 {
+	address := m.GetAddressCtx(r)
+	if address == "" {
 		http.Error(w, http.StatusText(422), 422)
 		return
 	}
 
-	addressInfo, _, err := c.BlockData.ChainDB.AddressBalance(addresses[0])
-	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("AddressBalance: %v", err)
-		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-		return
-	}
-	if err != nil || addressInfo == nil {
-		apiLog.Warnf("AddressBalance: %v", err)
+	addressInfo := c.BlockData.ChainDB.GetAddressBalance(address, 20, 0)
+	if addressInfo == nil {
 		http.Error(w, http.StatusText(422), 422)
 		return
 	}
@@ -716,41 +647,42 @@ func (c *insightApiContext) getAddressBalance(w http.ResponseWriter, r *http.Req
 }
 
 func (c *insightApiContext) getSyncInfo(w http.ResponseWriter, r *http.Request) {
-	errorResponse := func(err error) {
-		// To insure JSON encodes an error properly as a string, and no error as
-		// null, use a pointer to a string.
-		var errorString *string
-		if err != nil {
-			s := err.Error()
-			errorString = &s
-		}
-		syncInfo := apitypes.SyncResponse{
-			Status: "error",
-			Error:  errorString,
-		}
-		writeJSON(w, syncInfo, c.getIndentQuery(r))
-	}
 
 	blockChainHeight, err := c.nodeClient.GetBlockCount()
+
+	// To insure JSON encodes an error properly as a string or no error as null
+	// its easiest to use a pointer to a string.
+	var errorString *string
 	if err != nil {
-		errorResponse(err)
-		return
+		s := err.Error()
+		errorString = &s
+	} else {
+		errorString = nil
 	}
 
-	height := c.BlockData.Height()
-	syncPercentage := int64((float64(height) / float64(blockChainHeight)) * 100)
+	height := c.BlockData.GetHeight()
+
+	syncPercentage := int((float64(height) / float64(blockChainHeight)) * 100)
 
 	st := "syncing"
 	if syncPercentage == 100 {
 		st = "finished"
 	}
 
-	syncInfo := apitypes.SyncResponse{
-		Status:           st,
-		BlockChainHeight: blockChainHeight,
-		SyncPercentage:   syncPercentage,
-		Height:           height,
-		Type:             "from RPC calls",
+	syncInfo := struct {
+		Status           string  `json:"status"`
+		BlockChainHeight int64   `json:"blockChainHeight"`
+		SyncPercentage   int     `json:"syncPercentage"`
+		Height           int     `json:"height"`
+		Error            *string `json:"error"`
+		Type             string  `json:"type"`
+	}{
+		st,
+		blockChainHeight,
+		syncPercentage,
+		height,
+		errorString,
+		"from RPC calls",
 	}
 	writeJSON(w, syncInfo, c.getIndentQuery(r))
 }
@@ -798,10 +730,10 @@ func (c *insightApiContext) getStatusInfo(w http.ResponseWriter, r *http.Request
 			writeInsightError(w, fmt.Sprintf("Error getting block hash %d (%s)", infoResult.Blocks, err))
 			return
 		}
-		lastblockhash, err := c.nodeClient.GetBlockHash(int64(c.Status.GetHeight()))
+		lastblockhash, err := c.nodeClient.GetBlockHash(int64(c.Status.Height))
 		if err != nil {
-			apiLog.Errorf("Error getting block hash %d (%s)", c.Status.GetHeight(), err)
-			writeInsightError(w, fmt.Sprintf("Error getting block hash %d (%s)", c.Status.GetHeight(), err))
+			apiLog.Errorf("Error getting block hash %d (%s)", c.Status.Height, err)
+			writeInsightError(w, fmt.Sprintf("Error getting block hash %d (%s)", c.Status.Height, err))
 			return
 		}
 
@@ -844,64 +776,54 @@ func (c *insightApiContext) getStatusInfo(w http.ResponseWriter, r *http.Request
 }
 
 func (c *insightApiContext) getBlockSummaryByTime(w http.ResponseWriter, r *http.Request) {
-	blockDateStr := m.GetBlockDateCtx(r)
+	blockDate := m.GetBlockDateCtx(r)
 	limit := c.GetLimitCtx(r)
 
-	// Start of today (UTC)
-	todayAM := time.Now().UTC().Truncate(24 * time.Hour)
+	summaryOutput := apitypes.InsightBlocksSummaryResult{}
+	layout := "2006-01-02 15:04:05"
+	blockDateToday := time.Now().UTC().Format("2006-01-02")
 
-	// Format of the blockDate URL param, and of the pagination parameters
-	ymdFormat := "2006-01-02"
-
-	// If "blockDate" is not set on URL, use today, otherwise try to parse the
-	// input date string.
-	var blockDate time.Time
-	if blockDateStr == "" {
-		blockDate = todayAM
-	} else {
-		var err error
-		blockDate, err = time.Parse(blockDateStr, ymdFormat)
-		if err != nil {
-			writeInsightError(w, fmt.Sprintf("Unable to retrieve block summary using time %s: %v", blockDate, err))
-			return
-		}
-		blockDate = blockDate.UTC()
+	if blockDate == "" {
+		blockDate = blockDateToday
 	}
 
-	minDate := blockDate
-	maxDate := blockDate.Add(24*time.Hour - time.Second)
-
-	var summaryOutput apitypes.InsightBlocksSummaryResult
-	summaryOutput.Pagination.Next = minDate.AddDate(0, 0, 1).Format(ymdFormat)
-	summaryOutput.Pagination.Prev = minDate.AddDate(0, 0, -1).Format(ymdFormat)
-	summaryOutput.Pagination.Current = blockDate.Format(ymdFormat)
-	summaryOutput.Pagination.IsToday = blockDate == todayAM
-
-	// TODO: limit the query rather than returning all and limiting in go.
-	minTime, maxTime := minDate.Unix(), maxDate.Unix()
-	blockSummary, err := c.BlockData.ChainDB.BlockSummaryTimeRange(minTime, maxTime, 0)
-	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("BlockSummaryTimeRange: %v", err)
-		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-		return
+	if blockDateToday == blockDate {
+		summaryOutput.Pagination.IsToday = true
 	}
+	minDate, err := time.Parse(layout, blockDate+" 00:00:00")
 	if err != nil {
-		writeInsightError(w, fmt.Sprintf("Unable to retrieve block summaries: %v", err))
+		writeInsightError(w, fmt.Sprintf("Unable to retrieve block summary using time %s: %v", blockDate, err))
 		return
 	}
 
-	// Generate the pagination parameters More and MoreTs, and limit the result.
+	maxDate, err := time.Parse(layout, blockDate+" 23:59:59")
+	if err != nil {
+		writeInsightError(w, fmt.Sprintf("Unable to retrieve block summary using time %s: %v", blockDate, err))
+		return
+	}
+	summaryOutput.Pagination.Next = minDate.AddDate(0, 0, 1).Format("2006-01-02")
+	summaryOutput.Pagination.Prev = minDate.AddDate(0, 0, -1).Format("2006-01-02")
+
+	summaryOutput.Pagination.Current = blockDate
+
+	minTime, maxTime := minDate.Unix(), maxDate.Unix()
+	summaryOutput.Pagination.CurrentTs = maxTime
+	summaryOutput.Pagination.MoreTs = maxTime
+
+	blockSummary := c.BlockData.ChainDB.GetBlockSummaryTimeRange(minTime, maxTime, 0)
+
+	outputBlockSummary := []dbtypes.BlockDataBasic{}
+
+	// Generate the pagenation parameters more and moreTs and limit the result
 	if limit > 0 {
-		var outputBlockSummary []dbtypes.BlockDataBasic
 		for i, block := range blockSummary {
 			if i >= limit {
 				summaryOutput.Pagination.More = true
 				break
 			}
 			outputBlockSummary = append(outputBlockSummary, block)
-			blockTime := block.Time.UNIX()
-			if blockTime < summaryOutput.Pagination.MoreTs {
-				summaryOutput.Pagination.MoreTs = blockTime
+			if block.Time < summaryOutput.Pagination.MoreTs {
+				summaryOutput.Pagination.MoreTs = block.Time
 			}
 		}
 		summaryOutput.Blocks = outputBlockSummary
@@ -911,26 +833,17 @@ func (c *insightApiContext) getBlockSummaryByTime(w http.ResponseWriter, r *http
 		summaryOutput.Pagination.MoreTs = minTime
 	}
 
-	summaryOutput.Pagination.CurrentTs = maxTime
 	summaryOutput.Length = len(summaryOutput.Blocks)
 
 	writeJSON(w, summaryOutput, c.getIndentQuery(r))
+
 }
 
 func (c *insightApiContext) getAddressInfo(w http.ResponseWriter, r *http.Request) {
-	addresses, err := m.GetAddressCtx(r, c.params)
-	if err != nil {
-		writeInsightError(w, err.Error())
-		return
-	}
-	if len(addresses) > 1 {
-		writeInsightError(w, fmt.Sprintln("only one address allowed"))
-		return
-	}
-	address := addresses[0]
+	address := m.GetAddressCtx(r)
 	command, isCmd := c.GetAddressCommandCtx(r)
 
-	_, err = pfcutil.DecodeAddress(address)
+	_, err := pfcutil.DecodeAddress(address)
 	if err != nil {
 		writeInsightError(w, "Invalid Address")
 		return
@@ -946,53 +859,33 @@ func (c *insightApiContext) getAddressInfo(w http.ResponseWriter, r *http.Reques
 
 	// Get Confirmed Balances
 	var unconfirmedBalanceSat int64
-
-	balance, _, err := c.BlockData.ChainDB.AddressBalance(address)
-
-	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("AddressSpentUnspent: %v", err)
-		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-		return
-	}
+	_, _, totalSpent, totalUnspent, _, err := c.BlockData.ChainDB.RetrieveAddressSpentUnspent(address)
 	if err != nil {
-		apiLog.Errorf("AddressSpentUnspent: %v", err)
-		http.Error(w, "Unexpected error retrieving address info.", http.StatusInternalServerError)
 		return
 	}
 
 	if isCmd {
 		switch command {
 		case "balance":
-			writeJSON(w, balance.TotalUnspent, c.getIndentQuery(r))
+			writeJSON(w, totalUnspent, c.getIndentQuery(r))
 			return
 		case "totalReceived":
-			writeJSON(w, balance.TotalSpent+balance.TotalUnspent, c.getIndentQuery(r))
+			writeJSON(w, totalSpent+totalUnspent, c.getIndentQuery(r))
 			return
 		case "totalSent":
-			writeJSON(w, balance.TotalSpent, c.getIndentQuery(r))
+			writeJSON(w, totalSpent, c.getIndentQuery(r))
 			return
 		}
 	}
 
-	// Get confirmed transactions.
-	rawTxs, recentTxs, err :=
-		c.BlockData.ChainDB.InsightAddressTransactions(addresses, int64(c.Status.GetHeight()-2))
-	if dbtypes.IsTimeoutErr(err) {
-		apiLog.Errorf("InsightAddressTransactions: %v", err)
-		http.Error(w, "Database timeout.", http.StatusServiceUnavailable)
-		return
-	}
-	if err != nil {
-		apiLog.Errorf("Error retrieving transactions for addresss %s: %v",
-			addresses, err)
-		http.Error(w, "Error retrieving transactions for that addresss.",
-			http.StatusInternalServerError)
-		return
-	}
+	addresses := []string{address}
+
+	// Get Confirmed Transactions
+	rawTxs, recentTxs := c.BlockData.ChainDB.InsightPgGetAddressTransactions(addresses, int64(c.Status.Height-2))
 	confirmedTxCount := len(rawTxs)
 
-	// Get unconfirmed transactions.
-	var unconfirmedTxs []chainhash.Hash
+	// Get Unconfirmed Transactions
+	unconfirmedTxs := []string{}
 	addressOuts, _, err := c.MemPool.UnconfirmedTxnsForAddress(address)
 	if err != nil {
 		apiLog.Errorf("Error in getting unconfirmed transactions")
@@ -1000,9 +893,9 @@ func (c *insightApiContext) getAddressInfo(w http.ResponseWriter, r *http.Reques
 	if addressOuts != nil {
 	FUNDING_TX_DUPLICATE_CHECK:
 		for _, f := range addressOuts.Outpoints {
-			// Confirm it's not already in our recent transactions.
+			// Confirm its not already in our recent transactions
 			for _, v := range recentTxs {
-				if v.IsEqual(&f.Hash) {
+				if v == f.Hash.String() {
 					continue FUNDING_TX_DUPLICATE_CHECK
 				}
 			}
@@ -1016,13 +909,13 @@ func (c *insightApiContext) getAddressInfo(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 			unconfirmedBalanceSat += fundingTx.Tx.TxOut[f.Index].Value
-			unconfirmedTxs = append(unconfirmedTxs, f.Hash) // Funding tx
-			recentTxs = append(recentTxs, f.Hash)
+			unconfirmedTxs = append(unconfirmedTxs, f.Hash.String()) // Funding tx
+			recentTxs = append(recentTxs, f.Hash.String())
 		}
 	SPENDING_TX_DUPLICATE_CHECK:
 		for _, f := range addressOuts.PrevOuts {
 			for _, v := range recentTxs {
-				if v.IsEqual(&f.TxSpending) {
+				if v == f.TxSpending.String() {
 					continue SPENDING_TX_DUPLICATE_CHECK
 				}
 			}
@@ -1042,8 +935,8 @@ func (c *insightApiContext) getAddressInfo(w http.ResponseWriter, r *http.Reques
 			previndex := spendingTx.Tx.TxIn[f.InputIndex].PreviousOutPoint.Index
 			valuein := addressOuts.TxnsStore[prevhash].Tx.TxOut[previndex].Value
 			unconfirmedBalanceSat -= valuein
-			unconfirmedTxs = append(unconfirmedTxs, f.TxSpending) // Spending tx
-			recentTxs = append(recentTxs, f.TxSpending)
+			unconfirmedTxs = append(unconfirmedTxs, f.TxSpending.String()) // Spending tx
+			recentTxs = append(recentTxs, f.TxSpending.String())
 		}
 	}
 
@@ -1086,24 +979,20 @@ func (c *insightApiContext) getAddressInfo(w http.ResponseWriter, r *http.Reques
 
 	addressInfo := apitypes.InsightAddressInfo{
 		Address:                  address,
-		TotalReceivedSat:         (balance.TotalSpent + balance.TotalUnspent),
-		TotalSentSat:             balance.TotalSpent,
-		BalanceSat:               balance.TotalUnspent,
-		TotalReceived:            pfcutil.Amount(balance.TotalSpent + balance.TotalUnspent).ToCoin(),
-		TotalSent:                pfcutil.Amount(balance.TotalSpent).ToCoin(),
-		Balance:                  pfcutil.Amount(balance.TotalUnspent).ToCoin(),
+		TotalReceivedSat:         (totalSpent + totalUnspent),
+		TotalSentSat:             totalSpent,
+		BalanceSat:               totalUnspent,
+		TotalReceived:            pfcutil.Amount(totalSpent + totalUnspent).ToCoin(),
+		TotalSent:                pfcutil.Amount(totalSpent).ToCoin(),
+		Balance:                  pfcutil.Amount(totalUnspent).ToCoin(),
 		TxAppearances:            int64(confirmedTxCount),
 		UnconfirmedBalance:       pfcutil.Amount(unconfirmedBalanceSat).ToCoin(),
 		UnconfirmedBalanceSat:    unconfirmedBalanceSat,
 		UnconfirmedTxAppearances: int64(len(unconfirmedTxs)),
 	}
 
-	if noTxList == 0 && len(rawTxs) > 0 {
-		addressInfo.TransactionsID = make([]string, 0, len(rawTxs))
-		for _, tx := range rawTxs {
-			addressInfo.TransactionsID = append(addressInfo.TransactionsID,
-				tx.String())
-		}
+	if noTxList == 0 {
+		addressInfo.TransactionsID = rawTxs
 	}
 
 	writeJSON(w, addressInfo, c.getIndentQuery(r))

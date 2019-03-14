@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/rpcclient/v2"
+	"github.com/picfight/pfcd/rpcclient"
 )
 
 const (

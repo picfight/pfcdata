@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, The Decred developers
+// Copyright (c) 2018, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
@@ -21,62 +21,43 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcd/pfcjson"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/v4/blockdata"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/exchanges"
-	"github.com/picfight/pfcdata/v4/explorer/types"
-	"github.com/picfight/pfcdata/v4/gov/agendas"
-	pitypes "github.com/picfight/pfcdata/v4/gov/politeia/types"
-	"github.com/picfight/pfcdata/v4/mempool"
-	pstypes "github.com/picfight/pfcdata/v4/pubsub/types"
-	"github.com/picfight/pfcdata/v4/txhelpers"
+	"github.com/picfight/pfcdata/v3/blockdata"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 	"github.com/rs/cors"
 )
 
 const (
-	// maxExplorerRows and minExplorerRows are the limits on the number of
-	// blocks/time-window rows that may be shown on the explorer pages.
-	maxExplorerRows = 400
-	minExplorerRows = 20
-
-	// syncStatusInterval is the frequency with startup synchronization progress
-	// signals are sent to websocket clients.
-	syncStatusInterval = 2 * time.Second
-
-	// defaultAddressRows is the default number of rows to be shown on the
-	// address page table.
-	defaultAddressRows int64 = 20
-
-	// MaxAddressRows is an upper limit on the number of rows that may be shown
-	// on the address page table.
-	MaxAddressRows int64 = 1000
+	maxExplorerRows              = 400
+	minExplorerRows              = 20
+	syncStatusInterval           = 10 * time.Second
+	defaultAddressRows     int64 = 20
+	MaxAddressRows         int64 = 1000
+	MaxUnconfirmedPossible int64 = 1000
 )
 
 // explorerDataSourceLite implements an interface for collecting data for the
 // explorer pages
 type explorerDataSourceLite interface {
-	GetExplorerBlock(hash string) *types.BlockInfo
-	GetExplorerBlocks(start int, end int) []*types.BlockBasic
+	GetExplorerBlock(hash string) *BlockInfo
+	GetExplorerBlocks(start int, end int) []*BlockBasic
 	GetBlockHeight(hash string) (int64, error)
 	GetBlockHash(idx int64) (string, error)
-	GetExplorerTx(txid string) *types.TxInfo
-	GetExplorerAddress(address string, count, offset int64) (*dbtypes.AddressInfo, txhelpers.AddressType, txhelpers.AddressError)
-	GetTip() (*types.WebBasicBlock, error)
+	GetExplorerTx(txid string) *TxInfo
+	GetExplorerAddress(address string, count, offset int64) (*AddressInfo, error)
 	DecodeRawTransaction(txhex string) (*pfcjson.TxRawResult, error)
 	SendRawTransaction(txhex string) (string, error)
-	GetHeight() (int64, error)
+	GetHeight() int
 	GetChainParams() *chaincfg.Params
 	UnconfirmedTxnsForAddress(address string) (*txhelpers.AddressOutpoints, int64, error)
-	GetMempool() []types.MempoolTx
-	TxHeight(txid *chainhash.Hash) (height int64)
+	GetMempool() []MempoolTx
+	TxHeight(txid string) (height int64)
 	BlockSubsidy(height int64, voters uint16) *pfcjson.GetBlockSubsidyResult
 	GetSqliteChartsData() (map[string]*dbtypes.ChartsData, error)
-	GetExplorerFullBlocks(start int, end int) []*types.BlockInfo
-	Difficulty() (float64, error)
+	GetExplorerFullBlocks(start int, end int) []*BlockInfo
 	RetreiveDifficulty(timestamp int64) float64
 }
 
@@ -84,46 +65,29 @@ type explorerDataSourceLite interface {
 // faster solution than RPC, or additional functionality.
 type explorerDataSource interface {
 	BlockHeight(hash string) (int64, error)
-	Height() int64
-	HeightDB() (int64, error)
+	HeightDB() (uint64, error)
 	BlockHash(height int64) (string, error)
 	SpendingTransaction(fundingTx string, vout uint32) (string, uint32, int8, error)
 	SpendingTransactions(fundingTxID string) ([]string, []uint32, []uint32, error)
 	PoolStatusForTicket(txid string) (dbtypes.TicketSpendType, dbtypes.TicketPoolStatus, error)
-	AddressHistory(address string, N, offset int64, txnType dbtypes.AddrTxnViewType) ([]*dbtypes.AddressRow, *dbtypes.AddressBalance, error)
-	AddressData(address string, N, offset int64, txnType dbtypes.AddrTxnViewType) (*dbtypes.AddressInfo, error)
-	DevBalance() (*dbtypes.AddressBalance, error)
-	FillAddressTransactions(addrInfo *dbtypes.AddressInfo) error
+	AddressHistory(address string, N, offset int64, txnType dbtypes.AddrTxnType) ([]*dbtypes.AddressRow, *AddressBalance, error)
+	DevBalance() (*AddressBalance, error)
+	FillAddressTransactions(addrInfo *AddressInfo) error
 	BlockMissedVotes(blockHash string) ([]string, error)
-	TicketMiss(ticketHash string) (string, int64, error)
+	AgendaVotes(agendaID string, chartType int) (*dbtypes.AgendaVoteChoices, error)
 	GetPgChartsData() (map[string]*dbtypes.ChartsData, error)
-	TicketsPriceByHeight() (*dbtypes.ChartsData, error)
+	GetTicketsPriceByHeight() (*dbtypes.ChartsData, error)
 	SideChainBlocks() ([]*dbtypes.BlockStatus, error)
 	DisapprovedBlocks() ([]*dbtypes.BlockStatus, error)
 	BlockStatus(hash string) (dbtypes.BlockStatus, error)
 	BlockFlags(hash string) (bool, bool, error)
-	TicketPoolVisualization(interval dbtypes.TimeBasedGrouping) (*dbtypes.PoolTicketsData, *dbtypes.PoolTicketsData, *dbtypes.PoolTicketsData, int64, error)
+	GetOldestTxBlockTime(addr string) (int64, error)
+	TicketPoolVisualization(interval dbtypes.ChartGrouping) ([]*dbtypes.PoolTicketsData, *dbtypes.PoolTicketsData, uint64, error)
 	TransactionBlocks(hash string) ([]*dbtypes.BlockStatus, []uint32, error)
 	Transaction(txHash string) ([]*dbtypes.Tx, error)
 	VinsForTx(*dbtypes.Tx) (vins []dbtypes.VinTxProperty, prevPkScripts []string, scriptVersions []uint16, err error)
 	VoutsForTx(*dbtypes.Tx) ([]dbtypes.Vout, error)
 	PosIntervals(limit, offset uint64) ([]*dbtypes.BlocksGroupedInfo, error)
-	TimeBasedIntervals(timeGrouping dbtypes.TimeBasedGrouping, limit, offset uint64) ([]*dbtypes.BlocksGroupedInfo, error)
-	AgendaCumulativeVoteChoices(agendaID string) (yes, abstain, no uint32, err error)
-}
-
-// politeiaBackend implements methods that manage proposals db data.
-type politeiaBackend interface {
-	CheckProposalsUpdates() error
-	AllProposals(offset, rowsCount int, filterByVoteStatus ...int) (proposals []*pitypes.ProposalInfo, totalCount int, err error)
-	ProposalByID(proposalID int) (proposal *pitypes.ProposalInfo, err error)
-}
-
-// agendaBackend implements methods that manage agendas db data.
-type agendaBackend interface {
-	CheckAgendasUpdates(data agendas.DeploymentSource, activeVersions map[uint32][]chaincfg.ConsensusDeployment) error
-	AgendaInfo(agendaID string) (*agendas.AgendaTagged, error)
-	AllAgendas() (agendas []*agendas.AgendaTagged, err error)
 }
 
 // chartDataCounter is a data cache for the historical charts.
@@ -199,7 +163,7 @@ func TicketStatusText(s dbtypes.TicketSpendType, p dbtypes.TicketPoolStatus) str
 		case dbtypes.TicketUnspent:
 			return "Missed, Unrevoked"
 		case dbtypes.TicketRevoked:
-			return "Missed, Revoked"
+			return "Missed, Reevoked"
 		default:
 			return "invalid ticket state"
 		}
@@ -210,52 +174,83 @@ func TicketStatusText(s dbtypes.TicketSpendType, p dbtypes.TicketPoolStatus) str
 
 type pageData struct {
 	sync.RWMutex
-	BlockInfo      *types.BlockInfo
-	BlockchainInfo *pfcjson.GetBlockChainInfoResult
-	HomeInfo       *types.HomeInfo
+	BlockInfo *BlockInfo
+	HomeInfo  *HomeInfo
 }
 
 type explorerUI struct {
 	Mux              *chi.Mux
 	blockData        explorerDataSourceLite
 	explorerSource   explorerDataSource
-	agendasSource    agendaBackend
-	proposalsSource  politeiaBackend
-	dbsSyncing       atomic.Value
 	liteMode         bool
 	devPrefetch      bool
 	templates        templates
 	wsHub            *WebsocketHub
 	pageData         *pageData
+	MempoolData      *MempoolInfo
 	ChainParams      *chaincfg.Params
 	Version          string
 	NetName          string
 	MeanVotingBlocks int64
 	ChartUpdate      sync.Mutex
-	xcBot            *exchanges.ExchangeBot
 	// displaySyncStatusPage indicates if the sync status page is the only web
 	// page that should be accessible during DB synchronization.
 	displaySyncStatusPage atomic.Value
-	politeiaAPIURL        string
-
-	invsMtx sync.RWMutex
-	invs    *types.MempoolInfo
-}
-
-// AreDBsSyncing is a thread-safe way to fetch the boolean in dbsSyncing.
-func (exp *explorerUI) AreDBsSyncing() bool {
-	syncing, ok := exp.dbsSyncing.Load().(bool)
-	return ok && syncing
-}
-
-// SetDBsSyncing is a thread-safe way to update dbsSyncing.
-func (exp *explorerUI) SetDBsSyncing(syncing bool) {
-	exp.dbsSyncing.Store(syncing)
-	exp.wsHub.SetDBsSyncing(syncing)
 }
 
 func (exp *explorerUI) reloadTemplates() error {
 	return exp.templates.reloadTemplates()
+}
+
+// SyncStatusUpdate receives the raw progress updates calculates the percentage
+// and updates the blockchainSyncStatus.ProgressBars.
+func (exp *explorerUI) SyncStatusUpdate(barLoad chan *dbtypes.ProgressBarLoad) {
+	// This goroutine should just be blocked if no sync is running but it should
+	// never exit so that sync processes running never get blocked after writing
+	// data to a channel.
+	go func() {
+		for bar := range barLoad {
+			// updates should only be sent when displaySyncStatus is active
+			// otherwise ignore them.
+			if !exp.DisplaySyncStatusPage() {
+				continue
+			}
+
+			percentage := 0.0
+			if bar.To > 0 {
+				percentage = math.Floor((float64(bar.From)/float64(bar.To))*10000) / 100
+			}
+
+			val := SyncStatusInfo{
+				PercentComplete: percentage,
+				BarMsg:          bar.Msg,
+				Time:            bar.Timestamp,
+				ProgressBarID:   bar.BarID,
+				BarSubtitle:     bar.Subtitle,
+			}
+
+			if len(blockchainSyncStatus.ProgressBars) == 0 {
+				// first entry
+				blockchainSyncStatus.ProgressBars = []SyncStatusInfo{val}
+			} else {
+				for i, v := range blockchainSyncStatus.ProgressBars {
+					if v.ProgressBarID == bar.BarID {
+						if len(bar.Subtitle) > 0 && bar.Timestamp == 0 {
+							// Handle case scenario when only subtitle should be updated.
+							blockchainSyncStatus.ProgressBars[i].BarSubtitle = bar.Subtitle
+						} else {
+							blockchainSyncStatus.ProgressBars[i] = val
+						}
+						// break doesn't work with if statements thus goto was used.
+						goto end
+					}
+				}
+				// new entry
+				blockchainSyncStatus.ProgressBars = append(blockchainSyncStatus.ProgressBars, val)
+			}
+		end:
+		}
+	}()
 }
 
 // See reloadsig*.go for an exported method
@@ -289,21 +284,14 @@ func (exp *explorerUI) StopWebsocketHub() {
 
 // New returns an initialized instance of explorerUI
 func New(dataSource explorerDataSourceLite, primaryDataSource explorerDataSource,
-	useRealIP bool, appVersion string, devPrefetch bool, viewsfolder string,
-	xcBot *exchanges.ExchangeBot, onChainInstance agendaBackend,
-	offChainInstance politeiaBackend, politeiaURL string) *explorerUI {
+	useRealIP bool, appVersion string, devPrefetch bool) *explorerUI {
 	exp := new(explorerUI)
 	exp.Mux = chi.NewRouter()
 	exp.blockData = dataSource
 	exp.explorerSource = primaryDataSource
-	// Allocate Mempool fields.
-	exp.invs = new(types.MempoolInfo)
+	exp.MempoolData = new(MempoolInfo)
 	exp.Version = appVersion
 	exp.devPrefetch = devPrefetch
-	exp.xcBot = xcBot
-	exp.agendasSource = onChainInstance
-	exp.proposalsSource = offChainInstance
-	exp.politeiaAPIURL = politeiaURL
 	// explorerDataSource is an interface that could have a value of pointer
 	// type, and if either is nil this means lite mode.
 	if exp.explorerSource == nil || reflect.ValueOf(exp.explorerSource).IsNil() {
@@ -328,16 +316,16 @@ func New(dataSource explorerDataSourceLite, primaryDataSource explorerDataSource
 	log.Debugf("Organization address: %s", devSubsidyAddress)
 
 	exp.pageData = &pageData{
-		BlockInfo: new(types.BlockInfo),
-		HomeInfo: &types.HomeInfo{
+		BlockInfo: new(BlockInfo),
+		HomeInfo: &HomeInfo{
 			DevAddress: devSubsidyAddress,
-			Params: types.ChainParams{
+			Params: ChainParams{
 				WindowSize:       exp.ChainParams.StakeDiffWindowSize,
 				RewardWindowSize: exp.ChainParams.SubsidyReductionInterval,
 				BlockTime:        exp.ChainParams.TargetTimePerBlock.Nanoseconds(),
 				MeanVotingBlocks: exp.MeanVotingBlocks,
 			},
-			PoolInfo: types.TicketPoolInfo{
+			PoolInfo: TicketPoolInfo{
 				Target: exp.ChainParams.TicketPoolSize * exp.ChainParams.TicketsPerBlock,
 			},
 		},
@@ -345,18 +333,21 @@ func New(dataSource explorerDataSourceLite, primaryDataSource explorerDataSource
 
 	log.Infof("Mean Voting Blocks calculated: %d", exp.pageData.HomeInfo.Params.MeanVotingBlocks)
 
-	commonTemplates := []string{"extras"}
-	exp.templates = newTemplates(viewsfolder, commonTemplates, makeTemplateFuncMap(exp.ChainParams))
-
+	noTemplateError := func(err error) *explorerUI {
+		log.Errorf("Unable to create new html template: %v", err)
+		return nil
+	}
 	tmpls := []string{"home", "explorer", "mempool", "block", "tx", "address",
 		"rawtx", "status", "parameters", "agenda", "agendas", "charts",
-		"sidechains", "disapproved", "ticketpool", "nexthome", "statistics",
-		"windows", "timelisting", "addresstable", "proposals", "proposal"}
+		"sidechains", "rejects", "ticketpool", "nexthome", "windows"}
+
+	tempDefaults := []string{"extras"}
+
+	exp.templates = newTemplates("views", tempDefaults, makeTemplateFuncMap(exp.ChainParams))
 
 	for _, name := range tmpls {
 		if err := exp.templates.addTemplate(name); err != nil {
-			log.Errorf("Unable to create new html template: %v", err)
-			return nil
+			return noTemplateError(err)
 		}
 	}
 
@@ -376,41 +367,41 @@ func (exp *explorerUI) PrepareCharts() {
 	}
 }
 
+// StartSyncingStatusMonitor fires up the sync status monitor. It signals the
+// websocket to check for updates after every syncStatusInterval.
+func (exp *explorerUI) StartSyncingStatusMonitor() {
+	go func() {
+		timer := time.NewTicker(syncStatusInterval)
+		for range timer.C {
+			if !exp.DisplaySyncStatusPage() {
+				timer.Stop()
+			}
+			exp.wsHub.HubRelay <- sigSyncStatus
+		}
+	}()
+}
+
+// DisplaySyncStatusPage is a thread-safe way to fetch the displaySyncStatusPage.
+func (exp *explorerUI) DisplaySyncStatusPage() bool {
+	display, ok := exp.displaySyncStatusPage.Load().(bool)
+	return ok && display
+}
+
+// SetDisplaySyncStatusPage is a thread-safe way to update the displaySyncStatusPage.
+func (exp *explorerUI) SetDisplaySyncStatusPage(displayStatus bool) {
+	if !displayStatus {
+		// Send the one last signal so that the websocket can send the final
+		// confirmation that syncing is done and home page auto reload should happen.
+		exp.wsHub.HubRelay <- sigSyncStatus
+	}
+	exp.displaySyncStatusPage.Store(displayStatus)
+}
+
 // Height returns the height of the current block data.
 func (exp *explorerUI) Height() int64 {
 	exp.pageData.RLock()
 	defer exp.pageData.RUnlock()
 	return exp.pageData.BlockInfo.Height
-}
-
-// LastBlock returns the last block hash, height and time.
-func (exp *explorerUI) LastBlock() (lastBlockHash string, lastBlock int64, lastBlockTime int64) {
-	exp.pageData.RLock()
-	defer exp.pageData.RUnlock()
-	lastBlock = exp.pageData.BlockInfo.Height
-	lastBlockTime = exp.pageData.BlockInfo.BlockTime.UNIX()
-	lastBlockHash = exp.pageData.BlockInfo.Hash
-	return
-}
-
-// MempoolInventory safely retrieves the current mempool inventory.
-func (exp *explorerUI) MempoolInventory() *types.MempoolInfo {
-	exp.invsMtx.RLock()
-	defer exp.invsMtx.RUnlock()
-	return exp.invs
-}
-
-// MempoolID safely fetches the current mempool inventory ID.
-func (exp *explorerUI) MempoolID() uint64 {
-	exp.invsMtx.RLock()
-	defer exp.invsMtx.RUnlock()
-	return exp.invs.ID()
-}
-
-// MempoolSignals returns the mempool signal and data channels, which are to be
-// used by the mempool package's MempoolMonitor as send only channels.
-func (exp *explorerUI) MempoolSignals() (chan<- pstypes.HubSignal, chan<- *types.MempoolTx) {
-	return exp.wsHub.HubRelay, exp.wsHub.NewTxChan
 }
 
 // prePopulateChartsData should run in the background the first time the system
@@ -437,10 +428,6 @@ func (exp *explorerUI) prePopulateChartsData() {
 	log.Debugf("Retrieving charts data from aux DB.")
 	var err error
 	pgData, err := exp.explorerSource.GetPgChartsData()
-	if dbtypes.IsTimeoutErr(err) {
-		log.Warnf("GetPgChartsData DB timeout: %v", err)
-		return
-	}
 	if err != nil {
 		log.Errorf("Invalid PG data found: %v", err)
 		return
@@ -462,34 +449,18 @@ func (exp *explorerUI) prePopulateChartsData() {
 	log.Info("Done pre-populating the charts data.")
 }
 
-// StoreMPData stores mempool data. It is advisable to pass a copy of the
-// []types.MempoolTx so that it may be modified (e.g. sorted) without affecting
-// other MempoolDataSavers.
-func (exp *explorerUI) StoreMPData(_ *mempool.StakeData, _ []types.MempoolTx, inv *types.MempoolInfo) {
-	// Get exclusive access to the Mempool field.
-	exp.invsMtx.Lock()
-	exp.invs = inv
-	exp.invsMtx.Unlock()
-	log.Debugf("Updated mempool details for the explorerUI.")
-}
-
 func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgBlock) error {
 	// Retrieve block data for the passed block hash.
 	newBlockData := exp.blockData.GetExplorerBlock(msgBlock.BlockHash().String())
 
 	// Use the latest block's blocktime to get the last 24hr timestamp.
-	day := 24 * time.Hour
+	timestamp := newBlockData.BlockTime - 86400
 	targetTimePerBlock := float64(exp.ChainParams.TargetTimePerBlock)
-
-	// Hashrate change over last day
-	timestamp := newBlockData.BlockTime.T.Add(-day).Unix()
+	// RetreiveDifficulty fetches the difficulty using the last 24hr timestamp,
+	// whereby the difficulty can have a timestamp equal to the last 24hrs
+	// timestamp or that is immediately greater than the 24hr timestamp.
 	last24hrDifficulty := exp.blockData.RetreiveDifficulty(timestamp)
 	last24HrHashRate := dbtypes.CalculateHashRate(last24hrDifficulty, targetTimePerBlock)
-
-	// Hashrate change over last month
-	timestamp = newBlockData.BlockTime.T.Add(-30 * day).Unix()
-	lastMonthDifficulty := exp.blockData.RetreiveDifficulty(timestamp)
-	lastMonthHashRate := dbtypes.CalculateHashRate(lastMonthDifficulty, targetTimePerBlock)
 
 	difficulty := blockData.Header.Difficulty
 	hashrate := dbtypes.CalculateHashRate(difficulty, targetTimePerBlock)
@@ -510,14 +481,12 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 	p := exp.pageData
 	p.Lock()
 
-	// Store current block and blockchain data.
+	// Store current block data.
 	p.BlockInfo = newBlockData
-	p.BlockchainInfo = blockData.BlockchainInfo
 
 	// Update HomeInfo.
 	p.HomeInfo.HashRate = hashrate
-	p.HomeInfo.HashRateChangeDay = 100 * (hashrate - last24HrHashRate) / last24HrHashRate
-	p.HomeInfo.HashRateChangeMonth = 100 * (hashrate - lastMonthHashRate) / lastMonthHashRate
+	p.HomeInfo.HashRateChange = 100 * (hashrate - last24HrHashRate) / last24HrHashRate
 	p.HomeInfo.CoinSupply = blockData.ExtraInfo.CoinSupply
 	p.HomeInfo.StakeDiff = blockData.CurrentStakeDiff.CurrentStakeDifficulty
 	p.HomeInfo.NextExpectedStakeDiff = blockData.EstStakeDiff.Expected
@@ -532,10 +501,10 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 	p.HomeInfo.NBlockSubsidy.Total = blockData.ExtraInfo.NextBlockSubsidy.Total
 
 	// If BlockData contains non-nil PoolInfo, copy values.
-	p.HomeInfo.PoolInfo = types.TicketPoolInfo{}
+	p.HomeInfo.PoolInfo = TicketPoolInfo{}
 	if blockData.PoolInfo != nil {
 		tpTarget := exp.ChainParams.TicketPoolSize * exp.ChainParams.TicketsPerBlock
-		p.HomeInfo.PoolInfo = types.TicketPoolInfo{
+		p.HomeInfo.PoolInfo = TicketPoolInfo{
 			Size:          blockData.PoolInfo.Size,
 			Value:         blockData.PoolInfo.Value,
 			ValAvg:        blockData.PoolInfo.ValAvg,
@@ -561,39 +530,20 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 		exp.ChainParams.TargetTimePerBlock.Hours()/24)
 	p.HomeInfo.ASR = ASR
 
-	// If exchange monitoring is enabled, set the exchange rate.
-	if exp.xcBot != nil {
-		p.HomeInfo.ExchangeRate = exp.xcBot.Conversion(1.0)
-	}
-
 	p.Unlock()
 
 	if !exp.liteMode && exp.devPrefetch {
 		go exp.updateDevFundBalance()
 	}
 
-	// Do not run updates if blockchain sync is running.
-	if !exp.AreDBsSyncing() {
-		// Update the charts data after every five blocks or if no charts data
-		// exists yet.
-		if newBlockData.Height%5 == 0 || cacheChartsData.Height() == -1 {
-			// This must be done after storing BlockInfo since that provides the
-			// explorer's best block height, which is used by prePopulateChartsData
-			// to decide if an update is needed.
-			go exp.prePopulateChartsData()
-		}
-
-		// Update the proposal DB. This is run asynchronously since it involves
-		// a query to Politeia (a remote system) and we do not want to block
-		// execution.
-		if newBlockData.Height%20 == 0 {
-			go func() {
-				err := exp.proposalsSource.CheckProposalsUpdates()
-				if err != nil {
-					log.Error(err)
-				}
-			}()
-		}
+	// Update the charts data after every five blocks or if no charts data
+	// exists yet. Do not update the charts data if blockchain sync is running.
+	isSyncRunning := exp.DisplaySyncStatusPage() || SyncExplorerUpdateStatus()
+	if !isSyncRunning && (newBlockData.Height%5 == 0 || cacheChartsData.Height() == -1) {
+		// This must be done after storing BlockInfo since that provides the
+		// explorer's best block height, which is used by prePopulateChartsData
+		// to decide if an update is needed.
+		go exp.prePopulateChartsData()
 	}
 
 	// Signal to the websocket hub that a new block was received, but do not
@@ -654,8 +604,6 @@ func (exp *explorerUI) addRoutes() {
 	exp.Mux.Get("/address/{x}", redirect("address"))
 
 	exp.Mux.Get("/decodetx", redirect("decodetx"))
-
-	exp.Mux.Get("/stats", redirect("statistics"))
 }
 
 // Simulate ticket purchase and re-investment over a full year for a given
@@ -769,23 +717,4 @@ func (exp *explorerUI) simulateASR(StartingPFCBalance float64, IntegerTicketQty 
 	ASR = (BlocksPerYear / (simblock - CurrentBlockNum)) * SimulationReward
 	ReturnTable += fmt.Sprintf("ASR over 365 Days is %.2f.\n", ASR)
 	return
-}
-
-func (exp *explorerUI) getExchangeState() *exchanges.ExchangeBotState {
-	if exp.xcBot == nil || exp.xcBot.IsFailed() {
-		return nil
-	}
-	return exp.xcBot.State()
-}
-
-// mempoolTime is the TimeDef that the transaction was received in PFCData, or
-// else a zero-valued TimeDef if no transaction is found.
-func (exp *explorerUI) mempoolTime(txid string) types.TimeDef {
-	exp.invsMtx.RLock()
-	defer exp.invsMtx.RUnlock()
-	tx, found := exp.invs.Tx(txid)
-	if !found {
-		return types.NewTimeDefFromUNIX(0)
-	}
-	return types.NewTimeDefFromUNIX(tx.Time)
 }

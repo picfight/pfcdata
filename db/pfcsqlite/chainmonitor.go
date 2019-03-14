@@ -10,14 +10,14 @@ import (
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcdata/v4/blockdata"
-	"github.com/picfight/pfcdata/v4/txhelpers"
+	"github.com/picfight/pfcdata/v3/blockdata"
+	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
 // ChainMonitor handles change notifications from the node client
 type ChainMonitor struct {
 	ctx            context.Context
-	db             *WiredDB
+	db             *wiredDB
 	collector      *blockdata.Collector
 	wg             *sync.WaitGroup
 	blockChan      chan *chainhash.Hash
@@ -27,7 +27,7 @@ type ChainMonitor struct {
 }
 
 // NewChainMonitor creates a new ChainMonitor
-func (db *WiredDB) NewChainMonitor(ctx context.Context, collector *blockdata.Collector, wg *sync.WaitGroup,
+func (db *wiredDB) NewChainMonitor(ctx context.Context, collector *blockdata.Collector, wg *sync.WaitGroup,
 	blockChan chan *chainhash.Hash, reorgChan chan *txhelpers.ReorgData) *ChainMonitor {
 	return &ChainMonitor{
 		ctx:            ctx,
@@ -59,7 +59,11 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 			reorgData.OldChainHeight, commonAncestorHeight)
 	}
 
-	// Save blocks from previous side chain that is now the main chain.
+	// Update DB tables, just overwriting any existing data.
+	// TODO(chappjc): Remove rows for disconnected blocks just in case not
+	// everything gets overwritten, as intended.
+
+	// Save blocks from previous side chain that is now the main chain
 	log.Infof("Saving %d new blocks from previous side chain to sqlite.", len(newChain))
 	for i := range newChain {
 		// Get data by block hash, which requires the stakedb's PoolInfoCache to
@@ -70,30 +74,14 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 			log.Error("Failed to collect data for reorg.")
 			continue
 		}
-
-		// Before storing data for the new main chain block, set
-		// is_mainchain=false for any other block at this height.
-		height := int64(blockDataSummary.Height)
-		if err := p.db.setHeightToSideChain(height); err != nil {
-			log.Errorf("Failed to move blocks at height %d off of main chain: "+
-				"%v", height, err)
-		}
-
-		// If a block was cached at this height already, it was from the
-		// previous mainchain, so remove it.
-		if p.db.DB.BlockCache != nil {
-			p.db.DB.BlockCache.RemoveCachedBlockByHeight(height)
-		}
-
-		// Store this block's summary data and stake info.
 		if err := p.db.StoreBlockSummary(blockDataSummary); err != nil {
 			log.Errorf("Failed to store block summary data: %v", err)
 		}
 		if err := p.db.StoreStakeInfoExtended(stakeInfoSummaryExtended); err != nil {
 			log.Errorf("Failed to store stake info data: %v", err)
 		}
-		log.Infof("Promoted block %v (height %d) from side chain to main chain.",
-			blockDataSummary.Hash, height)
+		log.Infof("Stored block %v (height %d) from side chain.",
+			blockDataSummary.Hash, blockDataSummary.Height)
 	}
 
 	// Retrieve height and hash of the best block in the DB.

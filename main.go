@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, The Decred developers
+// Copyright (c) 2018, The Decred developers
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -14,7 +15,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"runtime/pprof"
 	"strings"
@@ -24,27 +24,22 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/google/gops/agent"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/rpcclient/v2"
-	"github.com/picfight/pfcdata/v4/api"
-	"github.com/picfight/pfcdata/v4/api/insight"
-	"github.com/picfight/pfcdata/v4/blockdata"
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/db/pfcpg"
-	"github.com/picfight/pfcdata/v4/db/pfcsqlite"
-	"github.com/picfight/pfcdata/v4/exchanges"
-	"github.com/picfight/pfcdata/v4/explorer"
-	exptypes "github.com/picfight/pfcdata/v4/explorer/types"
-	"github.com/picfight/pfcdata/v4/gov/agendas"
-	"github.com/picfight/pfcdata/v4/gov/politeia"
-	"github.com/picfight/pfcdata/v4/mempool"
-	m "github.com/picfight/pfcdata/v4/middleware"
-	notify "github.com/picfight/pfcdata/v4/notification"
-	"github.com/picfight/pfcdata/v4/pubsub"
-	pstypes "github.com/picfight/pfcdata/v4/pubsub/types"
-	"github.com/picfight/pfcdata/v4/rpcutils"
-	"github.com/picfight/pfcdata/v4/semver"
-	"github.com/picfight/pfcdata/v4/txhelpers"
-	"github.com/picfight/pfcdata/v4/version"
+	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcdata/v3/api"
+	"github.com/picfight/pfcdata/v3/api/insight"
+	"github.com/picfight/pfcdata/v3/blockdata"
+	"github.com/picfight/pfcdata/v3/db/agendadb"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/pfcpg"
+	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
+	"github.com/picfight/pfcdata/v3/explorer"
+	"github.com/picfight/pfcdata/v3/mempool"
+	m "github.com/picfight/pfcdata/v3/middleware"
+	notify "github.com/picfight/pfcdata/v3/notification"
+	"github.com/picfight/pfcdata/v3/rpcutils"
+	"github.com/picfight/pfcdata/v3/semver"
+	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/pfcdata/v3/version"
 )
 
 func main() {
@@ -109,7 +104,7 @@ func _main(ctx context.Context) error {
 	}
 
 	// Setup the notification handlers.
-	notify.MakeNtfnChans(usePG)
+	notify.MakeNtfnChans(cfg.MonitorMempool, usePG)
 
 	// Connect to pfcd RPC server using a websocket.
 	ntfnHandlers, collectionQueue := notify.MakeNodeNtfnHandlers()
@@ -119,15 +114,14 @@ func _main(ctx context.Context) error {
 	}
 
 	defer func() {
-		if pfcdClient != nil {
-			log.Infof("Closing connection to pfcd.")
-			pfcdClient.Shutdown()
-			pfcdClient.WaitForShutdown()
-		}
-
 		// The individial hander's loops should close the notifications channels
 		// on quit, but do it here too to be sure.
 		notify.CloseNtfnChans()
+
+		if pfcdClient != nil {
+			log.Infof("Closing connection to pfcd.")
+			pfcdClient.Shutdown()
+		}
 
 		log.Infof("Bye!")
 		time.Sleep(250 * time.Millisecond)
@@ -147,21 +141,17 @@ func _main(ctx context.Context) error {
 		return fmt.Errorf("expected network %s, got %s", activeNet.Net, curnet)
 	}
 
-	// SQLite output
+	// Sqlite output
 	dbPath := filepath.Join(cfg.DataDir, cfg.DBFileName)
 	dbInfo := pfcsqlite.DBInfo{FileName: dbPath}
 	baseDB, cleanupDB, err := pfcsqlite.InitWiredDB(&dbInfo,
-		notify.NtfnChans.UpdateStatusDBHeight, pfcdClient, activeChain, cfg.DataDir)
+		notify.NtfnChans.UpdateStatusDBHeight, pfcdClient, activeChain, cfg.DataDir, !usePG)
 	defer cleanupDB()
 	if err != nil {
 		return fmt.Errorf("Unable to initialize SQLite database: %v", err)
 	}
 	log.Infof("SQLite DB successfully opened: %s", cfg.DBFileName)
 	defer baseDB.Close()
-
-	if err = baseDB.ReportHeights(); err != nil {
-		return fmt.Errorf("Possible SQLite corruption: %v", err)
-	}
 
 	// Auxiliary DB (currently PostgreSQL)
 	var auxDB *pfcpg.ChainDBRPC
@@ -175,23 +165,13 @@ func _main(ctx context.Context) error {
 			}
 		}
 		dbi := pfcpg.DBInfo{
-			Host:         pgHost,
-			Port:         pgPort,
-			User:         cfg.PGUser,
-			Pass:         cfg.PGPass,
-			DBName:       cfg.PGDBName,
-			QueryTimeout: cfg.PGQueryTimeout,
+			Host:   pgHost,
+			Port:   pgPort,
+			User:   cfg.PGUser,
+			Pass:   cfg.PGPass,
+			DBName: cfg.PGDBName,
 		}
-
-		// If using {netname} then replace it with netName(activeNet).
-		dbi.DBName = strings.Replace(dbi.DBName, "{netname}", netName(activeNet), -1)
-
-		// Rough estimate of capacity in rows, using size of struct plus some
-		// for the string buffer of the Address field.
-		rowCap := cfg.AddrCacheCap / int(32+reflect.TypeOf(dbtypes.AddressRowCompact{}).Size())
-		log.Infof("Address cache capacity: %d rows, %d bytes", rowCap, cfg.AddrCacheCap)
-		chainDB, err := pfcpg.NewChainDBWithCancel(ctx, &dbi, activeChain,
-			baseDB.GetStakeDB(), !cfg.NoDevPrefetch, cfg.HidePGConfig, rowCap)
+		chainDB, err := pfcpg.NewChainDBWithCancel(ctx, &dbi, activeChain, baseDB.GetStakeDB(), !cfg.NoDevPrefetch)
 		if chainDB != nil {
 			defer chainDB.Close()
 		}
@@ -208,185 +188,46 @@ func _main(ctx context.Context) error {
 			return err
 		}
 
-		// Check for missing indexes.
-		missingIndexes, descs, err := auxDB.MissingIndexes()
-		if err != nil {
-			return err
-		}
-
-		// If any indexes are missing, forcibly drop any existing indexes, and
-		// create them all after block sync.
-		if len(missingIndexes) > 0 {
+		var idxExists bool
+		idxExists, err = auxDB.ExistsIndexVinOnVins()
+		if !idxExists || err != nil {
 			newPGIndexes = true
+			log.Infof("Indexes not found. Forcing new index creation.")
+		}
+
+		idxExists, err = auxDB.ExistsIndexAddressesVoutIDAddress()
+		if !idxExists || err != nil {
 			updateAllAddresses = true
-			// Warn if this is not a fresh sync.
-			if auxDB.Height() > 0 {
-				log.Warnf("Some table indexes not found!")
-				for im, mi := range missingIndexes {
-					log.Warnf(` - Missing Index "%s": "%s"`, mi, descs[im])
-				}
-				log.Warnf("Forcing new index creation and addresses table spending info update.")
-			}
 		}
 	}
 
-	// Heights gets the current height of each DB, the minimum of the DB heights
-	// (dbHeight), and the chain server height.
-	Heights := func() (dbHeight, nodeHeight, baseDBHeight, auxDBHeight int64, err error) {
-		_, nodeHeight, err = pfcdClient.GetBestBlock()
-		if err != nil {
-			err = fmt.Errorf("unable to get block from node: %v", err)
-			return
-		}
-
-		baseDBHeight, err = baseDB.GetHeight()
-		if err != nil {
-			if err != sql.ErrNoRows {
-				log.Errorf("baseDB.GetHeight failed: %v", err)
-				return
-			}
-			// err == sql.ErrNoRows is not an error
-			err = nil
-			log.Infof("baseDB block summary table is empty.")
-		}
-		log.Debugf("baseDB height: %d", baseDBHeight)
-		dbHeight = baseDBHeight
-
-		if usePG {
-			auxDBHeight, err = auxDB.HeightDB()
-			if err != nil {
-				if err != sql.ErrNoRows {
-					log.Errorf("auxDB.HeightDB failed: %v", err)
-					return
-				}
-				// err == sql.ErrNoRows is not an error, and auxDBHeight == -1
-				err = nil
-				log.Infof("auxDB block summary table is empty.")
-			}
-			log.Debugf("auxDB height: %d", auxDBHeight)
-			if baseDBHeight > auxDBHeight {
-				dbHeight = auxDBHeight
-			}
-		}
-		return
-	}
-
-	// Check for database tip blocks that have been orphaned. If any are found,
-	// purge blocks to get to a common ancestor. Only message when purging more
-	// than requested in the configuration settings.
-	blocksToPurge := cfg.PurgeNBestBlocks
-	_, _, baseHeight, auxHeight, err := Heights()
+	blockHash, nodeHeight, err := pfcdClient.GetBestBlock()
 	if err != nil {
-		return fmt.Errorf("Failed to get Heights for tip check: %v", err)
+		return fmt.Errorf("Unable to get block from node: %v", err)
 	}
 
-	if baseHeight > -1 {
-		orphaned, err := rpcutils.OrphanedTipLength(ctx, pfcdClient, baseHeight, baseDB.DB.RetrieveBlockHash)
-		if err != nil {
-			return fmt.Errorf("Failed to compare tip blocks for the base DB: %v", err)
-		}
-		if int(orphaned) > blocksToPurge {
-			blocksToPurge = int(orphaned)
-			log.Infof("Orphaned tip detected on base DB. Purging %d blocks", blocksToPurge)
-		}
-	}
-
-	if usePG && auxHeight > -1 {
-		orphaned, err := rpcutils.OrphanedTipLength(ctx, pfcdClient, auxHeight, auxDB.BlockHash)
-		if err != nil {
-			return fmt.Errorf("Failed to compare tip blocks for the aux DB: %v", err)
-		}
-		if int(orphaned) > blocksToPurge {
-			blocksToPurge = int(orphaned)
-			log.Infof("Orphaned tip detected on aux DB. Purging %d blocks", blocksToPurge)
-		}
-	}
-
-	// Give a chance to abort a purge.
-	if shutdownRequested(ctx) {
-		return nil
-	}
-
-	if blocksToPurge > 0 {
-		// The number of blocks to purge for each DB is computed so that the DBs
-		// will end on the same height.
-		_, _, baseDBHeight, auxDBHeight, err := Heights()
-		if err != nil {
-			return fmt.Errorf("Heights failed: %v", err)
-		}
-		// Determine the largest DB height.
-		maxHeight := baseDBHeight
-		if usePG && auxDBHeight > maxHeight {
-			maxHeight = auxDBHeight
-		}
-		// The final best block after purge.
-		purgeToBlock := maxHeight - int64(blocksToPurge)
-
-		// Purge from SQLite, using either the "blocks above" or "N best main
-		// chain" approach.
-		var heightDB, nRemovedSummary int64
-		if cfg.FastSQLitePurge {
-			log.Infof("Purging SQLite data for the blocks above %d...",
-				purgeToBlock)
-			nRemovedSummary, _, err = baseDB.PurgeBlocksAboveHeight(purgeToBlock)
-			if err != nil && err != sql.ErrNoRows {
-				return fmt.Errorf("failed to purge to block %d from SQLite: %v",
-					purgeToBlock, err)
-			}
-			heightDB = purgeToBlock
-		} else {
-			// Purge NBase blocks from base DB.
-			NBase := baseDBHeight - purgeToBlock
-			log.Infof("Purging SQLite data for the %d best blocks...", NBase)
-			nRemovedSummary, _, heightDB, _, err = baseDB.PurgeBestBlocks(NBase)
-			if err != nil && err != sql.ErrNoRows {
-				return fmt.Errorf("failed to purge %d blocks from SQLite: %v",
-					NBase, err)
-			}
-		}
-
-		// The number of rows removed from the summary table and stake table may
-		// be different if the DB was corrupted, but it is not important to log
-		// for the tables separately.
-		log.Infof("Sucessfully purged data for %d blocks from SQLite "+
-			"(new height = %d).", nRemovedSummary, heightDB)
-
-		if usePG {
-			// Purge NAux blocks from auxiliary DB.
-			NAux := auxDBHeight - purgeToBlock
-			log.Infof("Purging PostgreSQL data for the %d best blocks...", NAux)
-			s, heightDB, err := auxDB.PurgeBestBlocks(NAux)
-			if err != nil && err != sql.ErrNoRows {
-				return fmt.Errorf("Failed to purge %d blocks from PostgreSQL: %v",
-					NAux, err)
-			}
-			if s != nil {
-				log.Infof("Sucessfully purged data for %d blocks from PostgreSQL "+
-					"(new height = %d):\n%v", s.Blocks, heightDB, s)
-			} // otherwise likely err == sql.ErrNoRows
-		}
-	}
+	var blocksBehind int64
 
 	// When in lite mode, baseDB should get blocks without having to coordinate
 	// with auxDB. Setting fetchToHeight to a large number allows this.
 	var fetchToHeight = int64(math.MaxInt32)
 	if usePG {
 		// Get the last block added to the aux DB.
-		lastBlockPG, err := auxDB.HeightDB()
-		if err != nil && err != sql.ErrNoRows {
-			return fmt.Errorf("Unable to get height from PostgreSQL DB: %v", err)
+		var heightDB uint64
+		heightDB, err = auxDB.HeightDB()
+		lastBlockPG := int64(heightDB)
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return fmt.Errorf("Unable to get height from PostgreSQL DB: %v", err)
+			}
+			// lastBlockPG of 0 implies genesis is already processed.
+			lastBlockPG = -1
 		}
 
-		// Allow WiredDB/stakedb to catch up to the auxDB, but after
-		// fetchToHeight, WiredDB must receive block signals from auxDB, and
+		// Allow wiredDB/stakedb to catch up to the auxDB, but after
+		// fetchToHeight, wiredDB must receive block signals from auxDB, and
 		// stakedb must send connect signals to auxDB.
 		fetchToHeight = lastBlockPG + 1
-
-		// For consistency with StakeDatabase, a non-negative height is needed.
-		heightDB := lastBlockPG
-		if heightDB < 0 {
-			heightDB = 0
-		}
 
 		// Aux DB height and stakedb height must be equal. StakeDatabase will
 		// catch up automatically if it is behind, but we must rewind it here if
@@ -394,29 +235,21 @@ func _main(ctx context.Context) error {
 		// StakeDatabase when the required blocks are connected, the
 		// StakeDatabase must be at the same height or lower than auxDB.
 		stakedbHeight := int64(baseDB.GetStakeDB().Height())
-		if stakedbHeight > heightDB {
-			// Have baseDB rewind it's the StakeDatabase. stakedbHeight is
-			// always rewound to a height of zero even when lastBlockPG is -1,
-			// hence we rewind to heightDB.
-			log.Infof("Rewinding StakeDatabase from block %d to %d.",
-				stakedbHeight, heightDB)
-			stakedbHeight, err = baseDB.RewindStakeDB(ctx, heightDB)
+		fromHeight := stakedbHeight
+		if uint64(stakedbHeight) > heightDB {
+			// Rewind stakedb and log at intervals of 200 blocks.
+			if stakedbHeight == fromHeight || stakedbHeight%200 == 0 {
+				log.Infof("Rewinding StakeDatabase from %d to %d.", stakedbHeight, heightDB)
+			}
+			stakedbHeight, err = baseDB.RewindStakeDB(ctx, int64(heightDB))
 			if err != nil {
 				return fmt.Errorf("RewindStakeDB failed: %v", err)
 			}
-
-			// Verify that the StakeDatabase is at the intended height.
-			if stakedbHeight != heightDB {
+			// stakedbHeight is always rewound to a height of zero even when lastBlockPG is -1.
+			if stakedbHeight != int64(heightDB) {
 				return fmt.Errorf("failed to rewind stakedb: got %d, expecting %d",
 					stakedbHeight, heightDB)
 			}
-		}
-
-		// TODO: just use getblockchaininfo to see if it still syncing and what
-		// height the network's best block is at.
-		blockHash, nodeHeight, err := pfcdClient.GetBestBlock()
-		if err != nil {
-			return fmt.Errorf("Unable to get block from node: %v", err)
 		}
 
 		block, err := pfcdClient.GetBlockHeader(blockHash)
@@ -424,18 +257,28 @@ func _main(ctx context.Context) error {
 			return fmt.Errorf("unable to fetch the block from the node: %v", err)
 		}
 
-		// bestBlockAge is the time since the pfcd best block was mined.
-		bestBlockAge := time.Since(block.Timestamp).Minutes()
+		// elapsedTime is the time since the pfcd best block was mined.
+		elapsedTime := time.Since(block.Timestamp).Minutes()
 
 		// Since mining a block take approximately ChainParams.TargetTimePerBlock then the
 		// expected height of the best block from pfcd now should be this.
-		expectedHeight := int64(bestBlockAge/float64(activeChain.TargetTimePerBlock)) + nodeHeight
+		expectedHeight := int64(elapsedTime/float64(activeChain.TargetTimePerBlock)) + nodeHeight
 
-		// Estimate how far auxDB is behind the node.
-		blocksBehind := expectedHeight - lastBlockPG
+		// How far auxDB is behind the node
+		blocksBehind = expectedHeight - lastBlockPG
 		if blocksBehind < 0 {
 			return fmt.Errorf("Node is still syncing. Node height = %d, "+
 				"DB height = %d", expectedHeight, heightDB)
+		}
+		if blocksBehind > 7500 {
+			log.Warnf("Setting PSQL sync to rebuild address table after large "+
+				"import (%d blocks).", blocksBehind)
+			updateAllAddresses = true
+			if blocksBehind > 40000 {
+				log.Warnf("Setting PSQL sync to drop indexes prior to bulk data "+
+					"import (%d blocks).", blocksBehind)
+				newPGIndexes = true
+			}
 		}
 
 		// PG gets winning tickets out of baseDB's pool info cache, so it must
@@ -450,9 +293,17 @@ func _main(ctx context.Context) error {
 
 		// Charge stakedb pool info cache, including previous PG blocks, up to
 		// best in sqlite.
-		if err = baseDB.ChargePoolInfoCache(heightDB - 2); err != nil {
+		if err = baseDB.ChargePoolInfoCache(int64(heightDB) - 2); err != nil {
 			return fmt.Errorf("Failed to charge pool info cache: %v", err)
 		}
+	}
+
+	// Set the path to the AgendaDB file.
+	agendadb.SetDbPath(filepath.Join(cfg.DataDir, cfg.AgendaDBFileName))
+
+	// AgendaDB upgrade check
+	if err = agendadb.CheckForUpdates(pfcdClient); err != nil {
+		return fmt.Errorf("agendadb upgrade failed: %v", err)
 	}
 
 	// Block data collector. Needs a StakeDatabase too.
@@ -468,7 +319,14 @@ func _main(ctx context.Context) error {
 		blockDataSavers = append(blockDataSavers, auxDB)
 	}
 
-	blockDataSavers = append(blockDataSavers, baseDB)
+	// For example, dumping all mempool fees with a custom saver
+	if cfg.DumpAllMPTix {
+		log.Debugf("Dumping all mempool tickets to file in %s.\n", cfg.OutFolder)
+		mempoolFeeDumper := mempool.NewMempoolFeeDumper(cfg.OutFolder, "mempool-fees")
+		mempoolSavers = append(mempoolSavers, mempoolFeeDumper)
+	}
+
+	blockDataSavers = append(blockDataSavers, &baseDB)
 	mempoolSavers = append(mempoolSavers, baseDB.MPC)
 
 	// Allow Ctrl-C to halt startup here.
@@ -476,143 +334,75 @@ func _main(ctx context.Context) error {
 		return nil
 	}
 
-	// WaitGroup for monitoring goroutines
-	var wg sync.WaitGroup
-
-	// ExchangeBot
-	var xcBot *exchanges.ExchangeBot
-	if cfg.EnableExchangeBot {
-		botCfg := exchanges.ExchangeBotConfig{
-			BtcIndex:       cfg.ExchangeCurrency,
-			MasterBot:      cfg.RateMaster,
-			MasterCertFile: cfg.RateCertificate,
-		}
-		if cfg.DisabledExchanges != "" {
-			botCfg.Disabled = strings.Split(cfg.DisabledExchanges, ",")
-		}
-		xcBot, err = exchanges.NewExchangeBot(&botCfg)
-		if err != nil {
-			log.Errorf("Could not create exchange monitor. Exchange info will be disabled: %v", err)
-		} else {
-			var xcList, prepend string
-			for k := range xcBot.Exchanges {
-				xcList += prepend + k
-				prepend = ", "
-			}
-			log.Infof("ExchangeBot monitoring %s", xcList)
-			wg.Add(1)
-			go xcBot.Start(ctx, &wg)
-		}
-	}
-
-	// Creates a new or loads an existing agendas db instance that helps to
-	// store and retrieves agendas data. Agendas votes are On-Chain
-	// transactions that appear in the picfight blockchain.
-	agendasInstance, err := agendas.NewAgendasDB(filepath.Join(cfg.DataDir,
-		cfg.AgendasDBFileName))
-	if err != nil {
-		return fmt.Errorf("failed to create new agendas db instance: %v", err)
-	}
-
-	// Retrieve blockchain deployment updates and add them to the agendas db.
-	// activeChain.Deployments contains a list of all agendas supported in the
-	// current environment.
-	if err = agendasInstance.CheckAgendasUpdates(pfcdClient,
-		activeChain.Deployments); err != nil {
-		return fmt.Errorf("updating agendas db failed: %v", err)
-	}
-
-	// Creates a new or loads an existing proposals db instance that helps to
-	// store and retrieve proposals data. Proposals votes is Off-Chain
-	// data stored in github repositories away from the picfight blockchain. It also
-	// creates a new http client needed to query Politeia API endpoints.
-	proposalsInstance, err := politeia.NewProposalsDB(cfg.PoliteiaAPIURL,
-		filepath.Join(cfg.DataDir, cfg.ProposalsFileName))
-	if err != nil {
-		return fmt.Errorf("failed to create new proposals db instance: %v", err)
-	}
-
-	// Retrieve newly added proposals and add them to the proposals db.
-	// Proposal db update is made asynchronously to ensure that the system works
-	// even when the Politeia API endpoint set is down.
-	go func() {
-		if err := proposalsInstance.CheckProposalsUpdates(); err != nil {
-			log.Errorf("updating proposals db failed: %v", err)
-		}
-	}()
-
 	// Create the explorer system.
-	explore := explorer.New(baseDB, auxDB, cfg.UseRealIP, version.Version(),
-		!cfg.NoDevPrefetch, "views", xcBot, agendasInstance, proposalsInstance,
-		cfg.PoliteiaAPIURL)
-	// TODO: allow views config
+	explore := explorer.New(&baseDB, auxDB, cfg.UseRealIP, version.Version(), !cfg.NoDevPrefetch)
 	if explore == nil {
 		return fmt.Errorf("failed to create new explorer (templates missing?)")
 	}
 	explore.UseSIGToReloadTemplates()
 	defer explore.StopWebsocketHub()
+	defer explore.StopMempoolMonitor(notify.NtfnChans.ExpNewTxChan)
 
-	blockDataSavers = append(blockDataSavers, explore)
-	mempoolSavers = append(mempoolSavers, explore)
+	wireDBheight := baseDB.GetHeight() // sqlite base db
 
-	// Create the pub sub hub.
-	psHub, err := pubsub.NewPubSubHub(baseDB)
-	if err != nil {
-		return fmt.Errorf("failed to create new pubsubhub: %v", err)
+	var auxDBheight int
+	if usePG {
+		auxDBheight = auxDB.GetHeight() // pg db
 	}
-	defer psHub.StopWebsocketHub()
 
-	blockDataSavers = append(blockDataSavers, psHub)
-	mempoolSavers = append(mempoolSavers, psHub) // individial transactions are from mempool monitor
+	// barLoad is used to send sync status updates from a given function or
+	// method to SyncStatusUpdate function via websocket. Sends do not need to
+	// block, so this is buffered.
+	barLoad := make(chan *dbtypes.ProgressBarLoad, 2)
 
-	// Prepare for sync by setting up the channels for status/progress updates
-	// (barLoad) or full explorer page updates (latestBlockHash).
+	// latestBlockHash receives the block hash of the latest block to be sync'd
+	// in pfcdata. This may not necessarily be the latest block in the
+	// blockchain but it is the latest block to be sync'd according to pfcdata.
+	// This block hash is sent if the webserver is providing the full explorer
+	// functionality during blockchain syncing. Sends do not need to block, so
+	// this is buffered.
+	latestBlockHash := make(chan *chainhash.Hash, 2)
 
-	// barLoad is used to send sync status updates to websocket clients (e.g.
-	// browsers with the status page opened) via the goroutines launched by
-	// BeginSyncStatusUpdates.
-	var barLoad chan *dbtypes.ProgressBarLoad
+	// The blockchain syncing status page should be displayed; if the blocks
+	// behind the current height are more than the set status limit. On initial
+	// pfcdata startup syncing should be displayed by default. (If height is
+	// less than 40,000, initial startup from scratch must have been run)
+	// The sync status page should also be displayed when updateAllAddresses and
+	// newPGIndexes are set to true.
+	displaySyncStatusPage := blocksBehind > cfg.SyncStatusLimit ||
+		(usePG && auxDBheight < 40000) || wireDBheight < 40000 ||
+		updateAllAddresses || newPGIndexes
 
-	// latestBlockHash communicates the hash of block most recently processed
-	// during synchronization. This is done if all of the explorer pages (not
-	// just the status page) are to be served during sync.
-	var latestBlockHash chan *chainhash.Hash
+	// Set the displaySyncStatusPage value.
+	explore.SetDisplaySyncStatusPage(displaySyncStatusPage)
 
-	// Display the blockchain syncing status page if the number of blocks behind
-	// the node's best block height are more than the set limit. The sync status
-	// page should also be displayed when updateAllAddresses and newPGIndexes
-	// are true, indicating maintenance or an initial sync.
-	dbHeight, nodeHeight, _, _, err := Heights()
-	if err != nil {
-		return fmt.Errorf("Heights failed: %v", err)
-	}
-	blocksBehind := nodeHeight - dbHeight
-	log.Debugf("dbHeight: %d / blocksBehind: %d", dbHeight, blocksBehind)
-	displaySyncStatusPage := blocksBehind > int64(cfg.SyncStatusLimit) || // over limit
-		updateAllAddresses || newPGIndexes // maintenance or initial sync
-
-	// Initiate the sync status monitor and the coordinating goroutines if the
-	// sync status is activated, otherwise coordinate updating the full set of
-	// explorer pages.
+	// Initiate the sync status monitor and SyncStatusUpdate goroutine if the
+	// sync status is activated or else initiate the goroutine that handles
+	// storing blocks needed for the explorer pages.
 	if displaySyncStatusPage {
-		// Start goroutines that keep the update the shared progress bar data,
-		// and signal the websocket hub to send progress updates to clients.
-		barLoad = make(chan *dbtypes.ProgressBarLoad, 2)
-		explore.BeginSyncStatusUpdates(barLoad)
+		// Starts a goroutine that signals the websocket to check and send to
+		// the frontend the latest sync status progress updates.
+		explore.StartSyncingStatusMonitor()
 	} else {
-		// Start a goroutine to update the explorer pages when the DB sync
-		// functions send a new block hash on the following channel.
-		latestBlockHash = make(chan *chainhash.Hash, 2)
+		// Set that blocks freshly sync'd to to be stored for the explorer pages
+		// till the sync is done.
+		explorer.SetSyncExplorerUpdateStatus(true)
 
-		// The BlockConnected handler should not be started until after sync.
+		// This goroutines updates the blocks needed on the explorer pages. It
+		// only runs when the status sync page is not the default page that a user
+		// can view on the running webserver but the syncing of blocks behind the
+		// best block is happening in the background. No new blocks monitor from
+		// pfcd will be initiated until the best block from pfcd is in sync with
+		// the best block from pfcdata.
 		go func() {
-			// Keep receiving updates until the channel is closed, or a nil Hash
-			// pointer received.
 			for hash := range latestBlockHash {
-				if hash == nil {
-					return
+				// Checks if updates should be sent to the explorer. If its been
+				// deactivated it breaks the loop.
+				if !explorer.SyncExplorerUpdateStatus() {
+					break
 				}
-				// Fetch the blockdata by block hash.
+
+				// Setch the blockdata using its block hash.
 				d, msgBlock, err := collector.CollectHash(hash)
 				if err != nil {
 					log.Warnf("failed to fetch blockdata for (%s) hash. error: %v",
@@ -620,7 +410,7 @@ func _main(ctx context.Context) error {
 					continue
 				}
 
-				// Store the blockdata for the explorer pages.
+				// Store the blockdata fetch for the explorer pages
 				if err = explore.Store(d, msgBlock); err != nil {
 					log.Warnf("failed to store (%s) hash's blockdata for the explorer pages error: %v",
 						hash.String(), err)
@@ -628,32 +418,31 @@ func _main(ctx context.Context) error {
 			}
 		}()
 
-		// Before starting the DB sync, trigger the explorer to display data for
-		// the current best block.
-
-		// Retrieve the hash of the best block across every DB.
-		latestDBBlockHash, err := pfcdClient.GetBlockHash(dbHeight)
-		if err != nil {
-			return fmt.Errorf("failed to fetch the block at height (%d): %v",
-				dbHeight, err)
+		// Stores the first block in the explorer. It should correspond with the
+		// block that is currently in sync in all the pfcdata dbs
+		loadHeight := wireDBheight
+		if usePG && (auxDBheight < wireDBheight) {
+			loadHeight = auxDBheight
 		}
 
-		// Signal to load this block's data into the explorer. Future signals
-		// will come from the sync methods of either baseDB or auxDB.
-		latestBlockHash <- latestDBBlockHash
-	}
-
-	if usePG {
-		// Fetch the latest blockchain info, which is needed to update the
-		// agendas db while db sync is in progress.
-		bci, err := baseDB.BlockchainInfo()
+		// Fetches the first block hash whose blockdata will be loaded in the
+		// explorer for it pages.
+		loadBlockHash, err := pfcdClient.GetBlockHash(int64(loadHeight))
 		if err != nil {
-			return fmt.Errorf("failed to fetch the latest blockchain info")
+			return fmt.Errorf("failed to fetch the block at height (%d), pfcdata dbs must be corrupted",
+				loadHeight)
 		}
 
-		// Update the current chain state in the ChainDBRPC
-		auxDB.UpdateChainState(bci)
+		// Signal to load this block's data into the explorer.
+		latestBlockHash <- loadBlockHash
 	}
+
+	// Starts a goroutine that fetches the raw updates, process them and
+	// set them as the latest sync status progress updates. The goroutine exits
+	// when no sync is running.
+	explore.SyncStatusUpdate(barLoad)
+
+	blockDataSavers = append(blockDataSavers, explore)
 
 	// Create the Insight socket.io server, and add it to block savers if in
 	// full/pg mode. Since insightSocketServer is added into the url before even
@@ -662,36 +451,36 @@ func _main(ctx context.Context) error {
 	var insightSocketServer *insight.SocketServer
 	if usePG {
 		insightSocketServer, err = insight.NewSocketServer(notify.NtfnChans.InsightNewTxChan, activeChain)
-		if err != nil {
+		if err == nil {
+			blockDataSavers = append(blockDataSavers, insightSocketServer)
+		} else {
 			return fmt.Errorf("Could not create Insight socket.io server: %v", err)
 		}
-		blockDataSavers = append(blockDataSavers, insightSocketServer)
 	}
 
+	// WaitGroup for the monitor goroutines
+	var wg sync.WaitGroup
+
 	// Start pfcdata's JSON web API.
-	app := api.NewContext(pfcdClient, activeChain, baseDB, auxDB, cfg.IndentJSON,
-		xcBot, agendasInstance)
+	app := api.NewContext(pfcdClient, activeChain, &baseDB, auxDB, cfg.IndentJSON)
 	// Start the notification hander for keeping /status up-to-date.
 	wg.Add(1)
 	go app.StatusNtfnHandler(ctx, &wg)
 	// Initial setting of DBHeight. Subsequently, Store() will send this.
-	if dbHeight >= 0 {
+	if wireDBheight >= 0 {
 		// Do not sent 4294967295 = uint32(-1) if there are no blocks.
-		notify.NtfnChans.UpdateStatusDBHeight <- uint32(dbHeight)
+		notify.NtfnChans.UpdateStatusDBHeight <- uint32(wireDBheight)
 	}
 
 	// Configure the URL path to http handler router for the API.
 	apiMux := api.NewAPIRouter(app, cfg.UseRealIP)
-	// File downloads piggy-back on the API.
-	fileMux := api.NewFileRouter(app, cfg.UseRealIP)
 	// Configure the explorer web pages router.
 	webMux := chi.NewRouter()
-	webMux.With(explore.SyncStatusPageIntercept).Group(func(r chi.Router) {
+	webMux.With(explore.SyncStatusPageActivation).Group(func(r chi.Router) {
 		r.Get("/", explore.Home)
 		r.Get("/nexthome", explore.NextHome)
 	})
 	webMux.Get("/ws", explore.RootWebsocket)
-	webMux.Get("/ps", psHub.WebSocketHandler)
 	webMux.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "./public/images/favicon.ico")
 	})
@@ -700,27 +489,14 @@ func _main(ctx context.Context) error {
 	FileServer(webMux, "/css", http.Dir("./public/css"), cacheControlMaxAge)
 	FileServer(webMux, "/fonts", http.Dir("./public/fonts"), cacheControlMaxAge)
 	FileServer(webMux, "/images", http.Dir("./public/images"), cacheControlMaxAge)
-	FileServer(webMux, "/dist", http.Dir("./public/dist"), cacheControlMaxAge)
 
-	// HTTP profiler
-	if cfg.HTTPProfile {
-		profPath := cfg.HTTPProfPath
-		log.Warnf("Starting the HTTP profiler on path %s.", profPath)
-		// http pprof uses http.DefaultServeMux
-		http.Handle("/", http.RedirectHandler(profPath+"/debug/pprof/", http.StatusSeeOther))
-		webMux.Mount(profPath, http.StripPrefix(profPath, http.DefaultServeMux))
-	}
-
-	// SyncStatusAPIIntercept returns a json response if the sync status page is
-	// enabled (no the full explorer while syncing).
-	webMux.With(explore.SyncStatusAPIIntercept).Group(func(r chi.Router) {
+	// SyncStatusApiResponse returns a json response when the sync status page is running.
+	webMux.With(explore.SyncStatusApiResponse).Group(func(r chi.Router) {
 		// Mount the pfcdata's REST API.
 		r.Mount("/api", apiMux.Mux)
 		// Setup and mount the Insight API.
 		if usePG {
-			insightApp := insight.NewInsightContext(pfcdClient, auxDB,
-				activeChain, baseDB, cfg.IndentJSON)
-			insightApp.SetReqRateLimit(cfg.InsightReqRateLimit)
+			insightApp := insight.NewInsightContext(pfcdClient, auxDB, activeChain, &baseDB, cfg.IndentJSON)
 			insightMux := insight.NewInsightApiRouter(insightApp, cfg.UseRealIP)
 			r.Mount("/insight/api", insightMux.Mux)
 
@@ -730,67 +506,44 @@ func _main(ctx context.Context) error {
 		}
 	})
 
-	// HTTP Error 503 StatusServiceUnavailable for file requests before sync.
-	webMux.With(explore.SyncStatusFileIntercept).Group(func(r chi.Router) {
-		r.Mount("/download", fileMux.Mux)
-	})
-
-	webMux.With(explore.SyncStatusPageIntercept).Group(func(r chi.Router) {
+	webMux.With(explore.SyncStatusPageActivation).Group(func(r chi.Router) {
 		r.NotFound(explore.NotFound)
 
 		r.Mount("/explorer", explore.Mux)
-		r.Get("/days", explore.DayBlocksListing)
-		r.Get("/weeks", explore.WeekBlocksListing)
-		r.Get("/months", explore.MonthBlocksListing)
-		r.Get("/years", explore.YearBlocksListing)
 		r.Get("/blocks", explore.Blocks)
 		r.Get("/ticketpricewindows", explore.StakeDiffWindows)
 		r.Get("/side", explore.SideChains)
-		r.Get("/rejects", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/disapproved", http.StatusPermanentRedirect)
-		})
-		r.Get("/disapproved", explore.DisapprovedBlocks)
+		r.Get("/rejects", explore.DisapprovedBlocks)
 		r.Get("/mempool", explore.Mempool)
 		r.Get("/parameters", explore.ParametersPage)
 		r.With(explore.BlockHashPathOrIndexCtx).Get("/block/{blockhash}", explore.Block)
 		r.With(explorer.TransactionHashCtx).Get("/tx/{txid}", explore.TxPage)
 		r.With(explorer.TransactionHashCtx, explorer.TransactionIoIndexCtx).Get("/tx/{txid}/{inout}/{inoutid}", explore.TxPage)
 		r.With(explorer.AddressPathCtx).Get("/address/{address}", explore.AddressPage)
-		r.With(explorer.AddressPathCtx).Get("/addresstable/{address}", explore.AddressTable)
 		r.Get("/agendas", explore.AgendasPage)
 		r.With(explorer.AgendaPathCtx).Get("/agenda/{agendaid}", explore.AgendaPage)
-		r.Get("/proposals", explore.ProposalsPage)
-		r.With(explorer.ProposalPathCtx).Get("/proposal/{proposalToken}", explore.ProposalPage)
 		r.Get("/decodetx", explore.DecodeTxPage)
 		r.Get("/search", explore.Search)
 		r.Get("/charts", explore.Charts)
 		r.Get("/ticketpool", explore.Ticketpool)
-		r.Get("/stats", explore.StatsPage)
-		r.Get("/statistics", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/stats", http.StatusPermanentRedirect)
-		})
+
+		// HTTP profiler
+		if cfg.HTTPProfile {
+			profPath := cfg.HTTPProfPath
+			log.Warnf("Starting the HTTP profiler on path %s.", profPath)
+			// http pprof uses http.DefaultServeMux
+			http.Handle("/", http.RedirectHandler(profPath+"/debug/pprof/", http.StatusSeeOther))
+			r.Mount(profPath, http.StripPrefix(profPath, http.DefaultServeMux))
+		}
 	})
 
 	// Start the web server.
-	listenAndServeProto(ctx, &wg, cfg.APIListen, cfg.APIProto, webMux)
-
-	// Last chance to quit before syncing if the web server could not start.
-	if shutdownRequested(ctx) {
-		return nil
+	if err = listenAndServeProto(cfg.APIListen, cfg.APIProto, webMux); err != nil {
+		log.Criticalf("listenAndServeProto: %v", err)
+		requestShutdown()
 	}
 
 	log.Infof("Starting blockchain sync...")
-	explore.SetDBsSyncing(true)
-	psHub.SetReady(false)
-
-	// If in lite mode, baseDB will need to handle the sync progress bar or
-	// explorer page updates, otherwise it is auxDB's responsibility.
-	var baseProgressChan chan *dbtypes.ProgressBarLoad
-	var baseHashChan chan *chainhash.Hash
-	if !usePG {
-		baseProgressChan = barLoad
-		baseHashChan = latestBlockHash
-	}
 
 	// Coordinate the sync of both sqlite and auxiliary DBs with the network.
 	// This closure captures the RPC client and the quit channel.
@@ -810,7 +563,7 @@ func _main(ctx context.Context) error {
 		// full mode, baseDB will be configured not to send progress updates or
 		// chain data to the explorer pages since auxDB will do it.
 		baseDB.SyncDBAsync(ctx, sqliteSyncRes, smartClient, fetchHeightInBaseDB,
-			baseHashChan, baseProgressChan)
+			latestBlockHash, barLoad)
 
 		// Now that stakedb is either catching up or waiting for a block, start
 		// the auxDB sync, which is the master block getter, retrieving and
@@ -828,7 +581,6 @@ func _main(ctx context.Context) error {
 	baseDBHeight, auxDBHeight, err := getSyncd(updateAllAddresses,
 		updateAllVotes, newPGIndexes, fetchToHeight)
 	if err != nil {
-		requestShutdown()
 		return err
 	}
 
@@ -854,7 +606,6 @@ func _main(ctx context.Context) error {
 			baseDBHeight, auxDBHeight, err = getSyncd(updateAllAddresses, updateAllVotes,
 				newPGIndexes, fetchToHeight)
 			if err != nil {
-				requestShutdown()
 				return err
 			}
 			_, height, err = pfcdClient.GetBestBlock()
@@ -862,16 +613,6 @@ func _main(ctx context.Context) error {
 				return fmt.Errorf("unable to get block from node: %v", err)
 			}
 		}
-
-		// Update the node height for the status API endpoint.
-		select {
-		case notify.NtfnChans.UpdateStatusNodeHeight <- uint32(height):
-		default:
-			log.Errorf("Failed to update node height with API status. Is StatusNtfnHandler started?")
-		}
-		// WiredDB.resyncDB is responsible for updating DB status via
-		// notify.NtfnChans.UpdateStatusDBHeight.
-
 		return nil
 	}
 	if err = ensureSync(); err != nil {
@@ -881,30 +622,19 @@ func _main(ctx context.Context) error {
 	// Exits immediately after the sync completes if SyncAndQuit is to true
 	// because all we needed then was the blockchain sync be completed successfully.
 	if cfg.SyncAndQuit {
-		log.Infof("All ready, at height %d. Quitting.", baseDBHeight)
+		log.Infof("All ready, at height %d.", baseDBHeight)
 		return nil
-	}
-
-	log.Info("Mainchain sync complete.")
-
-	// Ensure all side chains known by pfcd are also present in the base DB
-	// and import them if they are not already there.
-	if cfg.ImportSideChains {
-		log.Info("Primary DB -> Now retrieving side chain blocks from pfcd...")
-		err := baseDB.ImportSideChains(collector)
-		if err != nil {
-			log.Errorf("Primary DB -> Error importing side chains: %v", err)
-		}
 	}
 
 	// Ensure all side chains known by pfcd are also present in the auxiliary DB
 	// and import them if they are not already there.
 	if usePG && cfg.ImportSideChains {
 		// First identify the side chain blocks that are missing from the DB.
-		log.Info("Aux DB -> Retrieving side chain blocks from pfcd...")
+		log.Infof("Initial sync complete, at height %d. "+
+			"Now retrieving side chain blocks from pfcd...", baseDBHeight)
 		sideChainBlocksToStore, nSideChainBlocks, err := auxDB.MissingSideChainBlocks()
 		if err != nil {
-			return fmt.Errorf("Aux DB -> Unable to determine missing side chain blocks: %v", err)
+			return fmt.Errorf("unable to determine missing side chain blocks: %v", err)
 		}
 		nSideChains := len(sideChainBlocksToStore)
 
@@ -914,7 +644,7 @@ func _main(ctx context.Context) error {
 		// to get ticket pool info.
 
 		// Collect and store data for each side chain.
-		log.Infof("Aux DB -> Importing %d new block(s) from %d known side chains...",
+		log.Infof("Importing %d new block(s) from %d known side chains...",
 			nSideChainBlocks, nSideChains)
 		// Disable recomputing project fund balance, and clearing address
 		// balance and counts cache.
@@ -933,7 +663,7 @@ func _main(ctx context.Context) error {
 				// Validate the block hash.
 				blockHash, err := chainhash.NewHashFromStr(hash)
 				if err != nil {
-					log.Errorf("Aux DB -> Invalid block hash %s: %v.", hash, err)
+					log.Errorf("Invalid block hash %s: %v.", hash, err)
 					continue
 				}
 
@@ -941,20 +671,31 @@ func _main(ctx context.Context) error {
 				blockData, msgBlock, err := collector.CollectHash(blockHash)
 				if err != nil {
 					// Do not quit if unable to collect side chain block data.
-					log.Errorf("Aux DB -> Unable to collect data for side chain block %s: %v.",
+					log.Errorf("Unable to collect data for side chain block %s: %v.",
 						hash, err)
 					continue
 				}
 
-				// Get the chainwork
-				chainWork, err := rpcutils.GetChainWork(auxDB.Client, blockHash)
-				if err != nil {
-					log.Errorf("GetChainWork failed (%s): %v", blockHash, err)
-					continue
-				}
+				// SQLite / base DB
+				// TODO: Make hash the primary key instead of height, otherwise
+				// the main chain block will be overwritten.
+				// log.Debugf("Importing block %s (height %d) into base DB.",
+				// 	blockHash, msgBlock.Header.Height)
+
+				// blockDataSummary, stakeInfoSummaryExtended := collector.CollectAPITypes(blockHash)
+				// if blockDataSummary == nil || stakeInfoSummaryExtended == nil {
+				// 	log.Error("Failed to collect data for reorg.")
+				// 	continue
+				// }
+				// if err = baseDB.StoreBlockSummary(blockDataSummary); err != nil {
+				// 	log.Errorf("Failed to store block summary data: %v", err)
+				// }
+				// if err = baseDB.StoreStakeInfoExtended(stakeInfoSummaryExtended); err != nil {
+				// 	log.Errorf("Failed to store stake info data: %v", err)
+				// }
 
 				// PostgreSQL / aux DB
-				log.Debugf("Aux DB -> Importing block %s (height %d) into aux DB.",
+				log.Debugf("Importing block %s (height %d) into aux DB.",
 					blockHash, msgBlock.Header.Height)
 
 				// Stake invalidation is always handled by subsequent block, so
@@ -969,11 +710,11 @@ func _main(ctx context.Context) error {
 
 				// Store data in the aux (pfcpg) DB.
 				_, _, _, err = auxDB.StoreBlock(msgBlock, blockData.WinningTickets,
-					isValid, isMainchain, updateExistingRecords, true, true, chainWork)
+					isValid, isMainchain, updateExistingRecords, true, true)
 				if err != nil {
 					// If data collection succeeded, but storage fails, bail out
 					// to diagnose the DB trouble.
-					return fmt.Errorf("Aux DB -> ChainDBRPC.StoreBlock failed: %v", err)
+					return fmt.Errorf("ChainDBRPC.StoreBlock failed: %v", err)
 				}
 
 				sideChainBlocksStored++
@@ -990,25 +731,13 @@ func _main(ctx context.Context) error {
 	}
 
 	log.Infof("All ready, at height %d.", baseDBHeight)
-	explore.SetDBsSyncing(false)
-	psHub.SetReady(true)
 
-	// Enable new blocks being stored into the base DB's cache.
-	baseDB.EnableCache()
-
-	// Block further usage of the barLoad by sending a nil value
-	if barLoad != nil {
-		select {
-		case barLoad <- nil:
-		default:
-		}
-	}
+	// Deactivate displaying the sync status page after the db sync was completed.
+	explore.SetDisplaySyncStatusPage(false)
 
 	// Set that newly sync'd blocks should no longer be stored in the explorer.
 	// Monitors that fetch the latest updates from pfcd will be launched next.
-	if latestBlockHash != nil {
-		close(latestBlockHash)
-	}
+	explorer.SetSyncExplorerUpdateStatus(false)
 
 	// Monitors for new blocks, transactions, and reorgs should not run before
 	// blockchain syncing and DB indexing completes. If started before then, the
@@ -1033,15 +762,15 @@ func _main(ctx context.Context) error {
 	// deal with patching up the block info database.
 	reorgBlockDataSavers := []blockdata.BlockDataSaver{explore}
 	wsChainMonitor := blockdata.NewChainMonitor(ctx, collector, blockDataSavers,
-		reorgBlockDataSavers, &wg, addrMap, notify.NtfnChans.RecvTxBlockChan,
-		notify.NtfnChans.ReorgChanBlockData)
+		reorgBlockDataSavers, &wg, addrMap, notify.NtfnChans.ConnectChan,
+		notify.NtfnChans.RecvTxBlockChan, notify.NtfnChans.ReorgChanBlockData)
 
 	// Blockchain monitor for the stake DB
 	sdbChainMonitor := baseDB.NewStakeDBChainMonitor(ctx, &wg,
-		notify.NtfnChans.ReorgChanStakeDB)
+		notify.NtfnChans.ConnectChanStakeDB, notify.NtfnChans.ReorgChanStakeDB)
 
 	// Blockchain monitor for the wired sqlite DB
-	WiredDBChainMonitor := baseDB.NewChainMonitor(ctx, collector, &wg,
+	wiredDBChainMonitor := baseDB.NewChainMonitor(ctx, collector, &wg,
 		notify.NtfnChans.ConnectChanWiredDB, notify.NtfnChans.ReorgChanWiredDB)
 
 	var auxDBChainMonitor *pfcpg.ChainMonitor
@@ -1056,9 +785,9 @@ func _main(ctx context.Context) error {
 
 	// Setup the synchronous handler functions called by the collectionQueue via
 	// OnBlockConnected.
-	collectionQueue.SetSynchronousHandlers([]func(*chainhash.Hash) error{
-		sdbChainMonitor.ConnectBlock, // 1. Stake DB for pool info
-		wsChainMonitor.ConnectBlock,  // 2. blockdata for regular block data collection and storage
+	collectionQueue.SetSynchronousHandlers([]func(*chainhash.Hash){
+		sdbChainMonitor.BlockConnectedSync, // 1. Stake DB for pool info
+		wsChainMonitor.BlockConnectedSync,  // 2. blockdata for regular block data collection and storage
 	})
 
 	// Initial data summary for web ui. stakedb must be at the same height, so
@@ -1069,15 +798,8 @@ func _main(ctx context.Context) error {
 			err.Error())
 	}
 
-	// Update the current chain state in the ChainDB.
-	auxDB.UpdateChainState(blockData.BlockchainInfo)
-
 	if err = explore.Store(blockData, msgBlock); err != nil {
 		return fmt.Errorf("Failed to store initial block data for explorer pages: %v", err.Error())
-	}
-
-	if err = psHub.Store(blockData, msgBlock); err != nil {
-		return fmt.Errorf("Failed to store initial block data with the PubSubHub: %v", err.Error())
 	}
 
 	// Register for notifications from pfcd. This also sets the daemon RPC
@@ -1105,19 +827,21 @@ func _main(ctx context.Context) error {
 	// Start the monitors' event handlers.
 
 	// blockdata collector handlers
-	wg.Add(1)
+	wg.Add(2)
+	go wsChainMonitor.BlockConnectedHandler()
 	// The blockdata reorg handler disables collection during reorg, leaving
 	// pfcsqlite to do the switch, except for the last block which gets
 	// collected and stored via reorgBlockDataSavers (for the explorer UI).
 	go wsChainMonitor.ReorgHandler()
 
 	// StakeDatabase
-	wg.Add(1)
+	wg.Add(2)
+	go sdbChainMonitor.BlockConnectedHandler()
 	go sdbChainMonitor.ReorgHandler()
 
 	// pfcsqlite does not handle new blocks except during reorg.
 	wg.Add(1)
-	go WiredDBChainMonitor.ReorgHandler()
+	go wiredDBChainMonitor.ReorgHandler()
 
 	if usePG {
 		// pfcpg also does not handle new blocks except during reorg.
@@ -1125,42 +849,47 @@ func _main(ctx context.Context) error {
 		go auxDBChainMonitor.ReorgHandler()
 	}
 
-	// Create the mempool data collector.
-	mpoolCollector := mempool.NewMempoolDataCollector(pfcdClient, activeChain)
-	if mpoolCollector == nil {
-		// Shutdown goroutines.
-		requestShutdown()
-		return fmt.Errorf("Failed to create mempool data collector")
+	explore.StartMempoolMonitor(notify.NtfnChans.ExpNewTxChan)
+
+	if cfg.MonitorMempool {
+		// Create the mempool data collector.
+		mpoolCollector := mempool.NewMempoolDataCollector(pfcdClient, activeChain)
+		if mpoolCollector == nil {
+			return fmt.Errorf("Failed to create mempool data collector")
+		}
+
+		// Collect and store initial mempool data.
+		mpData, err := mpoolCollector.Collect()
+		if err != nil {
+			return fmt.Errorf("Mempool info collection failed while gathering"+
+				" initial data: %v", err.Error())
+		}
+
+		// Store initial MP data.
+		if err = baseDB.MPC.StoreMPData(mpData, time.Now()); err != nil {
+			return fmt.Errorf("Failed to store initial mempool data (wiredDB): %v",
+				err.Error())
+		}
+
+		// Setup the mempool monitor, which handles notifications of new
+		// transactions.
+		mpi := &mempool.MempoolInfo{
+			CurrentHeight:               mpData.GetHeight(),
+			NumTicketPurchasesInMempool: mpData.GetNumTickets(),
+			NumTicketsSinceStatsReport:  0,
+			LastCollectTime:             time.Now(),
+		}
+
+		// Parameters for triggering data collection. See config.go.
+		newTicketLimit := int32(cfg.MPTriggerTickets)
+		mini := time.Duration(cfg.MempoolMinInterval) * time.Second
+		maxi := time.Duration(cfg.MempoolMaxInterval) * time.Second
+
+		mpm := mempool.NewMempoolMonitor(ctx, mpoolCollector, mempoolSavers,
+			notify.NtfnChans.NewTxChan, &wg, newTicketLimit, mini, maxi, mpi)
+		wg.Add(1)
+		go mpm.TxHandler(pfcdClient)
 	}
-
-	// The MempoolMonitor receives notifications of new transactions on
-	// notify.NtfnChans.NewTxChan, and of new blocks on the same channel with a
-	// nil transaction message. The mempool monitor will process the
-	// transactions, and forward new ones on via the mpDataToPSHub with an
-	// appropriate signal to the underlying WebSocketHub on signalToPSHub.
-	signalToPSHub, mpDataToPSHub := psHub.HubRelays()
-	signalToExplorer, mpDataToExplorer := explore.MempoolSignals()
-	mempoolSigOuts := []chan<- pstypes.HubSignal{signalToPSHub, signalToExplorer}
-	newTxOuts := []chan<- *exptypes.MempoolTx{mpDataToPSHub, mpDataToExplorer}
-	mpm := mempool.NewMempoolMonitor(ctx, mpoolCollector, mempoolSavers,
-		activeChain, &wg, notify.NtfnChans.NewTxChan, mempoolSigOuts, newTxOuts)
-
-	// Collect and store initial mempool data before starting the monitor.
-	if err = mpm.CollectAndStore(); err != nil {
-		// Shutdown goroutines.
-		requestShutdown()
-		return fmt.Errorf("mpm.CollectAndStore: %v", err)
-	}
-
-	// Begin listening on notify.NtfnChans.NewTxChan, and forwarding mempool
-	// events to psHub via the channels from HubRelays().
-	wg.Add(1)
-	go mpm.TxHandler(pfcdClient)
-	// TxHandler also gets signaled about new blocks when a nil tx hash is sent
-	// on notify.NtfnChans.NewTxChan, which triggers a full mempool refresh
-	// followed by CollectAndStore, which provides the parsed data to all
-	// mempoolSavers via their StoreMPData method. This should include the
-	// PubSubHub and the base DB's MempoolDataCache.
 
 	// Pre-populate charts data now that blocks are sync'd and new-block
 	// monitors are running.
@@ -1173,12 +902,9 @@ func _main(ctx context.Context) error {
 }
 
 func waitForSync(ctx context.Context, base chan dbtypes.SyncResult, aux chan dbtypes.SyncResult, useAux bool) (int64, int64, error) {
-	// First wait for the base DB (sqlite) sync to complete.
 	baseRes := <-base
 	baseDBHeight := baseRes.Height
 	log.Infof("SQLite sync ended at height %d", baseDBHeight)
-	// With an error condition in the result, signal for shutdown and wait for
-	// the aux. DB (PostgreSQL) to return its result.
 	if baseRes.Error != nil {
 		log.Errorf("pfcsqlite.SyncDBAsync failed at height %d: %v.", baseDBHeight, baseRes.Error)
 		requestShutdown()
@@ -1186,40 +912,44 @@ func waitForSync(ctx context.Context, base chan dbtypes.SyncResult, aux chan dbt
 		return baseDBHeight, auxRes.Height, baseRes.Error
 	}
 
-	// After a successful sqlite sync result is received, wait for the
-	// postgresql sync result.
 	auxRes := <-aux
 	auxDBHeight := auxRes.Height
 	log.Infof("PostgreSQL sync ended at height %d", auxDBHeight)
 
-	// See if shutdown was requested.
-	if shutdownRequested(ctx) {
+	// See if there was a SIGINT (CTRL+C)
+	select {
+	case <-ctx.Done():
 		return baseDBHeight, auxDBHeight, fmt.Errorf("quit signal received during DB sync")
+	default:
 	}
 
-	// Unless PostgreSQL is actually in use, return without further ado.
-	if !useAux {
-		return baseDBHeight, auxDBHeight, nil
+	if baseRes.Error != nil {
+		log.Errorf("pfcsqlite.SyncDBAsync failed at height %d.", baseDBHeight)
+		requestShutdown()
+		return baseDBHeight, auxDBHeight, baseRes.Error
 	}
 
-	// Check for pg sync errors and combine the messages if necessary.
-	if auxRes.Error != nil {
-		if baseRes.Error != nil {
-			log.Error("pfcsqlite.SyncDBAsync AND pfcpg.SyncChainDBAsync "+
-				"failed at heights %d and %d, respectively.",
-				baseDBHeight, auxDBHeight)
-			errCombined := fmt.Errorf("%v, %v", baseRes.Error, auxRes.Error)
-			return baseDBHeight, auxDBHeight, errCombined
+	if useAux {
+		// Check for errors and combine the messages if necessary
+		if auxRes.Error != nil {
+			requestShutdown()
+			if baseRes.Error != nil {
+				log.Error("pfcsqlite.SyncDBAsync AND pfcpg.SyncChainDBAsync "+
+					"failed at heights %d and %d, respectively.",
+					baseDBHeight, auxDBHeight)
+				errCombined := fmt.Sprintln(baseRes.Error, ", ", auxRes.Error)
+				return baseDBHeight, auxDBHeight, errors.New(errCombined)
+			}
+			log.Errorf("pfcpg.SyncChainDBAsync failed at height %d.", auxDBHeight)
+			return baseDBHeight, auxDBHeight, auxRes.Error
 		}
-		log.Errorf("pfcpg.SyncChainDBAsync failed at height %d.", auxDBHeight)
-		return baseDBHeight, auxDBHeight, auxRes.Error
-	}
 
-	// DBs must finish at the same height.
-	if auxDBHeight != baseDBHeight {
-		return baseDBHeight, auxDBHeight, fmt.Errorf("failed to hit same"+
-			"sync height for PostgreSQL (%d) and SQLite (%d)",
-			auxDBHeight, baseDBHeight)
+		// DBs must finish at the same height
+		if auxDBHeight != baseDBHeight {
+			return baseDBHeight, auxDBHeight, fmt.Errorf("failed to hit same"+
+				"sync height for PostgreSQL (%d) and SQLite (%d)",
+				auxDBHeight, baseDBHeight)
+		}
 	}
 	return baseDBHeight, auxDBHeight, nil
 }
@@ -1229,7 +959,7 @@ func connectNodeRPC(cfg *config, ntfnHandlers *rpcclient.NotificationHandlers) (
 		cfg.PfcdCert, cfg.DisableDaemonTLS, ntfnHandlers)
 }
 
-func listenAndServeProto(ctx context.Context, wg *sync.WaitGroup, listen, proto string, mux http.Handler) {
+func listenAndServeProto(listen, proto string, mux http.Handler) error {
 	// Try to bind web server
 	server := http.Server{
 		Addr:         listen,
@@ -1237,50 +967,31 @@ func listenAndServeProto(ctx context.Context, wg *sync.WaitGroup, listen, proto 
 		ReadTimeout:  5 * time.Second,  // slow requests should not hold connections opened
 		WriteTimeout: 60 * time.Second, // hung responses must die
 	}
+	errChan := make(chan error)
+	if proto == "https" {
+		go func() {
+			errChan <- server.ListenAndServeTLS("pfcdata.cert", "pfcdata.key")
+		}()
+	} else {
+		go func() {
+			errChan <- server.ListenAndServe()
+		}()
+	}
 
-	// Add the graceful shutdown to the waitgroup.
-	wg.Add(1)
-	go func() {
-		// Start graceful shutdown of web server on shutdown signal.
-		<-ctx.Done()
-
-		// We received an interrupt signal, shut down.
-		log.Infof("Gracefully shutting down web server...")
-		if err := server.Shutdown(context.Background()); err != nil {
-			// Error from closing listeners.
-			log.Infof("HTTP server Shutdown: %v", err)
-		}
-
-		// wg.Wait can proceed.
-		wg.Done()
-	}()
-
-	log.Infof("Now serving the explorer and APIs on %s://%v/", proto, listen)
-	// Start the server.
-	go func() {
-		var err error
-		if proto == "https" {
-			err = server.ListenAndServeTLS("pfcdata.cert", "pfcdata.key")
-		} else {
-			err = server.ListenAndServe()
-		}
-		// If the server dies for any reason other than ErrServerClosed (from
-		// graceful server.Shutdown), log the error and request pfcdata be
-		// shutdown.
-		if err != nil && err != http.ErrServerClosed {
-			log.Errorf("Failed to start server: %v", err)
-			requestShutdown()
-		}
-	}()
-
-	// If the server successfully binds to a listening port, ListenAndServe*
-	// will block until the server is shutdown. Wait here briefly so the startup
-	// operations in main can have a chance to bail out.
-	time.Sleep(250 * time.Millisecond)
+	// Briefly wait for an error and then return
+	t := time.NewTimer(2 * time.Second)
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("Failed to bind web server promptly: %v", err)
+	case <-t.C:
+		expLog.Infof("Now serving explorer on %s://%v/", proto, listen)
+		apiLog.Infof("Now serving API on %s://%v/", proto, listen)
+		return nil
+	}
 }
 
-// FileServer conveniently sets up a http.FileServer handler to serve static
-// files from a http.FileSystem.
+// FileServer conveniently sets up a http.FileServer handler to serve
+// static files from a http.FileSystem.
 func FileServer(r chi.Router, path string, root http.FileSystem, CacheControlMaxAge int64) {
 	if strings.ContainsAny(path, "{}*") {
 		panic("FileServer does not permit URL parameters.")

@@ -1,4 +1,3 @@
-// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
@@ -7,20 +6,11 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
 )
 
-// SyncResponse contains sync status information.
-type SyncResponse struct {
-	Status           string  `json:"status"`
-	BlockChainHeight int64   `json:"blockChainHeight"`
-	SyncPercentage   int64   `json:"syncPercentage"`
-	Height           int64   `json:"height"`
-	Error            *string `json:"error"`
-	Type             string  `json:"type"`
-}
-
-// InsightAddress models an address' transactions.
+// InsightAddress models an address transactions
+//
 type InsightAddress struct {
 	Address      string      `json:"address,omitempty"`
 	From         int         `json:"from"`
@@ -28,7 +18,8 @@ type InsightAddress struct {
 	Transactions []InsightTx `json:"items,omitempty"`
 }
 
-// InsightAddressInfo models basic information about an address.
+// InsightAddressInfo models basic information
+// about an address
 type InsightAddressInfo struct {
 	Address                  string   `json:"addrStr,omitempty"`
 	Balance                  float64  `json:"balance"`
@@ -44,12 +35,13 @@ type InsightAddressInfo struct {
 	TransactionsID           []string `json:"transactions,omitempty"`
 }
 
-// InsightRawTx contains the raw transaction string of a transaction.
+// InsightRawTx contains the raw transaction string
+// of a transaction
 type InsightRawTx struct {
 	Rawtx string `json:"rawtx"`
 }
 
-// InsightMultiAddrsTx models multi-address post data structure.
+// InsightMultiAddrsTx models multi address post data structure
 type InsightMultiAddrsTx struct {
 	Addresses   string      `json:"addrs"`
 	From        json.Number `json:"from,Number,omitempty"`
@@ -66,19 +58,20 @@ type InsightMultiAddrsTxOutput struct {
 	Items      []InsightTx `json:"items"`
 }
 
-// InsightAddr models the multi-address post data structure.
+// InsightAddr models the multi address post data structure
 type InsightAddr struct {
 	Addrs string `json:"addrs"`
 }
 
-// InsightPagination models basic pagination output for a result.
+// InsightPagination models basic pagination output
+// for a result
 type InsightPagination struct {
 	Next    string `json:"next,omitempty"`
 	Prev    string `json:"prev,omitempty"`
 	IsToday string `json:"isToday,omitempty"`
 }
 
-// AddressTxnOutput models an address transaction outputs.
+// AddressTxnOutput models an address transaction outputs
 type AddressTxnOutput struct {
 	Address       string  `json:"address"`
 	TxnID         string  `json:"txid"`
@@ -93,7 +86,8 @@ type AddressTxnOutput struct {
 	Confirmations int64   `json:"confirmations"`
 }
 
-// SpendByFundingHash models a return from SpendDetailsForFundingTx.
+// SpendByFundingHash models a return from
+// GetSpendDetailsByFundingHash
 type SpendByFundingHash struct {
 	FundingTxVoutIndex uint32
 	SpendingTxVinIndex interface{}

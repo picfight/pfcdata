@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019, The pfcdata developers
+// Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
 package rpcutils
@@ -9,7 +9,7 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient/v2"
+	"github.com/picfight/pfcd/rpcclient"
 )
 
 // BlockGetter is an interface for requesting blocks
@@ -21,7 +21,6 @@ type BlockGetter interface {
 	Block(chainhash.Hash) (*pfcutil.Block, error)
 	WaitForHeight(int64) chan chainhash.Hash
 	WaitForHash(chainhash.Hash) chan int64
-	GetChainWork(*chainhash.Hash) (string, error)
 }
 
 // MasterBlockGetter builds on BlockGetter, adding functions that fetch blocks
@@ -36,7 +35,7 @@ type MasterBlockGetter interface {
 
 // BlockGate is an implementation of MasterBlockGetter with cache
 type BlockGate struct {
-	mtx           sync.RWMutex
+	sync.RWMutex
 	client        *rpcclient.Client
 	height        int64
 	fetchToHeight int64
@@ -75,7 +74,7 @@ func heightInQueue(q heightHashQueue, height int64) bool {
 	return false
 }
 
-// Ensure BlockGate satisfies BlockGetter.
+// ensure BlockGate satisfies BlockGetter
 var _ BlockGetter = (*BlockGate)(nil)
 
 // NewBlockGate constructs a new BlockGate, wrapping an RPC client, with a
@@ -99,8 +98,8 @@ func NewBlockGate(client *rpcclient.Client, capacity int) *BlockGate {
 // RPC to retrieve the block immediately. For the given height and up,
 // WaitForHeight will only return a notification channel.
 func (g *BlockGate) SetFetchToHeight(height int64) {
-	g.mtx.RLock()
-	defer g.mtx.RUnlock()
+	g.RLock()
+	defer g.RUnlock()
 	g.fetchToHeight = height
 }
 
@@ -112,15 +111,15 @@ func (g *BlockGate) NodeHeight() (int64, error) {
 
 // BestBlockHeight gets the best block height in the block cache.
 func (g *BlockGate) BestBlockHeight() int64 {
-	g.mtx.RLock()
-	defer g.mtx.RUnlock()
+	g.RLock()
+	defer g.RUnlock()
 	return g.height
 }
 
 // BestBlockHash gets the hash and height of the best block in cache.
 func (g *BlockGate) BestBlockHash() (chainhash.Hash, int64, error) {
-	g.mtx.RLock()
-	defer g.mtx.RUnlock()
+	g.RLock()
+	defer g.RUnlock()
 	var err error
 	hash, ok := g.hashAtHeight[g.height]
 	if !ok {
@@ -131,8 +130,8 @@ func (g *BlockGate) BestBlockHash() (chainhash.Hash, int64, error) {
 
 // BestBlock gets the best block in cache.
 func (g *BlockGate) BestBlock() (*pfcutil.Block, error) {
-	g.mtx.RLock()
-	defer g.mtx.RUnlock()
+	g.RLock()
+	defer g.RUnlock()
 	var err error
 	hash, ok := g.hashAtHeight[g.height]
 	if !ok {
@@ -145,37 +144,16 @@ func (g *BlockGate) BestBlock() (*pfcutil.Block, error) {
 	return block, err
 }
 
-// CachedBlock attempts to get the block with the specified hash from cache.
-func (g *BlockGate) CachedBlock(hash chainhash.Hash) (*pfcutil.Block, error) {
-	g.mtx.RLock()
-	defer g.mtx.RUnlock()
+// Block attempts to get the block with the specified hash from cache.
+func (g *BlockGate) Block(hash chainhash.Hash) (*pfcutil.Block, error) {
+	g.RLock()
+	defer g.RUnlock()
+	var err error
 	block, ok := g.blockWithHash[hash]
 	if !ok {
-		return nil, fmt.Errorf("block %d not found", hash)
+		err = fmt.Errorf("block %d not found", hash)
 	}
-	return block, nil
-}
-
-// Block first attempts to get the block with the specified hash from cache. In
-// the event of a cache miss, the block is retrieved from pfcd via RPC.
-func (g *BlockGate) Block(hash chainhash.Hash) (*pfcutil.Block, error) {
-	// Try block cache first.
-	block, err := g.CachedBlock(hash)
-	if err == nil {
-		return block, nil
-	}
-
-	// Cache miss. Retrieve from pfcd RPC.
-	block, err = GetBlockByHash(&hash, g.client)
-	if err != nil {
-		return nil, fmt.Errorf("GetBlock (%v) failed: %v", hash, err)
-	}
-
-	g.mtx.RLock()
-	fmt.Printf("Block cache miss: requested %d, cache capacity %d, tip %d.",
-		block.Height(), g.expireQueue.cap, g.height)
-	g.mtx.RUnlock()
-	return block, nil
+	return block, err
 }
 
 // UpdateToBestBlock gets the best block via RPC and updates the cache.
@@ -191,24 +169,20 @@ func (g *BlockGate) UpdateToBestBlock() (*pfcutil.Block, error) {
 // UpdateToNextBlock gets the next block following the best in cache via RPC and
 // updates the cache.
 func (g *BlockGate) UpdateToNextBlock() (*pfcutil.Block, error) {
-	g.mtx.Lock()
+	g.Lock()
 	height := g.height + 1
-	g.mtx.Unlock()
+	g.Unlock()
 	return g.UpdateToBlock(height)
 }
 
 // UpdateToBlock gets the block at the specified height on the main chain from
-// pfcd, stores it in cache, and signals any waiters. This is the thread-safe
-// version of updateToBlock.
+// pfcd and stores it in cache.
 func (g *BlockGate) UpdateToBlock(height int64) (*pfcutil.Block, error) {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
+	g.Lock()
+	defer g.Unlock()
 	return g.updateToBlock(height)
 }
 
-// updateToBlock gets the block at the specified height on the main chain from
-// pfcd. It is not thread-safe. It wrapped by UpdateToBlock for thread-safety,
-// and used directly by WaitForHeight which locks the BlockGate.
 func (g *BlockGate) updateToBlock(height int64) (*pfcutil.Block, error) {
 	block, hash, err := GetBlock(height, g.client)
 	if err != nil {
@@ -223,26 +197,19 @@ func (g *BlockGate) updateToBlock(height int64) (*pfcutil.Block, error) {
 	// above capacity.
 	g.rotateIn(height, *hash)
 
-	// Launch goroutines to signal to height and hash waiters.
-	g.signalHeight(height, *hash)
-	g.signalHash(*hash, height)
+	// defer as signal functions lock as well as UpdateToBlock
+	defer func() {
+		go g.signalHeight(height)
+		go g.signalHash(*hash)
+	}()
 
 	return block, nil
 }
 
-// rotateIn puts the input height-hash pair into an expiration queue. If the
-// queue is at capacity, the oldest entry in the queue is popped off, and the
-// corresponding items in the blockWithHash and hashAtHeight maps are deleted.
-// TODO: possibly check for hash and height waiters before deleting items.
-// However, since signalHeight and signalHeight are run synchrounously after
-// rotateIn in UpdateToBlock and WaitForHeight (both lock the BlockGate), there
-// should be no such issues. At worst, their may be a cache miss when a client
-// calls Block or CachedBlock.
 func (g *BlockGate) rotateIn(height int64, hash chainhash.Hash) {
-	// Push this new height-hash pair onto the queue.
+	// Push this new height-hash pair onto the queue
 	g.expireQueue.q = append(g.expireQueue.q, heightHashPair{height, hash})
-
-	// If above capacity, pop the oldest off.
+	// If above capacity, pop the oldest off
 	if len(g.expireQueue.q) > g.expireQueue.cap {
 		// Pop
 		oldest := g.expireQueue.q[0]
@@ -259,114 +226,77 @@ func (g *BlockGate) rotateIn(height int64, hash chainhash.Hash) {
 	}
 }
 
-func (g *BlockGate) signalHash(hash chainhash.Hash, height int64) {
-	// Get the hash waiter channels, and delete them from list.
-	waitChans, ok := g.hashWaiters[hash]
+func (g *BlockGate) signalHash(blockhash chainhash.Hash) {
+	g.Lock()
+	defer g.Unlock()
+
+	block, ok := g.blockWithHash[blockhash]
 	if !ok {
-		return
+		panic("g.blockWithHash[hash] not OK in signalHash")
 	}
-	delete(g.hashWaiters, hash)
+	height := block.Height()
 
-	// Empty slice or nil slice may have been stored.
-	if len(waitChans) == 0 {
-		return
-	}
-
-	// Send the height to each of the hash waiters.
-	go func() {
-		for _, c := range waitChans {
-			select {
-			case c <- height:
-			default:
-				panic(fmt.Sprintf("unable to signal block with hash %s at height %d",
-					hash, height))
-			}
+	waitChans := g.hashWaiters[blockhash]
+	for _, c := range waitChans {
+		select {
+		case c <- height:
+		default:
+			panic(fmt.Sprintf("unable to signal block with hash %s at height %d", blockhash, height))
 		}
-	}()
+	}
+
+	delete(g.hashWaiters, blockhash)
 }
 
-func (g *BlockGate) signalHeight(height int64, hash chainhash.Hash) {
-	waitChans, ok := g.heightWaiters[height]
+func (g *BlockGate) signalHeight(height int64) {
+	g.Lock()
+	defer g.Unlock()
+
+	blockhash, ok := g.hashAtHeight[height]
 	if !ok {
-		return
-	}
-	delete(g.heightWaiters, height)
-
-	// Empty slice or nil slice may have been stored.
-	if len(waitChans) == 0 {
-		return
+		panic("g.hashAtHeight[height] not OK in signalHeight")
 	}
 
-	// Send the hash to each of the height waiters.
-	go func() {
-		for _, c := range waitChans {
-			select {
-			case c <- hash:
-			default:
-				panic(fmt.Sprintf("unable to signal block with hash %s at height %d",
-					hash, height))
-			}
+	waitChans := g.heightWaiters[height]
+	for _, c := range waitChans {
+		select {
+		case c <- blockhash:
+		default:
+			panic(fmt.Sprintf("unable to signal block with hash %s at height %d", blockhash, height))
 		}
-	}()
+	}
+
+	delete(g.heightWaiters, height)
 }
 
 // WaitForHeight provides a notification channel for signaling to the caller
 // when the block at the specified height is available.
 func (g *BlockGate) WaitForHeight(height int64) chan chainhash.Hash {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
+	g.Lock()
+	defer g.Unlock()
 
 	if height < 0 {
 		return nil
 	}
 
-	waitChan := make(chan chainhash.Hash, 1)
-	// Queue for future send.
-	g.heightWaiters[height] = append(g.heightWaiters[height], waitChan)
-
-	// If the block is already cached, send now.
-	if hash, ok := g.hashAtHeight[height]; ok {
-		g.signalHeight(height, hash)
-	} else if height <= g.fetchToHeight {
-		if _, err := g.updateToBlock(height); err != nil {
-			fmt.Printf("Failed to updateToBlock: %v", err)
-			return nil
-		}
-	} else if height < g.height {
-		fmt.Printf("WARNING: WaitForHeight(%d), but the best block is at %d. "+
-			"You may wait forever for this block.",
-			height, g.height)
+	waitChain := make(chan chainhash.Hash, 1)
+	g.heightWaiters[height] = append(g.heightWaiters[height], waitChain)
+	if height <= g.fetchToHeight {
+		g.updateToBlock(height)
 	}
-
-	return waitChan
+	return waitChain
 }
 
 // WaitForHash provides a notification channel for signaling to the caller
 // when the block with the specified hash is available.
 func (g *BlockGate) WaitForHash(hash chainhash.Hash) chan int64 {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
+	g.Lock()
+	defer g.Unlock()
 
-	waitChan := make(chan int64, 1)
-
-	// Queue for future send.
-	g.hashWaiters[hash] = append(g.hashWaiters[hash], waitChan)
-
-	// If the block is already cached, send now.
-	if block, ok := g.blockWithHash[hash]; ok {
-		g.signalHash(hash, block.Height())
+	waitChain := make(chan int64, 4)
+	g.hashWaiters[hash] = append(g.hashWaiters[hash], waitChain)
+	if hash == g.hashAtHeight[g.height] {
+		go g.signalHash(hash)
 	}
-
-	return waitChan
-}
-
-// GetChainwork fetches the pfcjson.BlockHeaderVerbose
-// and returns only the ChainWork attribute as a string
-func (g *BlockGate) GetChainWork(hash *chainhash.Hash) (string, error) {
-	return GetChainWork(g.client, hash)
-}
-
-// Client is just an access function to get the BlockGate's RPC client.
-func (g *BlockGate) Client() *rpcclient.Client {
-	return g.client
+	return waitChain
 }

@@ -1,12 +1,6 @@
 package explorer
 
 import (
-	// Imports for TestThreeSigFigs
-	// "fmt"
-	// "math"
-	// "math/rand"
-	// "time"
-
 	"testing"
 
 	"github.com/picfight/pfcd/chaincfg"
@@ -32,18 +26,3 @@ func TestSimNetName(t *testing.T) {
 		t.Errorf(`Net name not "Simnet": %s`, netName)
 	}
 }
-
-// func TestThreeSigFigs(t *testing.T) {
-// 	source := rand.NewSource(time.Now().Unix())
-// 	generator := rand.New(source)
-// 	for i := 0; i < 8; i++ {
-// 		flt := generator.Float64()
-// 		flt = flt * math.Pow10(-i)
-// 		fmt.Println(fmt.Sprintf("%.8f -> %s", flt, threeSigFigs(flt)))
-// 	}
-// 	for i := 0; i < 13; i++ {
-// 		flt := generator.Float64()
-// 		flt = flt * math.Pow10(i)
-// 		fmt.Println(fmt.Sprintf("%.8f -> %s", flt, threeSigFigs(flt)))
-// 	}
-// }

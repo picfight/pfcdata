@@ -77,9 +77,9 @@ const (
 
 	// IndexTicketsTableOnHashes creates the unique index
 	// uix_ticket_hashes_index on (tx_hash, block_hash).
-	IndexTicketsTableOnHashes = `CREATE UNIQUE INDEX ` + IndexOfTicketsTableOnHashes +
-		` ON tickets(tx_hash, block_hash);`
-	DeindexTicketsTableOnHashes = `DROP INDEX ` + IndexOfTicketsTableOnHashes + `;`
+	IndexTicketsTableOnHashes = `CREATE UNIQUE INDEX uix_ticket_hashes_index
+		ON tickets(tx_hash, block_hash);`
+	DeindexTicketsTableOnHashes = `DROP INDEX uix_ticket_hashes_index;`
 
 	// IndexTicketsTableOnTxDbID creates the unique index that ensures only one
 	// row in the tickets table may refer to a certain row of the transactions
@@ -88,13 +88,13 @@ const (
 	// block_hash) that allows a transaction appearing in multiple blocks (e.g.
 	// side chains and/or invalidated blocks) to have multiple rows in the
 	// transactions table.
-	IndexTicketsTableOnTxDbID = `CREATE UNIQUE INDEX ` + IndexOfTicketsTableOnTxRowID +
-		` ON tickets(purchase_tx_db_id);`
-	DeindexTicketsTableOnTxDbID = `DROP INDEX ` + IndexOfTicketsTableOnTxRowID + `;`
+	IndexTicketsTableOnTxDbID = `CREATE UNIQUE INDEX uix_ticket_ticket_db_id
+		ON tickets(purchase_tx_db_id);`
+	DeindexTicketsTableOnTxDbID = `DROP INDEX uix_ticket_ticket_db_id;`
 
-	IndexTicketsTableOnPoolStatus = `CREATE INDEX ` + IndexOfTicketsTableOnPoolStatus +
-		` ON tickets(pool_status);`
-	DeindexTicketsTableOnPoolStatus = `DROP INDEX ` + IndexOfTicketsTableOnPoolStatus + `;`
+	IndexTicketsTableOnPoolStatus = `CREATE INDEX uix_tickets_pool_status ON 
+		tickets(pool_status);`
+	DeindexTicketsTableOnPoolStatus = `DROP INDEX uix_tickets_pool_status;`
 
 	SelectTicketsInBlock        = `SELECT * FROM tickets WHERE block_hash = $1;`
 	SelectTicketsTxDbIDsInBlock = `SELECT purchase_tx_db_id FROM tickets WHERE block_hash = $1;`
@@ -118,10 +118,10 @@ const (
 		WHERE pool_status = 0 AND tickets.is_mainchain = TRUE
 		GROUP BY price ORDER BY price;`
 
-	selectTicketsByPurchaseDate = `SELECT %s as timestamp,
+	SelectTicketsByPurchaseDate = `SELECT (transactions.block_time/$1)*$1 as timestamp,
 		SUM(price) as price,
-		SUM(CASE WHEN tickets.block_height >= $1 THEN 1 ELSE 0 END) as immature,
-		SUM(CASE WHEN tickets.block_height < $1 THEN 1 ELSE 0 END) as live
+		SUM(CASE WHEN tickets.block_height >= $2 THEN 1 ELSE 0 END) as immature,
+		SUM(CASE WHEN tickets.block_height < $2 THEN 1 ELSE 0 END) as live
 		FROM tickets JOIN transactions ON purchase_tx_db_id=transactions.id
 		WHERE pool_status = 0 AND tickets.is_mainchain = TRUE
 		GROUP BY timestamp ORDER BY timestamp;`
@@ -159,8 +159,6 @@ const (
 
 	// votes table
 
-	// block_time field is needed to plot "Cumulative Vote Choices" agendas chart
-	// that plots cumulative votes count against time over the voting period.
 	CreateVotesTable = `CREATE TABLE IF NOT EXISTS votes (
 		id SERIAL PRIMARY KEY,
 		height INT4,
@@ -174,8 +172,7 @@ const (
 		ticket_tx_db_id INT8,
 		ticket_price FLOAT8,
 		vote_reward FLOAT8,
-		is_mainchain BOOLEAN,
-		block_time TIMESTAMPTZ
+		is_mainchain BOOLEAN
 	);`
 
 	// insertVoteRow is the basis for several vote insert/upsert statements.
@@ -184,13 +181,13 @@ const (
 		block_hash, candidate_block_hash,
 		version, vote_bits, block_valid,
 		ticket_hash, ticket_tx_db_id, ticket_price, vote_reward,
-		is_mainchain, block_time)
+		is_mainchain)
 	VALUES (
 		$1, $2,
 		$3, $4,
 		$5, $6, $7,
 		$8, $9, $10, $11,
-		$12, $13) `
+		$12) `
 
 	// InsertVoteRow inserts a new vote row without checking for unique index
 	// conflicts. This should only be used before the unique indexes are created
@@ -232,35 +229,24 @@ const (
 
 	// IndexVotesTableOnHashes creates the unique index uix_votes_hashes_index
 	// on (tx_hash, block_hash).
-	IndexVotesTableOnHashes = `CREATE UNIQUE INDEX ` + IndexOfVotesTableOnHashes +
-		` ON votes(tx_hash, block_hash);`
-	DeindexVotesTableOnHashes = `DROP INDEX ` + IndexOfVotesTableOnHashes + `;`
+	IndexVotesTableOnHashes = `CREATE UNIQUE INDEX uix_votes_hashes_index
+		ON votes(tx_hash, block_hash);`
+	DeindexVotesTableOnHashes = `DROP INDEX uix_votes_hashes_index;`
 
-	IndexVotesTableOnBlockHash = `CREATE INDEX ` + IndexOfVotesTableOnBlockHash +
-		` ON votes(block_hash);`
-	DeindexVotesTableOnBlockHash = `DROP INDEX ` + IndexOfVotesTableOnBlockHash + `;`
+	IndexVotesTableOnBlockHash = `CREATE INDEX uix_votes_block_hash
+		ON votes(block_hash);`
+	DeindexVotesTableOnBlockHash = `DROP INDEX uix_votes_block_hash;`
 
-	IndexVotesTableOnCandidate = `CREATE INDEX ` + IndexOfVotesTableOnCandBlock +
-		` ON votes(candidate_block_hash);`
-	DeindexVotesTableOnCandidate = `DROP INDEX ` + IndexOfVotesTableOnCandBlock + `;`
+	IndexVotesTableOnCandidate = `CREATE INDEX uix_votes_candidate_block
+		ON votes(candidate_block_hash);`
+	DeindexVotesTableOnCandidate = `DROP INDEX uix_votes_candidate_block;`
 
-	IndexVotesTableOnVoteVersion = `CREATE INDEX ` + IndexOfVotesTableOnVersion +
-		` ON votes(version);`
-	DeindexVotesTableOnVoteVersion = `DROP INDEX ` + IndexOfVotesTableOnVersion + `;`
-
-	IndexVotesTableOnHeight = `CREATE INDEX ` + IndexOfVotesTableOnHeight + ` ON votes(height);`
-
-	DeindexVotesTableOnHeight = `DROP INDEX ` + IndexOfVotesTableOnHeight + `;`
-
-	IndexVotesTableOnBlockTime = `CREATE INDEX ` + IndexOfVotesTableOnBlockTime +
-		` ON votes(block_time);`
-	DeindexVotesTableOnBlockTime = `DROP INDEX ` + IndexOfVotesTableOnBlockTime + `;`
+	IndexVotesTableOnVoteVersion = `CREATE INDEX uix_votes_vote_version
+		ON votes(version);`
+	DeindexVotesTableOnVoteVersion = `DROP INDEX uix_votes_vote_version;`
 
 	SelectAllVoteDbIDsHeightsTicketHashes = `SELECT id, height, ticket_hash FROM votes;`
 	SelectAllVoteDbIDsHeightsTicketDbIDs  = `SELECT id, height, ticket_tx_db_id FROM votes;`
-
-	SelectRCIStartHeight = `SELECT height FROM votes WHERE block_time >= $1
-		AND height%$2 = 0 ORDER by height DESC LIMIT 1;`
 
 	UpdateVotesMainchainAll = `UPDATE votes
 		SET is_mainchain=b.is_mainchain
@@ -328,115 +314,73 @@ const (
 
 	// IndexMissesTableOnHashes creates the unique index uix_misses_hashes_index
 	// on (ticket_hash, block_hash).
-	IndexMissesTableOnHashes = `CREATE UNIQUE INDEX ` + IndexOfMissesTableOnHashes +
-		` ON misses(ticket_hash, block_hash);`
-	DeindexMissesTableOnHashes = `DROP INDEX ` + IndexOfMissesTableOnHashes + `;`
+	IndexMissesTableOnHashes = `CREATE UNIQUE INDEX uix_misses_hashes_index
+		ON misses(ticket_hash, block_hash);`
+	DeindexMissesTableOnHashes = `DROP INDEX uix_misses_hashes_index;`
 
 	SelectMissesInBlock = `SELECT ticket_hash FROM misses WHERE block_hash = $1;`
-
-	SelectMissesForTicket = `SELECT height, block_hash FROM misses WHERE ticket_hash = $1;`
-
-	SelectMissesMainchainForTicket = `SELECT misses.height, misses.block_hash
-		FROM misses
-		JOIN blocks ON misses.block_hash=blocks.hash
-		WHERE ticket_hash = $1
-			AND blocks.is_mainchain = TRUE;`
 
 	// agendas table
 
 	CreateAgendasTable = `CREATE TABLE IF NOT EXISTS agendas (
 		id SERIAL PRIMARY KEY,
-		name TEXT,
-		status INT2,
-		locked_in INT4,
-		activated INT4,
-		hard_forked INT4
+		agenda_id TEXT,
+		agenda_vote_choice INT2,
+		tx_hash TEXT NOT NULL,
+		block_height INT4,
+		block_time INT8,
+		locked_in BOOLEAN,
+		activated BOOLEAN,
+		hard_forked BOOLEAN
 	);`
 
 	// Insert
-	insertAgendaRow = `INSERT INTO agendas (name, status, locked_in, activated,
-		hard_forked) VALUES ($1, $2, $3, $4, $5) `
+	insertAgendaRow = `INSERT INTO agendas (
+		agenda_id, agenda_vote_choice,
+		tx_hash, block_height, block_time,
+		locked_in, activated, hard_forked)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) `
 
 	InsertAgendaRow = insertAgendaRow + `RETURNING id;`
 
-	UpsertAgendaRow = insertAgendaRow + `ON CONFLICT (name) DO UPDATE
-		SET status = $2, locked_in = $3, activated = $4, hard_forked = $5 RETURNING id;`
+	UpsertAgendaRow = insertAgendaRow + `ON CONFLICT (agenda_id, agenda_vote_choice, tx_hash, block_height) DO UPDATE 
+		SET block_time = $5 RETURNING id;`
 
-	IndexAgendasTableOnAgendaID = `CREATE UNIQUE INDEX ` + IndexOfAgendasTableOnName +
-		` ON agendas(name);`
-	DeindexAgendasTableOnAgendaID = `DROP INDEX ` + IndexOfAgendasTableOnName + `;`
+	// IndexAgendasTableOnAgendaID creates the unique index
+	// uix_agendas_agenda_id on (agenda_id, agenda_vote_choice, tx_hash,
+	// block_height).
+	IndexAgendasTableOnAgendaID = `CREATE UNIQUE INDEX uix_agendas_agenda_id
+		ON agendas(agenda_id, agenda_vote_choice, tx_hash, block_height);`
+	DeindexAgendasTableOnAgendaID = `DROP INDEX uix_agendas_agenda_id;`
 
-	SelectAllAgendas = `SELECT id, name, status, locked_in, activated, hard_forked
-		FROM agendas;`
+	IndexAgendasTableOnBlockTime = `CREATE INDEX uix_agendas_block_time
+		ON agendas(block_time);`
+	DeindexAgendasTableOnBlockTime = `DROP INDEX uix_agendas_block_time;`
 
-	SelectAgendasLockedIn = `SELECT locked_in FROM agendas WHERE name = $1;`
-
-	SelectAgendasHardForked = `SELECT hard_forked FROM agendas WHERE name = $1;`
-
-	SelectAgendasActivated = `SELECT activated FROM agendas WHERE name = $1;`
-
-	SetVoteMileStoneheights = `UPDATE agendas SET status = $2, locked_in = $3,
-		activated = $4, hard_forked = $5 WHERE id = $1;`
-
-	// DeleteAgendasDuplicateRows removes rows that would violate the unique
-	// index uix_agendas_name. This should be run prior to creating the index.
-	DeleteAgendasDuplicateRows = `DELETE FROM agendas
-		WHERE id IN (SELECT id FROM (
-				SELECT id, ROW_NUMBER()
-				OVER (partition BY name ORDER BY id) AS rnum
-				FROM agendas) t
-			WHERE t.rnum > 1);`
-
-	// agendas votes table
-
-	CreateAgendaVotesTable = `CREATE TABLE IF NOT EXISTS agenda_votes (
-		id SERIAL PRIMARY KEY,
-		votes_row_id INT8,
-		agendas_row_id INT8,
-		agenda_vote_choice INT2
-	);`
-
-	// Insert
-	insertAgendaVotesRow = `INSERT INTO agenda_votes (votes_row_id, agendas_row_id,
-		agenda_vote_choice) VALUES ($1, $2, $3) `
-
-	InsertAgendaVotesRow = insertAgendaVotesRow + `RETURNING id;`
-
-	UpsertAgendaVotesRow = insertAgendaVotesRow + `ON CONFLICT (agendas_row_id,
-		votes_row_id) DO UPDATE SET agenda_vote_choice = $3 RETURNING id;`
-
-	IndexAgendaVotesTableOnAgendaID = `CREATE UNIQUE INDEX ` + IndexOfAgendaVotesTableOnRowIDs +
-		` ON agenda_votes(votes_row_id, agendas_row_id);`
-	DeindexAgendaVotesTableOnAgendaID = `DROP INDEX ` + IndexOfAgendaVotesTableOnRowIDs + `;`
-
-	// DeleteAgendaVotesDuplicateRows removes rows that would violate the unique
-	// index uix_agenda_votes. This should be run prior to creating the index.
-	DeleteAgendaVotesDuplicateRows = `DELETE FROM agenda_votes
-		WHERE id IN (SELECT id FROM (
-				SELECT id, ROW_NUMBER()
-				OVER (partition BY votes_row_id, agendas_row_id ORDER BY id) AS rnum
-				FROM agenda_votes) t
-			WHERE t.rnum > 1);`
-
-	// Select
-
-	SelectAgendasVotesByTime = `SELECT votes.block_time AS timestamp,` +
-		selectAgendaVotesQuery + `GROUP BY timestamp ORDER BY timestamp;`
-
-	SelectAgendasVotesByHeight = `SELECT votes.height AS height,` +
-		selectAgendaVotesQuery + `GROUP BY height ORDER BY height;`
-
-	SelectAgendaVoteTotals = `SELECT ` + selectAgendaVotesQuery + `;`
-
-	selectAgendaVotesQuery = `
-			count(CASE WHEN agenda_votes.agenda_vote_choice = $1 THEN 1 ELSE NULL END) AS yes,
-			count(CASE WHEN agenda_votes.agenda_vote_choice = $2 THEN 1 ELSE NULL END) AS abstain,
-			count(CASE WHEN agenda_votes.agenda_vote_choice = $3 THEN 1 ELSE NULL END) AS no,
+	agendaLockinBlock              = `SELECT block_height FROM agendas WHERE locked_in = true AND agenda_id = $4 LIMIT 1`
+	SelectAgendasAgendaVotesByTime = `SELECT block_time AS timestamp,
+			count(CASE WHEN agenda_vote_choice = $1 THEN 1 ELSE NULL END) AS yes,
+			count(CASE WHEN agenda_vote_choice = $2 THEN 1 ELSE NULL END) AS abstain,
+			count(CASE WHEN agenda_vote_choice = $3 THEN 1 ELSE NULL END) AS no,
 			count(*) AS total
-		FROM agenda_votes
-		INNER JOIN votes ON agenda_votes.votes_row_id = votes.id
-		WHERE agenda_votes.agendas_row_id = (SELECT id from agendas WHERE name = $4)
-		AND votes.height >= $5 AND votes.height <= $6 `
+		 FROM agendas
+		WHERE agenda_id = $4
+		  AND block_height <= (` + agendaLockinBlock + `)
+		GROUP BY timestamp ORDER BY timestamp;`
+
+	SelectAgendasAgendaVotesByHeight = `SELECT block_height,
+			count(CASE WHEN agenda_vote_choice = $1 THEN 1 ELSE NULL END) AS yes,
+			count(CASE WHEN agenda_vote_choice = $2 THEN 1 ELSE NULL END) AS abstain,
+			count(CASE WHEN agenda_vote_choice = $3 THEN 1 ELSE NULL END) AS no,
+			count(*) AS total
+		 FROM agendas
+		WHERE agenda_id = $4
+		  AND block_height <= (` + agendaLockinBlock + `)
+		GROUP BY block_height;`
+
+	SelectAgendasLockedIn   = `SELECT block_height FROM agendas WHERE locked_in = true AND agenda_id = $1 LIMIT 1;`
+	SelectAgendasHardForked = `SELECT block_height FROM agendas WHERE hard_forked = true AND agenda_id = $1 LIMIT 1;`
+	SelectAgendasActivated  = `SELECT block_height FROM agendas WHERE activated = true AND agenda_id = $1 LIMIT 1;`
 )
 
 // MakeTicketInsertStatement returns the appropriate tickets insert statement
@@ -458,7 +402,7 @@ func MakeTicketInsertStatement(checked, updateOnConflict bool) string {
 	return InsertTicketRowOnConflictDoNothing
 }
 
-// MakeVoteInsertStatement returns the appropriate votes insert statement for
+// MakeTicketInsertStatement returns the appropriate votes insert statement for
 // the desired conflict checking and handling behavior. See the description of
 // MakeTicketInsertStatement for details.
 func MakeVoteInsertStatement(checked, updateOnConflict bool) string {
@@ -471,7 +415,7 @@ func MakeVoteInsertStatement(checked, updateOnConflict bool) string {
 	return InsertVoteRowOnConflictDoNothing
 }
 
-// MakeMissInsertStatement returns the appropriate misses insert statement for
+// MakeTicketInsertStatement returns the appropriate misses insert statement for
 // the desired conflict checking and handling behavior. See the description of
 // MakeTicketInsertStatement for details.
 func MakeMissInsertStatement(checked, updateOnConflict bool) string {
@@ -484,27 +428,9 @@ func MakeMissInsertStatement(checked, updateOnConflict bool) string {
 	return InsertMissRowOnConflictDoNothing
 }
 
-// MakeAgendaInsertStatement returns the appropriate agendas insert statement for
-// the desired conflict checking and handling behavior. See the description of
-// MakeTicketInsertStatement for details.
 func MakeAgendaInsertStatement(checked bool) string {
 	if checked {
 		return UpsertAgendaRow
 	}
 	return InsertAgendaRow
-}
-
-// MakeAgendaVotesInsertStatement returns the appropriate agenda votes insert
-// statement for the desired conflict checking and handling behavior. See the
-// description of MakeTicketInsertStatement for details.
-func MakeAgendaVotesInsertStatement(checked bool) string {
-	if checked {
-		return UpsertAgendaVotesRow
-	}
-	return InsertAgendaVotesRow
-}
-
-// MakeSelectTicketsByPurchaseDate returns the selectTicketsByPurchaseDate query
-func MakeSelectTicketsByPurchaseDate(group string) string {
-	return formatGroupingQuery(selectTicketsByPurchaseDate, group, "transactions.block_time")
 }

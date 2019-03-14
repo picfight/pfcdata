@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, The Decred developers
+// Copyright (c) 2018, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
@@ -7,10 +7,11 @@ package pfcpg
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strconv"
 
-	"github.com/picfight/pfcdata/v4/db/dbtypes"
-	"github.com/picfight/pfcdata/v4/db/pfcpg/internal"
-	"github.com/picfight/pfcdata/v4/semver"
+	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
 )
 
 var createTableStatements = map[string]string{
@@ -24,8 +25,6 @@ var createTableStatements = map[string]string{
 	"votes":        internal.CreateVotesTable,
 	"misses":       internal.CreateMissesTable,
 	"agendas":      internal.CreateAgendasTable,
-	"agenda_votes": internal.CreateAgendaVotesTable,
-	"testing":      internal.CreateTestingTable,
 }
 
 var createTypeStatements = map[string]string{
@@ -49,8 +48,8 @@ type dropDuplicatesInfo struct {
 // re-indexing and a duplicate scan/purge.
 const (
 	tableMajor = 3
-	tableMinor = 10
-	tablePatch = 0
+	tableMinor = 5
+	tablePatch = 5
 )
 
 // TODO eliminiate this map since we're actually versioning each table the same.
@@ -65,8 +64,6 @@ var requiredVersions = map[string]TableVersion{
 	"votes":        NewTableVersion(tableMajor, tableMinor, tablePatch),
 	"misses":       NewTableVersion(tableMajor, tableMinor, tablePatch),
 	"agendas":      NewTableVersion(tableMajor, tableMinor, tablePatch),
-	"agenda_votes": NewTableVersion(tableMajor, tableMinor, tablePatch),
-	"testing":      NewTableVersion(tableMajor, tableMinor, tablePatch),
 }
 
 // TableVersion models a table version by major.minor.patch
@@ -74,50 +71,24 @@ type TableVersion struct {
 	major, minor, patch uint32
 }
 
-// CompatibilityAction defines the action to be taken once the current and the
-// required pg table versions are compared.
-type CompatibilityAction int8
-
-const (
-	Rebuild CompatibilityAction = iota
-	Upgrade
-	Reindex
-	OK
-	Unknown
-)
-
 // TableVersionCompatible indicates if the table versions are compatible
 // (equal), and if not, what is the required action (rebuild, upgrade, or
 // reindex).
-func TableVersionCompatible(required, actual TableVersion) CompatibilityAction {
+func TableVersionCompatible(required, actual TableVersion) string {
 	switch {
 	case required.major != actual.major:
-		return Rebuild
+		return "rebuild"
 	case required.minor != actual.minor:
-		return Upgrade
+		return "upgrade"
 	case required.patch != actual.patch:
-		return Reindex
+		return "reindex"
 	default:
-		return OK
+		return "ok"
 	}
 }
 
 func (s TableVersion) String() string {
 	return fmt.Sprintf("%d.%d.%d", s.major, s.minor, s.patch)
-}
-
-// String implements Stringer for CompatibilityAction.
-func (v CompatibilityAction) String() string {
-	actions := map[CompatibilityAction]string{
-		Rebuild: "rebuild",
-		Upgrade: "upgrade",
-		Reindex: "reindex",
-		OK:      "ok",
-	}
-	if actionStr, ok := actions[v]; ok {
-		return actionStr
-	}
-	return "unknown"
 }
 
 // NewTableVersion returns a new TableVersion with the version major.minor.patch
@@ -127,8 +98,7 @@ func NewTableVersion(major, minor, patch uint32) TableVersion {
 
 // TableUpgrade is used to define a required upgrade for a table
 type TableUpgrade struct {
-	TableName               string
-	UpgradeType             CompatibilityAction
+	TableName, UpgradeType  string
 	CurrentVer, RequiredVer TableVersion
 }
 
@@ -151,12 +121,6 @@ func TableExists(db *sql.DB, tableName string) (bool, error) {
 	return false, err
 }
 
-func dropTable(db *sql.DB, tableName string) error {
-	_, err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
-	return err
-}
-
-// DropTables drops all of the tables internally recognized tables.
 func DropTables(db *sql.DB) {
 	for tableName := range createTableStatements {
 		log.Infof("DROPPING the \"%s\" table.", tableName)
@@ -171,9 +135,8 @@ func DropTables(db *sql.DB) {
 	}
 }
 
-// DropTestingTable drops only the "testing" table.
-func DropTestingTable(db *sql.DB) error {
-	_, err := db.Exec(`DROP TABLE IF EXISTS testing;`)
+func dropTable(db *sql.DB, tableName string) error {
+	_, err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
 	return err
 }
 
@@ -218,15 +181,6 @@ func TypeExists(db *sql.DB, tableName string) (bool, error) {
 	return false, err
 }
 
-func ClearTestingTable(db *sql.DB) error {
-	// Clear the scratch table and reset the serial value.
-	_, err := db.Exec(`TRUNCATE TABLE testing;`)
-	if err == nil {
-		_, err = db.Exec(`SELECT setval('testing_id_seq', 1, false);`)
-	}
-	return err
-}
-
 func CreateTables(db *sql.DB) error {
 	var err error
 	for tableName, createCommand := range createTableStatements {
@@ -256,8 +210,7 @@ func CreateTables(db *sql.DB) error {
 			log.Tracef("Table \"%s\" exist.", tableName)
 		}
 	}
-
-	return ClearTestingTable(db)
+	return err
 }
 
 // CreateTable creates one of the known tables by name
@@ -305,7 +258,7 @@ func TableUpgradesRequired(versions map[string]TableVersion) []TableUpgrade {
 			log.Errorf("required version unknown for table %s", t)
 			tableUpgrades = append(tableUpgrades, TableUpgrade{
 				TableName:   t,
-				UpgradeType: Unknown,
+				UpgradeType: "unknown",
 			})
 			continue
 		}
@@ -313,7 +266,7 @@ func TableUpgradesRequired(versions map[string]TableVersion) []TableUpgrade {
 			log.Errorf("current version unknown for table %s", t)
 			tableUpgrades = append(tableUpgrades, TableUpgrade{
 				TableName:   t,
-				UpgradeType: Rebuild,
+				UpgradeType: "rebuild",
 				RequiredVer: req,
 			})
 			continue
@@ -329,91 +282,55 @@ func TableUpgradesRequired(versions map[string]TableVersion) []TableUpgrade {
 	return tableUpgrades
 }
 
-// TableVersions retrieves the versions of the tables in the auxiliary db.
 func TableVersions(db *sql.DB) map[string]TableVersion {
 	versions := map[string]TableVersion{}
 	for tableName := range createTableStatements {
-		// Retrieve the table description.
-		var desc string
-		err := db.QueryRow(`select obj_description($1::regclass);`, tableName).Scan(&desc)
-		if err != nil {
-			log.Errorf("Query of table %s description failed: %v", tableName, err)
-			continue
+		Result := db.QueryRow(`select obj_description($1::regclass);`, tableName)
+		var s string
+		var v, m, p int
+		if Result != nil {
+			err := Result.Scan(&s)
+			if err != nil {
+				log.Errorf("Scan of QueryRow failed: %v", err)
+				continue
+			}
+			re := regexp.MustCompile(`^v(\d+)\.?(\d?)\.?(\d?)$`)
+			subs := re.FindStringSubmatch(s)
+			if len(subs) > 1 {
+				v, err = strconv.Atoi(subs[1])
+				if err != nil {
+					fmt.Println(err)
+				}
+				if len(subs) > 2 && len(subs[2]) > 0 {
+					m, err = strconv.Atoi(subs[2])
+					if err != nil {
+						fmt.Println(err)
+					}
+					if len(subs) > 3 && len(subs[3]) > 0 {
+						p, err = strconv.Atoi(subs[3])
+						if err != nil {
+							fmt.Println(err)
+						}
+					}
+				}
+			}
 		}
-
-		// Attempt to parse a version out of the table description.
-		sv, err := semver.ParseVersionStr(desc)
-		if err != nil {
-			log.Errorf("Failed to parse version from table description %s: %v",
-				desc, err)
-			continue
-		}
-
-		versions[tableName] = NewTableVersion(sv.Split())
+		versions[tableName] = NewTableVersion(uint32(v), uint32(m), uint32(p))
 	}
 	return versions
-}
-
-// CheckColumnDataType gets the data type of specified table column .
-func CheckColumnDataType(db *sql.DB, table, column string) (dataType string, err error) {
-	err = db.QueryRow(`SELECT data_type
-		FROM information_schema.columns
-		WHERE table_name=$1 AND column_name=$2`,
-		table, column).Scan(&dataType)
-	return
-}
-
-func CheckCurrentTimeZone(db *sql.DB) (currentTZ string, err error) {
-	if err = db.QueryRow(`SHOW TIME ZONE`).Scan(&currentTZ); err != nil {
-		err = fmt.Errorf("unable to query current time zone: %v", err)
-	}
-	return
-}
-
-func CheckDefaultTimeZone(db *sql.DB) (defaultTZ, currentTZ string, err error) {
-	// Remember the current time zone before switching to default.
-	currentTZ, err = CheckCurrentTimeZone(db)
-	if err != nil {
-		return
-	}
-
-	// Switch to DEFAULT/LOCAL.
-	_, err = db.Exec(`SET TIME ZONE DEFAULT`)
-	if err != nil {
-		err = fmt.Errorf("failed to set time zone to UTC: %v", err)
-		return
-	}
-
-	// Get the default time zone now that it is current.
-	defaultTZ, err = CheckCurrentTimeZone(db)
-	if err != nil {
-		return
-	}
-
-	// Switch back to initial time zone.
-	_, err = db.Exec(fmt.Sprintf(`SET TIME ZONE %s`, currentTZ))
-	if err != nil {
-		err = fmt.Errorf("failed to set time zone back to %s: %v", currentTZ, err)
-	}
-	return
 }
 
 func (pgb *ChainDB) DeleteDuplicates(barLoad chan *dbtypes.ProgressBarLoad) error {
 	allDuplicates := []dropDuplicatesInfo{
 		// Remove duplicate vins
-		{TableName: "vins", DropDupsFunc: pgb.DeleteDuplicateVins},
-
+		dropDuplicatesInfo{TableName: "vins", DropDupsFunc: pgb.DeleteDuplicateVins},
 		// Remove duplicate vouts
-		{TableName: "vouts", DropDupsFunc: pgb.DeleteDuplicateVouts},
-
+		dropDuplicatesInfo{TableName: "vouts", DropDupsFunc: pgb.DeleteDuplicateVouts},
 		// Remove duplicate transactions
-		{TableName: "transactions", DropDupsFunc: pgb.DeleteDuplicateTxns},
+		dropDuplicatesInfo{TableName: "transactions", DropDupsFunc: pgb.DeleteDuplicateTxns},
 
-		// Remove duplicate agendas
-		{TableName: "agendas", DropDupsFunc: pgb.DeleteDuplicateAgendas},
-
-		// Remove duplicate agenda_votes
-		{TableName: "agenda_votes", DropDupsFunc: pgb.DeleteDuplicateAgendaVotes},
+		// TODO: remove entries from addresses table that reference removed
+		// vins/vouts.
 	}
 
 	var err error
@@ -445,28 +362,25 @@ func (pgb *ChainDB) DeleteDuplicates(barLoad chan *dbtypes.ProgressBarLoad) erro
 func (pgb *ChainDB) DeleteDuplicatesRecovery(barLoad chan *dbtypes.ProgressBarLoad) error {
 	allDuplicates := []dropDuplicatesInfo{
 		// Remove duplicate vins
-		{TableName: "vins", DropDupsFunc: pgb.DeleteDuplicateVins},
+		dropDuplicatesInfo{TableName: "vins", DropDupsFunc: pgb.DeleteDuplicateVins},
 
 		// Remove duplicate vouts
-		{TableName: "vouts", DropDupsFunc: pgb.DeleteDuplicateVouts},
+		dropDuplicatesInfo{TableName: "vouts", DropDupsFunc: pgb.DeleteDuplicateVouts},
+
+		// TODO: remove entries from addresses table that reference removed
+		// vins/vouts.
 
 		// Remove duplicate transactions
-		{TableName: "transactions", DropDupsFunc: pgb.DeleteDuplicateTxns},
+		dropDuplicatesInfo{TableName: "transactions", DropDupsFunc: pgb.DeleteDuplicateTxns},
 
 		// Remove duplicate tickets
-		{TableName: "tickets", DropDupsFunc: pgb.DeleteDuplicateTickets},
+		dropDuplicatesInfo{TableName: "tickets", DropDupsFunc: pgb.DeleteDuplicateTickets},
 
 		// Remove duplicate votes
-		{TableName: "votes", DropDupsFunc: pgb.DeleteDuplicateVotes},
+		dropDuplicatesInfo{TableName: "votes", DropDupsFunc: pgb.DeleteDuplicateVotes},
 
 		// Remove duplicate misses
-		{TableName: "misses", DropDupsFunc: pgb.DeleteDuplicateMisses},
-
-		// Remove duplicate agendas
-		{TableName: "agendas", DropDupsFunc: pgb.DeleteDuplicateAgendas},
-
-		// Remove duplicate agenda_votes
-		{TableName: "agenda_votes", DropDupsFunc: pgb.DeleteDuplicateAgendaVotes},
+		dropDuplicatesInfo{TableName: "misses", DropDupsFunc: pgb.DeleteDuplicateMisses},
 	}
 
 	var err error

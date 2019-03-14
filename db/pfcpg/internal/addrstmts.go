@@ -1,7 +1,5 @@
 package internal
 
-import "fmt"
-
 const (
 	CreateAddressTable = `CREATE TABLE IF NOT EXISTS addresses (
 		id SERIAL8 PRIMARY KEY,
@@ -10,7 +8,7 @@ const (
 		valid_mainchain BOOLEAN,
 		matching_tx_hash TEXT,
 		value INT8,
-		block_time TIMESTAMPTZ NOT NULL,
+		block_time INT8 NOT NULL,
 		is_funding BOOLEAN,
 		tx_vin_vout_index INT4,
 		tx_vin_vout_row_id INT8,
@@ -52,27 +50,27 @@ const (
 
 	// IndexAddressTableOnVoutID creates the unique index uix_addresses_vout_id
 	// on (tx_vin_vout_row_id, address, is_funding).
-	IndexAddressTableOnVoutID = `CREATE UNIQUE INDEX ` + IndexOfAddressTableOnVoutID +
-		` ON addresses(tx_vin_vout_row_id, address, is_funding);`
-	DeindexAddressTableOnVoutID = `DROP INDEX ` + IndexOfAddressTableOnVoutID + `;`
+	IndexAddressTableOnVoutID = `CREATE UNIQUE INDEX uix_addresses_vout_id
+		ON addresses(tx_vin_vout_row_id, address, is_funding);`
+	DeindexAddressTableOnVoutID = `DROP INDEX uix_addresses_vout_id;`
 
 	// IndexBlockTimeOnTableAddress creates a sorted index on block_time, which
 	// accelerates queries with ORDER BY block_time LIMIT n OFFSET m.
-	IndexBlockTimeOnTableAddress = `CREATE INDEX ` + IndexOfAddressTableOnBlockTime +
-		` ON addresses(block_time DESC NULLS LAST);`
-	DeindexBlockTimeOnTableAddress = `DROP INDEX ` + IndexOfAddressTableOnBlockTime + `;`
+	IndexBlockTimeOnTableAddress = `CREATE INDEX block_time_index
+		ON addresses(block_time DESC NULLS LAST);`
+	DeindexBlockTimeOnTableAddress = `DROP INDEX block_time_index;`
 
-	IndexMatchingTxHashOnTableAddress = `CREATE INDEX ` + IndexOfAddressTableOnMatchingTx +
-		` ON addresses(matching_tx_hash);`
-	DeindexMatchingTxHashOnTableAddress = `DROP INDEX ` + IndexOfAddressTableOnMatchingTx + `;`
+	IndexMatchingTxHashOnTableAddress = `CREATE INDEX matching_tx_hash_index
+	    ON addresses(matching_tx_hash);`
+	DeindexMatchingTxHashOnTableAddress = `DROP INDEX matching_tx_hash_index;`
 
-	IndexAddressTableOnAddress = `CREATE INDEX ` + IndexOfAddressTableOnAddress +
-		` ON addresses(address);`
-	DeindexAddressTableOnAddress = `DROP INDEX ` + IndexOfAddressTableOnAddress + `;`
+	IndexAddressTableOnAddress = `CREATE INDEX uix_addresses_address
+		ON addresses(address);`
+	DeindexAddressTableOnAddress = `DROP INDEX uix_addresses_address;`
 
-	IndexAddressTableOnTxHash = `CREATE INDEX ` + IndexOfAddressTableOnTx +
-		` ON addresses(tx_hash);`
-	DeindexAddressTableOnTxHash = `DROP INDEX ` + IndexOfAddressTableOnTx + `;`
+	IndexAddressTableOnTxHash = `CREATE INDEX uix_addresses_funding_tx
+		ON addresses(tx_hash);`
+	DeindexAddressTableOnTxHash = `DROP INDEX uix_addresses_funding_tx;`
 
 	// SelectSpendingTxsByPrevTx = `SELECT id, tx_hash, tx_index, prev_tx_index FROM vins WHERE prev_tx_hash=$1;`
 	// SelectSpendingTxByPrevOut = `SELECT id, tx_hash, tx_index FROM vins WHERE prev_tx_hash=$1 AND prev_tx_index=$2;`
@@ -82,34 +80,23 @@ const (
 	addrsColumnNames = `id, address, matching_tx_hash, tx_hash, tx_type, valid_mainchain,
 		tx_vin_vout_index, block_time, tx_vin_vout_row_id, value, is_funding`
 
-	SelectAddressAllByAddress = `SELECT ` + addrsColumnNames + ` FROM addresses
-		WHERE address=$1
-		ORDER BY block_time DESC, tx_hash ASC;`
-	SelectAddressAllMainchainByAddress = `SELECT ` + addrsColumnNames + ` FROM addresses
-		WHERE address=$1 AND valid_mainchain
-		ORDER BY block_time DESC, tx_hash ASC;`
+	SelectAddressAllByAddress = `SELECT ` + addrsColumnNames + ` FROM addresses WHERE address=$1 ORDER BY block_time DESC;`
+	SelectAddressRecvCount    = `SELECT COUNT(*) FROM addresses WHERE address=$1 AND valid_mainchain = TRUE;`
 
-	SelectAddressesAllTxnWithHeight = `SELECT
-			addresses.tx_hash,
-			transactions.block_height
-		FROM addresses
-		INNER JOIN transactions
-			ON addresses.tx_hash = transactions.tx_hash
-				AND is_mainchain AND is_valid
+	SelectAddressesAllTxn = `SELECT
+			transactions.tx_hash,
+			block_height
+		FROM
+			addresses
+			INNER JOIN
+				transactions
+				ON addresses.tx_hash = transactions.tx_hash
+				AND is_mainchain = TRUE AND is_valid=TRUE
 		WHERE
-			address = ANY($1) AND valid_mainchain
+			address = ANY($1) AND valid_mainchain=true
 		ORDER BY
-			transactions.time DESC,
-			addresses.tx_hash ASC;`
-
-	SelectAddressesAllTxn = `SELECT	tx_hash, block_time
-		FROM addresses
-		WHERE address = ANY($1) AND valid_mainchain
-		ORDER BY block_time DESC, tx_hash ASC;`
-
-	// selectAddressTimeGroupingCount return the count of record groups,
-	// where grouping is done by a specified time interval, for an addresss.
-	selectAddressTimeGroupingCount = `SELECT COUNT(DISTINCT %s) FROM addresses WHERE address=$1;`
+			time DESC,
+			transactions.tx_hash ASC;`
 
 	SelectAddressUnspentCountANDValue = `SELECT COUNT(*), SUM(value) FROM addresses
 	    WHERE address = $1 AND is_funding = TRUE AND matching_tx_hash = '' AND valid_mainchain = TRUE;`
@@ -119,12 +106,6 @@ const (
 
 	SelectAddressesMergedSpentCount = `SELECT COUNT( DISTINCT tx_hash ) FROM addresses
 		WHERE address = $1 AND is_funding = FALSE AND valid_mainchain = TRUE;`
-
-	SelectAddressesMergedFundingCount = `SELECT COUNT( DISTINCT tx_hash ) FROM addresses
-		WHERE address = $1 AND is_funding = TRUE AND valid_mainchain = TRUE;`
-
-	SelectAddressesMergedCount = `SELECT COUNT( DISTINCT tx_hash ) FROM addresses
-		WHERE address = $1 AND valid_mainchain = TRUE;`
 
 	// SelectAddressSpentUnspentCountAndValue gets the number and combined spent
 	// and unspent outpoints for the given address. The key is the "GROUP BY
@@ -147,17 +128,14 @@ const (
 	//
 	// Since part of the grouping is on "matching_tx_hash = ''", what is
 	// logically "any" empty matching is actually no_empty_matching.
-	SelectAddressSpentUnspentCountAndValue = `SELECT
-			BOOL_AND(tx_type = 0) AS is_regular,
-			COUNT(*),
+	SelectAddressSpentUnspentCountAndValue = `SELECT COUNT(*),
 			SUM(value),
 			is_funding,
 			BOOL_AND(matching_tx_hash = '') AS all_empty_matching
 			-- NOT BOOL_AND(matching_tx_hash = '') AS no_empty_matching
 		FROM addresses
 		WHERE address = $1 AND valid_mainchain = TRUE
-		GROUP BY tx_type=0, is_funding, 
-			matching_tx_hash=''  -- separate spent and unspent
+		GROUP BY is_funding, matching_tx_hash=''  -- separate spent and unspent
 		ORDER BY count, is_funding;`
 
 	SelectAddressUnspentWithTxn = `SELECT
@@ -166,21 +144,18 @@ const (
 			addresses.value,
 			transactions.block_height,
 			addresses.block_time,
-			addresses.tx_vin_vout_index,
-			vouts.pkscript
+			tx_vin_vout_index,
+			pkscript
 		FROM addresses
 		JOIN transactions ON
 			addresses.tx_hash = transactions.tx_hash
-		JOIN vouts ON addresses.tx_vin_vout_row_id = vouts.id
-		WHERE addresses.address=$1 AND addresses.is_funding AND addresses.matching_tx_hash = '' AND valid_mainchain
+		JOIN vouts ON addresses.tx_hash = vouts.tx_hash AND addresses.tx_vin_vout_index=vouts.tx_index
+		WHERE addresses.address=$1 AND addresses.is_funding = TRUE AND addresses.matching_tx_hash = '' AND valid_mainchain = TRUE
 		ORDER BY addresses.block_time DESC;`
-	// Since tx_vin_vout_row_id is the vouts table primary key (id) when
-	// is_funding=true, there is no need to join vouts on tx_hash and tx_index.
 
 	SelectAddressLimitNByAddress = `SELECT ` + addrsColumnNames + ` FROM addresses
 		WHERE address=$1 AND valid_mainchain = TRUE
-		ORDER BY block_time DESC, tx_hash ASC
-		LIMIT $2 OFFSET $3;`
+		ORDER BY block_time DESC LIMIT $2 OFFSET $3;`
 
 	// SelectAddressLimitNByAddressSubQry was used in certain cases prior to
 	// sorting the block_time_index.
@@ -195,73 +170,43 @@ const (
 		GROUP BY (tx_hash, valid_mainchain, block_time)  -- merging common transactions in same valid mainchain block
 		ORDER BY block_time DESC LIMIT $2 OFFSET $3;`
 
-	SelectAddressMergedCreditView = `SELECT tx_hash, valid_mainchain, block_time, sum(value), COUNT(*)
-		FROM addresses
-		WHERE address=$1 AND is_funding = TRUE           -- funding transactions
-		GROUP BY (tx_hash, valid_mainchain, block_time)  -- merging common transactions in same valid mainchain block
+	SelectAddressDebitsLimitNByAddress = `SELECT ` + addrsColumnNames + `
+		FROM addresses WHERE address=$1 AND is_funding = FALSE AND valid_mainchain = TRUE
 		ORDER BY block_time DESC LIMIT $2 OFFSET $3;`
 
-	SelectAddressMergedViewAll = `SELECT tx_hash, valid_mainchain, block_time, sum(CASE WHEN is_funding = TRUE THEN value ELSE 0 END),
-		sum(CASE WHEN is_funding = FALSE THEN value ELSE 0 END), COUNT(*)
-		FROM addresses
-		WHERE address=$1                                 -- spending and funding transactions
-		GROUP BY (tx_hash, valid_mainchain, block_time)  -- merging common transactions in same valid mainchain block
-		ORDER BY block_time DESC`
-
-	SelectAddressMergedView = SelectAddressMergedViewAll + ` LIMIT $2 OFFSET $3;`
-
-	SelectAddressCsvView = "SELECT tx_hash, valid_mainchain, matching_tx_hash, value, block_time, is_funding, " +
-		"tx_vin_vout_index, tx_type FROM addresses WHERE address=$1 ORDER BY block_time DESC"
-
-	SelectAddressDebitsLimitNByAddress = `SELECT ` + addrsColumnNames + `
-		FROM addresses WHERE address=$1 AND is_funding = FALSE AND valid_mainchain
-		ORDER BY block_time DESC, tx_hash ASC
-		LIMIT $2 OFFSET $3;`
-
 	SelectAddressCreditsLimitNByAddress = `SELECT ` + addrsColumnNames + `
-		FROM addresses WHERE address=$1 AND is_funding AND valid_mainchain
-		ORDER BY block_time DESC, tx_hash ASC
-		LIMIT $2 OFFSET $3;`
+		FROM addresses WHERE address=$1 AND is_funding = TRUE AND valid_mainchain = TRUE
+		ORDER BY block_time DESC LIMIT $2 OFFSET $3;`
 
-	SelectAddressIDsByFundingOutpoint = `SELECT id, address, value
-		FROM addresses
-		WHERE tx_hash=$1 AND tx_vin_vout_index=$2 AND is_funding
-		ORDER BY block_time DESC;`
+	SelectAddressIDsByFundingOutpoint = `SELECT id, address, value FROM addresses WHERE tx_hash=$1 AND
+		tx_vin_vout_index=$2 AND is_funding = TRUE ORDER BY block_time DESC;`
 
 	SelectAddressIDByVoutIDAddress = `SELECT id FROM addresses WHERE address=$1 AND
-	    tx_vin_vout_row_id=$2 AND is_funding;`
+	    tx_vin_vout_row_id=$2 AND is_funding = TRUE;`
 
 	SelectAddressOldestTxBlockTime = `SELECT block_time FROM addresses WHERE
 		address=$1 ORDER BY block_time LIMIT 1;`
 
-	// selectAddressTxTypesByAddress gets the transaction type histogram for the
+	// SelectAddressTxTypesByAddress gets the transaction type histogram for the
 	// given address using block time binning with bin size of block_time.
 	// Regular transactions are grouped into (SentRtx and ReceivedRtx), SSTx
 	// defines tickets, SSGen defines votes, and SSRtx defines revocations.
-	selectAddressTxTypesByAddress = `SELECT %s as timestamp,
+	SelectAddressTxTypesByAddress = `SELECT (block_time/$1)*$1 as timestamp,
 		COUNT(CASE WHEN tx_type = 0 AND is_funding = false THEN 1 ELSE NULL END) as SentRtx,
 		COUNT(CASE WHEN tx_type = 0 AND is_funding = true THEN 1 ELSE NULL END) as ReceivedRtx,
 		COUNT(CASE WHEN tx_type = 1 THEN 1 ELSE NULL END) as SSTx,
 		COUNT(CASE WHEN tx_type = 2 THEN 1 ELSE NULL END) as SSGen,
 		COUNT(CASE WHEN tx_type = 3 THEN 1 ELSE NULL END) as SSRtx
-		FROM addresses
-		WHERE address=$1
-		GROUP BY timestamp
-		ORDER BY timestamp;`
+		FROM addresses WHERE address=$2 GROUP BY timestamp ORDER BY timestamp;`
 
-	selectAddressAmountFlowByAddress = `SELECT %s as timestamp,
+	SelectAddressAmountFlowByAddress = `SELECT (block_time/$1)*$1 as timestamp,
 		SUM(CASE WHEN is_funding = TRUE THEN value ELSE 0 END) as received,
-		SUM(CASE WHEN is_funding = FALSE THEN value ELSE 0 END) as sent
-		FROM addresses
-		WHERE address=$1
-		GROUP BY timestamp
-		ORDER BY timestamp;`
+		SUM(CASE WHEN is_funding = FALSE THEN value ELSE 0 END) as sent FROM
+		addresses WHERE address=$2 GROUP BY timestamp ORDER BY timestamp;`
 
-	selectAddressUnspentAmountByAddress = `SELECT %s as timestamp, SUM(value) as unspent
-		FROM addresses
-		WHERE address=$1 AND is_funding AND matching_tx_hash = ''
-		GROUP BY timestamp
-		ORDER BY timestamp;`
+	SelectAddressUnspentAmountByAddress = `SELECT (block_time/$1)*$1 as timestamp,
+		SUM(value) as unspent FROM addresses WHERE address=$2 AND is_funding=TRUE
+		AND matching_tx_hash ='' GROUP BY timestamp ORDER BY timestamp;`
 
 	// UPDATEs/SETs
 
@@ -269,7 +214,7 @@ const (
 	// transaction) for the addresses rows corresponding to the specified
 	// outpoint (tx_hash:tx_vin_vout_index), a funding tx row.
 	SetAddressMatchingTxHashForOutpoint = `UPDATE addresses SET matching_tx_hash=$1
-		WHERE tx_hash=$2 AND is_funding AND tx_vin_vout_index=$3`  // not terminated with ;
+		WHERE tx_hash=$2 AND is_funding = TRUE AND tx_vin_vout_index=$3`  // not terminated with ;
 
 	// AssignMatchingTxHashForOutpoint is like
 	// SetAddressMatchingTxHashForOutpoint except that it only updates rows
@@ -365,33 +310,4 @@ func MakeAddressRowInsertStatement(checked, updateOnConflict bool) string {
 		return UpsertAddressRow
 	}
 	return InsertAddressRowOnConflictDoNothing
-}
-
-// MakeSelectAddressTxTypesByAddress returns the selectAddressTxTypesByAddress query
-func MakeSelectAddressTxTypesByAddress(group string) string {
-	return formatGroupingQuery(selectAddressTxTypesByAddress, group, "block_time")
-}
-
-// MakeSelectAddressAmountFlowByAddress returns the selectAddressAmountFlowByAddress query
-func MakeSelectAddressAmountFlowByAddress(group string) string {
-	return formatGroupingQuery(selectAddressAmountFlowByAddress, group, "block_time")
-}
-
-// MakeSelectAddressUnspentAmountByAddress returns the selectAddressUnspentAmountByAddress query
-func MakeSelectAddressUnspentAmountByAddress(group string) string {
-	return formatGroupingQuery(selectAddressUnspentAmountByAddress, group, "block_time")
-}
-
-func MakeSelectAddressTimeGroupingCount(group string) string {
-	return formatGroupingQuery(selectAddressTimeGroupingCount, group, "block_time")
-}
-
-// Since date_trunc function doesn't have an option to group by "all" grouping,
-// formatGroupingQuery removes the date_trunc from the sql query as its not applicable.
-func formatGroupingQuery(mainQuery, group, column string) string {
-	if group == "all" {
-		return fmt.Sprintf(mainQuery, column)
-	}
-	subQuery := fmt.Sprintf("date_trunc('%s', %s)", group, column)
-	return fmt.Sprintf(mainQuery, subQuery)
 }

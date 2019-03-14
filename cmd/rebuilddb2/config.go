@@ -12,10 +12,10 @@ import (
 	"runtime"
 	"strings"
 
-	flags "github.com/jessevdk/go-flags"
+	flags "github.com/btcsuite/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/v4/netparams"
+	"github.com/picfight/pfcdata/v3/netparams"
 )
 
 const (
@@ -45,17 +45,16 @@ var (
 
 type config struct {
 	// General application behavior
-	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file"`
-	ShowVersion  bool   `short:"V" long:"version" description:"Display version information and exit"`
-	TestNet      bool   `long:"testnet" description:"Use the test network (default mainnet)"`
-	SimNet       bool   `long:"simnet" description:"Use the simulation test network (default mainnet)"`
-	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}"`
-	Quiet        bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error"`
-	LogDir       string `long:"logdir" description:"Directory to log output"`
-	HTTPProfile  bool   `long:"httpprof" short:"p" description:"Start HTTP profiler."`
-	CPUProfile   string `long:"cpuprofile" description:"File for CPU profiling."`
-	MemProfile   string `long:"memprofile" description:"File for mempry profiling."`
-	HidePGConfig bool   `long:"hidepgconfig" description:"Blocks logging of the PostgreSQL db configuration on system start up."`
+	ConfigFile  string `short:"C" long:"configfile" description:"Path to configuration file"`
+	ShowVersion bool   `short:"V" long:"version" description:"Display version information and exit"`
+	TestNet     bool   `long:"testnet" description:"Use the test network (default mainnet)"`
+	SimNet      bool   `long:"simnet" description:"Use the simulation test network (default mainnet)"`
+	DebugLevel  string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}"`
+	Quiet       bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error"`
+	LogDir      string `long:"logdir" description:"Directory to log output"`
+	HTTPProfile bool   `long:"httpprof" short:"p" description:"Start HTTP profiler."`
+	CPUProfile  string `long:"cpuprofile" description:"File for CPU profiling."`
+	MemProfile  string `long:"memprofile" description:"File for mempry profiling."`
 
 	// DB
 	DBHostPort             string `long:"dbhost" description:"DB host"`
