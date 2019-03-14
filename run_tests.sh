@@ -21,6 +21,10 @@ testrepo () {
   TMPFILE=$(mktemp)
   export GO111MODULE=on
 
+  go version
+  go get ./...
+  go build -v
+
   # Test application install
   go install . ./cmd/...
   if [ $? != 0 ]; then
