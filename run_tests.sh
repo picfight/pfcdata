@@ -57,7 +57,6 @@ docker run --rm -it -v $(pwd):/src picfight/$DOCKER_IMAGE_TAG /bin/bash -c "\
   rsync -ra --include-from=<(git --git-dir=/src/.git ls-files) \
   --filter=':- .gitignore' \
   /src/ /go/src/github.com/picfight/$REPO/ && \
-  cd github.com/picfight/$REPO/ && \
   bash run_tests.sh local"
 if [ $? != 0 ]; then
         echo 'docker run failed'
