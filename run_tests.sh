@@ -58,8 +58,6 @@ docker run --rm -it -v $(pwd):/src picfight/$DOCKER_IMAGE_TAG /bin/bash -c "\
   --filter=':- .gitignore' \
   /src/ /go/src/github.com/picfight/$REPO/ && \
   ls && \
-  go get ./... && \
-  go build -v && \
   bash run_tests.sh local"
 if [ $? != 0 ]; then
         echo 'docker run failed'
