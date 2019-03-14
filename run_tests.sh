@@ -13,22 +13,16 @@ set -ex
 # gometalinter (github.com/alecthomas/gometalinter) is used to run each each
 # static checker.
 
-GOVERSION=${1:-1.10}
+GOVERSION=${1:-1.11}
 REPO=pfcdata
 DOCKER_IMAGE_TAG=picfight-golang-builder-$GOVERSION
 
 testrepo () {
   TMPFILE=$(mktemp)
-
-  # Update /vendor, but not Gopkg.lock
-  dep ensure
+  export GO111MODULE=on
 
   # Test application install
-  if [ $GOVERSION == 1.10 ]; then
-    go install -i . ./cmd/...
-  else
-    go install . ./cmd/...
-  fi
+  go install . ./cmd/...
   if [ $? != 0 ]; then
     echo 'go install failed'
     exit 1
@@ -36,7 +30,7 @@ testrepo () {
 
   # Check tests
   git clone https://github.com/dcrlabs/bug-free-happiness test-data-repo
-  tar xvf test-data-repo/stakedb/test_ticket_pool.bdgr.tar.xz
+  tar xvf test-data-repo/stakedb/test_ticket_pool.bdgr.tar.xz -C ./stakedb
 
   env GORACE='halt_on_error=1' go test -v -race ./...
   if [ $? != 0 ]; then
