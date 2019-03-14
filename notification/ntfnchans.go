@@ -1,4 +1,4 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
@@ -6,12 +6,11 @@ package notification
 
 import (
 	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/pfcjson/v2"
 	"github.com/picfight/pfcd/pfcutil"
 
-	"github.com/picfight/pfcdata/v3/api/insight"
-	"github.com/picfight/pfcdata/v3/explorer"
-	"github.com/picfight/pfcdata/v3/mempool"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/pfcdata/v4/api/insight"
+	"github.com/picfight/pfcdata/v4/txhelpers"
 )
 
 const (
@@ -44,25 +43,24 @@ var NtfnChans struct {
 	UpdateStatusDBHeight              chan uint32
 	SpendTxBlockChan, RecvTxBlockChan chan *txhelpers.BlockWatchedTx
 	RelevantTxMempoolChan             chan *pfcutil.Tx
-	NewTxChan                         chan *mempool.NewTx
-	ExpNewTxChan                      chan *explorer.NewMempoolTx
+	NewTxChan                         chan *pfcjson.TxRawResult
 	InsightNewTxChan                  chan *insight.NewTx
 }
 
 // MakeNtfnChans create notification channels based on config
-func MakeNtfnChans(monitorMempool, postgresEnabled bool) {
+func MakeNtfnChans(postgresEnabled bool) {
 	// If we're monitoring for blocks OR collecting block data, these channels
 	// are necessary to handle new block notifications. Otherwise, leave them
 	// as nil so that both a send (below) blocks and a receive (in
 	// blockConnectedHandler) block. default case makes non-blocking below.
 	// quit channel case manages blockConnectedHandlers.
-	NtfnChans.ConnectChan = make(chan *chainhash.Hash, blockConnChanBuffer)
+	//NtfnChans.ConnectChan = make(chan *chainhash.Hash, blockConnChanBuffer)
 
 	// WiredDB channel for connecting new blocks
 	NtfnChans.ConnectChanWiredDB = make(chan *chainhash.Hash, blockConnChanBuffer)
 
 	// Stake DB channel for connecting new blocks - BLOCKING!
-	NtfnChans.ConnectChanStakeDB = make(chan *chainhash.Hash)
+	//NtfnChans.ConnectChanStakeDB = make(chan *chainhash.Hash)
 
 	NtfnChans.ConnectChanDcrpgDB = make(chan *chainhash.Hash, blockConnChanBuffer)
 
@@ -84,12 +82,8 @@ func MakeNtfnChans(monitorMempool, postgresEnabled bool) {
 	// 	NtfnChans.RelevantTxMempoolChan = make(chan *pfcutil.Tx, relevantMempoolTxChanBuffer)
 	// }
 
-	if monitorMempool {
-		NtfnChans.NewTxChan = make(chan *mempool.NewTx, newTxChanBuffer)
-	}
-
-	// New mempool tx chan for explorer
-	NtfnChans.ExpNewTxChan = make(chan *explorer.NewMempoolTx, expNewTxChanBuffer)
+	// New mempool tx chan for general purpose mempool monitor/collector/saver.
+	NtfnChans.NewTxChan = make(chan *pfcjson.TxRawResult, newTxChanBuffer)
 
 	if postgresEnabled {
 		NtfnChans.InsightNewTxChan = make(chan *insight.NewTx, expNewTxChanBuffer)
@@ -143,10 +137,6 @@ func CloseNtfnChans() {
 	}
 	if NtfnChans.RecvTxBlockChan != nil {
 		close(NtfnChans.RecvTxBlockChan)
-	}
-
-	if NtfnChans.ExpNewTxChan != nil {
-		close(NtfnChans.ExpNewTxChan)
 	}
 
 	if NtfnChans.InsightNewTxChan != nil {

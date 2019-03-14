@@ -24,7 +24,7 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/pfcjson/v2"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
@@ -868,7 +868,8 @@ func TxFee(msgTx *wire.MsgTx) pfcutil.Amount {
 	return pfcutil.Amount(amtIn - amtOut)
 }
 
-// TxFeeRate computes and returns the fee rate in PFC/KB for a given tx
+// TxFeeRate computes and returns the total fee in atoms and fee rate in
+// atoms/kB for a given tx.
 func TxFeeRate(msgTx *wire.MsgTx) (pfcutil.Amount, pfcutil.Amount) {
 	var amtIn int64
 	for iv := range msgTx.TxIn {
@@ -878,7 +879,19 @@ func TxFeeRate(msgTx *wire.MsgTx) (pfcutil.Amount, pfcutil.Amount) {
 	for iv := range msgTx.TxOut {
 		amtOut += msgTx.TxOut[iv].Value
 	}
-	return pfcutil.Amount(amtIn - amtOut), pfcutil.Amount(1000 * (amtIn - amtOut) / int64(msgTx.SerializeSize()))
+	txSize := int64(msgTx.SerializeSize())
+	return pfcutil.Amount(amtIn - amtOut), pfcutil.Amount(FeeRate(amtIn, amtOut, txSize))
+}
+
+// FeeRate computes the fee rate in atoms/kB for a transaction provided the
+// total amount of the transaction's inputs, the total amount of the
+// transaction's outputs, and the size of the transaction in bytes. Note that a
+// kB refers to 1000 bytes, not a kiB. If the size is 0, the returned fee is -1.
+func FeeRate(amtIn, amtOut, sizeBytes int64) int64 {
+	if sizeBytes == 0 {
+		return -1
+	}
+	return 1000 * (amtIn - amtOut) / sizeBytes
 }
 
 // TotalOutFromMsgTx computes the total value out of a MsgTx
@@ -911,7 +924,7 @@ func GenesisTxHash(params *chaincfg.Params) chainhash.Hash {
 }
 
 // IsZeroHashP2PHKAddress checks if the given address is the dummy (zero pubkey
-// hash) address. See https://github.com/picfight/pfcdata/v3/issues/358 for details.
+// hash) address. See https://github.com/picfight/pfcdata/issues/358 for details.
 func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) bool {
 	zeroed := [20]byte{}
 	// expecting DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg address for mainnet
@@ -921,6 +934,16 @@ func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) 
 	}
 	zeroAddress := address.String()
 	return checkAddressString == zeroAddress
+}
+
+// IsZeroHash checks if the Hash is the zero hash.
+func IsZeroHash(hash chainhash.Hash) bool {
+	return hash == zeroHash
+}
+
+// IsZeroHash checks if the string is the zero hash string.
+func IsZeroHashStr(hash string) bool {
+	return hash == string(zeroHashStringBytes)
 }
 
 // ValidateNetworkAddress checks if the given address is valid on the given
@@ -934,6 +957,7 @@ type AddressError error
 
 var (
 	AddressErrorNoError      AddressError = nil
+	AddressErrorBitcoin      AddressError = errors.New("possible Bitcoin address")
 	AddressErrorZeroAddress  AddressError = errors.New("null address")
 	AddressErrorWrongNet     AddressError = errors.New("wrong network")
 	AddressErrorDecodeFailed AddressError = errors.New("decoding failed")
@@ -947,17 +971,16 @@ const (
 	AddressTypeP2PK = iota
 	AddressTypeP2PKH
 	AddressTypeP2SH
+	AddressTypeBitcoin
 	AddressTypeOther
 	AddressTypeUnknown
 )
 
 // AddressValidation performs several validation checks on the given address
 // string. Initially, decoding as a PicFight address is attempted. If it fails to
-// decode, btcutil is used to try decoding it as a Bitcoin address. If both
-// decoding fails, AddressErrorDecodeFailed is returned with AddressTypeUnknown.
-// If the address is a Bitcoin address, AddressErrorBitcoin is returned with
-// AddressTypeBitcoin. If the address decoded successfully as a PicFight address,
-// it is checked against the specified network. If it is the wrong network,
+// decode, AddressErrorDecodeFailed is returned with AddressTypeUnknown.
+// If the address decoded successfully as a PicFight address, it is checked
+// against the specified network. If it is the wrong network,
 // AddressErrorWrongNet is returned with AddressTypeUnknown. If the address is
 // the correct network, the address type is obtained. A final check is performed
 // to determine if the address is the zero pubkey hash address, in which case

@@ -1,0 +1,14 @@
+/* elements */
+html {
+  color: #052f4b;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-font-smoothing: antialiased !important;
+  text-rendering: optimizelegibility !important;
+  padding-top: 45px;
+  padding-bottom: 34px;
+}
+
+::placeholder {
+  color: $gray-600;
+}

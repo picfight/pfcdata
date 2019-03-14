@@ -1,6 +1,6 @@
 language: go
 go:
-  - "1.x"
+  - 1.x
 
 addons:
   apt:
@@ -14,9 +14,6 @@ services:
 env:
   - GOVERSION=1.11
 
-before_install:
-  - chmod +x ./run_tests.sh
-
 install: true
 
 cache:
@@ -24,4 +21,4 @@ cache:
     - ~/.cache
 
 script:
-  - ./run_tests.sh $GOVERSION
+  - ./run_tests.sh docker

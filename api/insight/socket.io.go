@@ -8,14 +8,13 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/googollee/go-socket.io"
-
+	socketio "github.com/googollee/go-socket.io"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/pfcjson/v2"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/v3/blockdata"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/pfcdata/v4/blockdata"
+	"github.com/picfight/pfcdata/v4/txhelpers"
 )
 
 var isAlphaNumeric = regexp.MustCompile(`^[a-zA-Z0-9]+$`).MatchString
@@ -124,7 +123,7 @@ func NewSocketServer(newTxChan chan *NewTx, params *chaincfg.Params) (*SocketSer
 		})
 	})
 
-	server.On("error", func(so socketio.Socket, err error) {
+	server.On("error", func(_ socketio.Socket, err error) {
 		apiLog.Errorf("Insight socket.io server error: %v", err)
 	})
 

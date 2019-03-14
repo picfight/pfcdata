@@ -9,7 +9,7 @@ import (
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/pfcdata/v4/txhelpers"
 )
 
 // DevSubsidyAddress returns the development subsidy address for the specified
@@ -62,7 +62,7 @@ func processTransactions(msgBlock *wire.MsgBlock, tree int8, chainParams *chainc
 
 	blockHeight := msgBlock.Header.Height
 	blockHash := msgBlock.BlockHash()
-	blockTime := msgBlock.Header.Timestamp.Unix()
+	blockTime := NewTimeDef(msgBlock.Header.Timestamp)
 
 	dbTransactions := make([]*Tx, 0, len(txs))
 	dbTxVouts := make([][]*Vout, len(txs))

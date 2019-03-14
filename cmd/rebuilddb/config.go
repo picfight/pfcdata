@@ -7,10 +7,10 @@ import (
 	"regexp"
 	"strings"
 
-	flags "github.com/btcsuite/go-flags"
+	flags "github.com/jessevdk/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/v3/netparams"
+	"github.com/picfight/pfcdata/v4/netparams"
 )
 
 const (

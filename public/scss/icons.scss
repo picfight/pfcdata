@@ -1,0 +1,92 @@
+/* icons */
+@font-face {
+  font-family: 'icomoon';
+  src: url('/fonts/icomoon.eot?g003m6');
+  src:
+    url('/fonts/icomoon.eot?g003m6#iefix') format('embedded-opentype'),
+    url('/fonts/icomoon.ttf?g003m6') format('truetype'),
+    url('/fonts/icomoon.woff?g003m6') format('woff'),
+    url('/fonts/icomoon.svg?g003m6#icomoon') format('svg');
+  font-weight: normal;
+  font-style: normal;
+}
+
+[class^="dcricon-"],
+[class*=" dcricon-"] {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: 'icomoon', monospace !important;
+  speak: none;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dcricon-qrcode::before {
+  content: "\e9f8";
+}
+
+.dcricon-sun-fill::before {
+  content: "\e901";
+}
+
+.dcricon-sun-stroke::before {
+  content: "\e902";
+}
+
+.dcricon-decred::before {
+  content: "\e900";
+}
+
+.dcricon-download::before {
+  content: "\e95e";
+}
+
+.dcricon-block::before {
+  content: "\e906";
+}
+
+.dcricon-twoblocks::before {
+  content: "\22f0";
+}
+
+.dcricon-affirm::before {
+  content: "\1f3fb";
+}
+
+.dcricon-reject::before {
+  content: "\1f3fc";
+}
+
+.dcricon-missing::before {
+  content: "\1f3fd";
+}
+
+.dcricon-stack::before {
+  content: "\e92e";
+}
+
+.dcricon-ticket::before {
+  content: "\e905";
+}
+
+.dcricon-pickaxe::before {
+  content: "\e903";
+}
+
+.dcricon-tree::before {
+  content: "\e904";
+}
+
+.dcricon-coin-negative::before {
+  content: "\e907";
+}
+
+.dcricon-search::before {
+  content: "\e908";
+}

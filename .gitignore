@@ -9,7 +9,7 @@ debug
 *.key
 pfcdata
 pfcdata*.conf
-vendor/
+/vendor/
 *.orig
 *.db
 *.db-journal
@@ -38,9 +38,16 @@ pfcdata-testdata-gitlfs
 pfcdata-testdata
 .vendor-new
 v3
+v4
 tmp/runner-build
 node_modules/
 package-lock.json
 public/dist/
 public/js/dist/
 public/**/*.gz
+testutil/apiload/results/
+testutil/apiload/apiload.conf
+testutil/apiload/apiload
+pubsub/democlient/democlient
+dcrrates/rateserver/rateserver
+dcrrates/rateserver/logs/
