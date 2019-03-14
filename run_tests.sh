@@ -21,19 +21,7 @@ testrepo () {
   TMPFILE=$(mktemp)
 
   # Update /vendor, but not Gopkg.lock
-  dep ensure -vendor-only
-
-  # Check linters
-  gometalinter --vendor --disable-all --deadline=10m \
-    --enable=vet \
-    --enable=gosimple \
-    --enable=unconvert \
-    --enable=ineffassign \
-    ./...
-  if [ $? != 0 ]; then
-    echo 'gometalinter has some complaints'
-    exit 1
-  fi
+  dep ensure
 
   # Test application install
   if [ $GOVERSION == 1.10 ]; then
