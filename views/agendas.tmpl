@@ -6,18 +6,18 @@
         {{template "navbar" .}}
         <div class="container main">
             <div class="row justify-content-between">
-                <div class="col-md-7 col-sm-6 d-flex">
+                <div class="col-lg-14 col-sm-12 d-flex">
                     <h4 class="mb-2">Agendas</h4>
                 </div>
             </div>
             {{ if not .Agendas }}
-            <table class="table table-sm striped">
+            <table class="table">
                 <tr>
                     <td>No agendas found for {{ .NetName }}</td>
                 </tr>
             </table>
             {{ else }}
-            <table class="table table-mono-cells table-sm striped">
+            <table class="table table-mono-cells">
                 <thead>
                     <th>Agenda ID</th>
                     <th>Description</th>
@@ -31,7 +31,7 @@
                 {{range $i, $v := .Agendas}}
                 {{with $v}}
                 <tbody>
-                    <td><a href="/agenda/{{.Id}}">{{.Id}}</a></td>
+                    <td><a href="/agenda/{{.ID}}">{{.ID}}</a></td>
                     <td>{{.Description}}</td>
                     <td>{{.Mask}}</td>
                     <td>{{.Status}}</td>
@@ -43,7 +43,7 @@
                 {{end}}
                 {{end}}
             </table>
-            {{ end }}
+            {{end}}
         </div>
         {{template "footer" . }}
     </body>

@@ -1,4 +1,4 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
@@ -6,13 +6,17 @@ package explorer
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/picfight/pfcdata/v4/explorer/types"
+	pstypes "github.com/picfight/pfcdata/v4/pubsub/types"
 )
 
 const (
 	wsWriteTimeout = 10 * time.Second
-	wsReadTimeout  = 12 * time.Second
-	pingInterval   = 8 * time.Second
+	wsReadTimeout  = 60 * time.Second
+	pingInterval   = 60 * time.Second
 
 	tickerSigReset int = iota
 	tickerSigStop
@@ -21,12 +25,17 @@ const (
 	bufferTickerInterval = 5
 	newTxBufferSize      = 5
 	clientSignalSize     = 5
+)
 
-	sigNewBlock hubSignal = iota
-	sigMempoolUpdate
-	sigPingAndUserCount
-	sigNewTx
-	sigSyncStatus
+// Type aliases for the different HubSignals.
+var (
+	sigSubscribe        = pstypes.SigSubscribe
+	sigUnsubscribe      = pstypes.SigUnsubscribe
+	sigNewBlock         = pstypes.SigNewBlock
+	sigMempoolUpdate    = pstypes.SigMempoolUpdate
+	sigPingAndUserCount = pstypes.SigPingAndUserCount
+	sigNewTx            = pstypes.SigNewTx
+	sigSyncStatus       = pstypes.SigSyncStatus
 )
 
 // WebSocketMessage represents the JSON object used to send and received typed
@@ -36,37 +45,41 @@ type WebSocketMessage struct {
 	Message string `json:"message"`
 }
 
-// Event type field for an SSE event
-var eventIDs = map[hubSignal]string{
-	sigNewBlock:         "newblock",
-	sigMempoolUpdate:    "mempool",
-	sigPingAndUserCount: "ping",
-	sigNewTx:            "newtx",
-	sigSyncStatus:       "blockchainSync",
-}
-
 // WebsocketHub and its event loop manage all websocket client connections.
 // WebsocketHub is responsible for closing all connections registered with it.
 // If the event loop is running, calling (*WebsocketHub).Stop() will handle it.
 type WebsocketHub struct {
 	clients          map[*hubSpoke]*client
+	numClients       atomic.Value
 	Register         chan *clientHubSpoke
 	Unregister       chan *hubSpoke
 	HubRelay         chan hubSignal
-	NewTxChan        chan *MempoolTx
-	newTxBuffer      []*MempoolTx
-	bufferMtx        *sync.Mutex
+	NewTxChan        chan *types.MempoolTx
+	newTxBuffer      []*types.MempoolTx
+	bufferMtx        sync.Mutex
 	bufferTickerChan chan int
 	sendBufferChan   chan int
 	quitWSHandler    chan struct{}
+	dbsSyncing       atomic.Value
+}
+
+// AreDBsSyncing is a thread-safe way to fetch the boolean in dbsSyncing.
+func (wsh *WebsocketHub) AreDBsSyncing() bool {
+	syncing, ok := wsh.dbsSyncing.Load().(bool)
+	return ok && syncing
+}
+
+// SetDBsSyncing is a thread-safe way to update the dbsSyncing.
+func (wsh *WebsocketHub) SetDBsSyncing(syncing bool) {
+	wsh.dbsSyncing.Store(syncing)
 }
 
 type client struct {
 	sync.RWMutex
-	newTxs []*MempoolTx
+	newTxs []*types.MempoolTx
 }
 
-type hubSignal int
+type hubSignal = pstypes.HubSignal
 type hubSpoke chan hubSignal
 
 // NewWebsocketHub creates a new WebsocketHub
@@ -76,10 +89,9 @@ func NewWebsocketHub() *WebsocketHub {
 		Register:         make(chan *clientHubSpoke),
 		Unregister:       make(chan *hubSpoke),
 		HubRelay:         make(chan hubSignal),
-		NewTxChan:        make(chan *MempoolTx),
-		newTxBuffer:      make([]*MempoolTx, 0, newTxBufferSize),
+		NewTxChan:        make(chan *types.MempoolTx),
+		newTxBuffer:      make([]*types.MempoolTx, 0, newTxBufferSize),
 		bufferTickerChan: make(chan int, clientSignalSize),
-		bufferMtx:        new(sync.Mutex),
 		sendBufferChan:   make(chan int, clientSignalSize),
 		quitWSHandler:    make(chan struct{}),
 	}
@@ -90,9 +102,15 @@ type clientHubSpoke struct {
 	c  *hubSpoke
 }
 
-// NumClients returns the number of clients connected to the websocket hub
+// NumClients returns the number of clients connected to the websocket hub.
 func (wsh *WebsocketHub) NumClients() int {
-	return len(wsh.clients)
+	// Swallow any type assertion error since the default int of 0 is OK.
+	n, _ := wsh.numClients.Load().(int)
+	return n
+}
+
+func (wsh *WebsocketHub) setNumClients(n int) {
+	wsh.numClients.Store(n)
 }
 
 // RegisterClient registers a websocket connection with the hub, and returns a
@@ -106,6 +124,7 @@ func (wsh *WebsocketHub) RegisterClient(c *hubSpoke) *client {
 // registerClient should only be called from the run loop
 func (wsh *WebsocketHub) registerClient(ch *clientHubSpoke) {
 	wsh.clients[ch.c] = ch.cl
+	wsh.setNumClients(len(wsh.clients))
 	log.Debugf("Registered new websocket client (%d).", wsh.NumClients())
 }
 
@@ -123,9 +142,23 @@ func (wsh *WebsocketHub) unregisterClient(c *hubSpoke) {
 		return
 	}
 	delete(wsh.clients, c)
+	wsh.setNumClients(len(wsh.clients))
 
 	// Close the channel, but make sure the client didn't do it
 	safeClose(*c)
+}
+
+// unregisterAllClients should only be called from the loop in run() or when no
+// other goroutines are accessing the clients map.
+func (wsh *WebsocketHub) unregisterAllClients() {
+	spokes := make([]*hubSpoke, 0, len(wsh.clients))
+	for c := range wsh.clients {
+		spokes = append(spokes, c)
+	}
+	for _, c := range spokes {
+		delete(wsh.clients, c)
+		close(*c)
+	}
 }
 
 // Periodically ping clients over websocket connection. Stop the ping loop by
@@ -182,17 +215,19 @@ func (wsh *WebsocketHub) run() {
 	stopPing := wsh.pingClients()
 	defer close(stopPing)
 
+	defer wsh.unregisterAllClients()
+
 	for {
 	events:
 		select {
 		case hubSignal := <-wsh.HubRelay:
-			var newtx *MempoolTx
+			var newtx *types.MempoolTx
 			clientsCount := len(wsh.clients)
 
 			switch hubSignal {
 			case sigNewBlock:
 				// Do not log when explorer update status is active.
-				if !SyncExplorerUpdateStatus() {
+				if !wsh.AreDBsSyncing() && clientsCount > 0 /* TODO put clientsCount first after testing */ {
 					log.Infof("Signaling new block to %d websocket clients.", clientsCount)
 				}
 			case sigPingAndUserCount:
@@ -236,20 +271,15 @@ func (wsh *WebsocketHub) run() {
 			// end the buffer interval send loop
 			wsh.bufferTickerChan <- tickerSigStop
 
-			// unregister all clients
-			for client := range wsh.clients {
-				wsh.unregisterClient(client)
-			}
-			return
 		case <-wsh.sendBufferChan:
 			wsh.bufferMtx.Lock()
 			if len(wsh.newTxBuffer) == 0 {
 				wsh.bufferMtx.Unlock()
 				continue
 			}
-			txs := make([]*MempoolTx, len(wsh.newTxBuffer))
+			txs := make([]*types.MempoolTx, len(wsh.newTxBuffer))
 			copy(txs, wsh.newTxBuffer)
-			wsh.newTxBuffer = make([]*MempoolTx, 0, newTxBufferSize)
+			wsh.newTxBuffer = make([]*types.MempoolTx, 0, newTxBufferSize)
 			wsh.bufferMtx.Unlock()
 			if len(wsh.clients) > 0 {
 				log.Debugf("Signaling %d new tx to %d clients", len(txs), len(wsh.clients))
@@ -271,7 +301,7 @@ func (wsh *WebsocketHub) run() {
 // MaybeSendTxns adds a mempool transaction to the client broadcast buffer. If
 // the buffer is at capacity, a goroutine is launched to signal for the
 // transactions to be sent to the clients.
-func (wsh *WebsocketHub) MaybeSendTxns(tx *MempoolTx) {
+func (wsh *WebsocketHub) MaybeSendTxns(tx *types.MempoolTx) {
 	if wsh.addTxToBuffer(tx) {
 		// This is called from the event loop, so these sends channel may not be
 		// blocking.
@@ -283,7 +313,7 @@ func (wsh *WebsocketHub) MaybeSendTxns(tx *MempoolTx) {
 }
 
 // addTxToBuffer adds a tx to the buffer, then returns if the buffer is full
-func (wsh *WebsocketHub) addTxToBuffer(tx *MempoolTx) bool {
+func (wsh *WebsocketHub) addTxToBuffer(tx *types.MempoolTx) bool {
 	wsh.bufferMtx.Lock()
 	defer wsh.bufferMtx.Unlock()
 

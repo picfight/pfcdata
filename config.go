@@ -7,22 +7,26 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
-	flags "github.com/btcsuite/go-flags"
 	"github.com/caarlos0/env"
 	"github.com/decred/slog"
+	flags "github.com/jessevdk/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/netparams"
-	"github.com/picfight/pfcdata/v3/version"
+	"github.com/picfight/pfcdata/v4/db/dbtypes"
+	"github.com/picfight/pfcdata/v4/netparams"
+	"github.com/picfight/pfcdata/v4/version"
 )
 
 const (
@@ -44,25 +48,36 @@ var (
 	pfcdHomeDir              = pfcutil.AppDataDir("pfcd", false)
 	defaultDaemonRPCCertFile = filepath.Join(pfcdHomeDir, "rpc.cert")
 
-	defaultHost               = "localhost"
-	defaultHTTPProfPath       = "/p"
-	defaultAPIProto           = "http"
-	defaultAPIListen          = "127.0.0.1:7777"
-	defaultIndentJSON         = "   "
-	defaultCacheControlMaxAge = 86400
+	defaultHost                = "localhost"
+	defaultHTTPProfPath        = "/p"
+	defaultAPIProto            = "http"
+	defaultAPIPort             = "7777"
+	defaultAPIListen           = defaultHost + ":" + defaultAPIPort
+	defaultIndentJSON          = "   "
+	defaultCacheControlMaxAge  = 86400
+	defaultInsightReqRateLimit = 20.0
 
-	defaultMonitorMempool     = true
 	defaultMempoolMinInterval = 2
 	defaultMempoolMaxInterval = 120
 	defaultMPTriggerTickets   = 1
 
-	defaultDBFileName      = "pfcdata.sqlt.db"
-	defaultAgendDBFileName = "agendas.db"
+	defaultDBFileName        = "pfcdata.sqlt.db"
+	defaultAgendasDBFileName = "agendas.db"
+	defaultProposalsFileName = "proposals.db"
+	defaultPoliteiaAPIURl    = "https://proposals.picfight.org"
 
-	defaultPGHost   = "127.0.0.1:5432"
-	defaultPGUser   = "pfcdata"
-	defaultPGPass   = ""
-	defaultPGDBName = "pfcdata"
+	defaultPGHost                       = "127.0.0.1:5432"
+	defaultPGUser                       = "pfcdata"
+	defaultPGPass                       = ""
+	defaultPGDBName                     = "pfcdata"
+	defaultPGQueryTimeout time.Duration = time.Hour
+	defaultAddrCacheCap                 = 1 << 27 // 128 MiB
+
+	defaultExchangeIndex     = "USD"
+	defaultDisabledExchanges = "huobi,dragonex"
+	defaultRateCertFile      = filepath.Join(defaultHomeDir, "rpc.cert")
+
+	maxSyncStatusLimit = 5000
 )
 
 type config struct {
@@ -83,31 +98,39 @@ type config struct {
 	UseGops      bool   `short:"g" long:"gops" description:"Run with gops diagnostics agent listening. See github.com/google/gops for more information." env:"PFCDATA_USE_GOPS"`
 
 	// API
-	APIProto           string `long:"apiproto" description:"Protocol for API (http or https)" env:"PFCDATA_ENABLE_HTTPS"`
-	APIListen          string `long:"apilisten" description:"Listen address for API" env:"PFCDATA_LISTEN_URL"`
-	IndentJSON         string `long:"indentjson" description:"String for JSON indentation (default is \"   \"), when indentation is requested via URL query."`
-	UseRealIP          bool   `long:"userealip" description:"Use the RealIP middleware from the pressly/chi/middleware package to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order." env:"PFCDATA_USE_REAL_IP"`
-	CacheControlMaxAge int    `long:"cachecontrol-maxage" description:"Set CacheControl in the HTTP response header to a value in seconds for clients to cache the response. This applies only to FileServer routes." env:"PFCDATA_MAX_CACHE_AGE"`
+	APIProto            string  `long:"apiproto" description:"Protocol for API (http or https)" env:"PFCDATA_ENABLE_HTTPS"`
+	APIListen           string  `long:"apilisten" description:"Listen address for API" env:"PFCDATA_LISTEN_URL"`
+	IndentJSON          string  `long:"indentjson" description:"String for JSON indentation (default is \"   \"), when indentation is requested via URL query."`
+	UseRealIP           bool    `long:"userealip" description:"Use the RealIP middleware from the pressly/chi/middleware package to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order." env:"PFCDATA_USE_REAL_IP"`
+	CacheControlMaxAge  int     `long:"cachecontrol-maxage" description:"Set CacheControl in the HTTP response header to a value in seconds for clients to cache the response. This applies only to FileServer routes." env:"PFCDATA_MAX_CACHE_AGE"`
+	InsightReqRateLimit float64 `long:"insight-limit-rps" description:"Requests/second per client IP for the Insight API's rate limiter." env:"PFCDATA_INSIGHT_RATE_LIMIT"`
 
 	// Data I/O
-	MonitorMempool     bool   `short:"m" long:"mempool" description:"Monitor mempool for new transactions, and report ticketfee info when new tickets are added." env:"PFCDATA_ENABLE_MEMPOOL_MONITOR"`
 	MempoolMinInterval int    `long:"mp-min-interval" description:"The minimum time in seconds between mempool reports, regarless of number of new tickets seen." env:"PFCDATA_MEMPOOL_MIN_INTERVAL"`
 	MempoolMaxInterval int    `long:"mp-max-interval" description:"The maximum time in seconds between mempool reports (within a couple seconds), regarless of number of new tickets seen." env:"PFCDATA_MEMPOOL_MAX_INTERVAL"`
 	MPTriggerTickets   int    `long:"mp-ticket-trigger" description:"The number minimum number of new tickets that must be seen to trigger a new mempool report." env:"PFCDATA_MP_TRIGGER_TICKETS"`
-	DumpAllMPTix       bool   `long:"dumpallmptix" description:"Dump to file the fees of all the tickets in mempool." env:"PFCDATA_ENABLE_DUMP_ALL_MP_TIX"`
 	DBFileName         string `long:"dbfile" description:"SQLite DB file name (default is pfcdata.sqlt.db)." env:"PFCDATA_SQLITE_DB_FILE_NAME"`
-	AgendaDBFileName   string `long:"agendadbfile" description:"Agenda DB file name (default is agendas.db)." env:"PFCDATA_AGENDA_DB_FILE_NAME"`
+	AgendasDBFileName  string `long:"agendadbfile" description:"Agendas DB file name (default is agendas.db)." env:"PFCDATA_AGENDAS_DB_FILE_NAME"`
+	ProposalsFileName  string `long:"proposalsdbfile" description:"Proposals DB file name (default is proposals.db)." env:"PFCDATA_PROPOSALS_DB_FILE_NAME"`
+	PoliteiaAPIURL     string `long:"politeiaurl" description:"Defines the root API politeia URL (defaults to https://proposals.picfight.org)."`
 
-	FullMode         bool   `long:"pg" description:"Run in \"Full Mode\" mode,  enables postgresql support" env:"PFCDATA_ENABLE_FULL_MODE"`
-	PGDBName         string `long:"pgdbname" description:"PostgreSQL DB name." env:"PFCDATA_PG_DB_NAME"`
-	PGUser           string `long:"pguser" description:"PostgreSQL DB user." env:"PFCDATA_POSTGRES_USER"`
-	PGPass           string `long:"pgpass" description:"PostgreSQL DB password." env:"PFCDATA_POSTGRES_PASS"`
-	PGHost           string `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)." env:"PFCDATA_POSTGRES_HOST_URL"`
-	NoDevPrefetch    bool   `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected." env:"PFCDATA_DISABLE_DEV_PREFETCH"`
-	SyncAndQuit      bool   `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API." env:"PFCDATA_ENABLE_SYNC_N_QUIT"`
-	ImportSideChains bool   `long:"import-side-chains" description:"(experimental) Enable startup import of side chains retrieved from pfcd via getchaintips." env:"PFCDATA_IMPORT_SIDE_CHAINS"`
+	PurgeNBestBlocks int  `long:"purge-n-blocks" description:"Purge all data for the N best blocks, using the best block across all DBs if they are out of sync."`
+	FastSQLitePurge  bool `long:"fast-sqlite-purge" description:"Purge all data for the blocks above the specified height."`
 
-	SyncStatusLimit int64 `long:"sync-status-limit" description:"Sets the number of blocks behind the current best height past which only the syncing status page can be served on the running web server. Value should be greater than 2 but less than 5000."`
+	FullMode       bool          `long:"pg" description:"Run in \"Full Mode\" mode,  enables postgresql support" env:"PFCDATA_ENABLE_FULL_MODE"`
+	PGDBName       string        `long:"pgdbname" description:"PostgreSQL DB name." env:"PFCDATA_PG_DB_NAME"`
+	PGUser         string        `long:"pguser" description:"PostgreSQL DB user." env:"PFCDATA_POSTGRES_USER"`
+	PGPass         string        `long:"pgpass" description:"PostgreSQL DB password." env:"PFCDATA_POSTGRES_PASS"`
+	PGHost         string        `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)." env:"PFCDATA_POSTGRES_HOST_URL"`
+	PGQueryTimeout time.Duration `short:"T" long:"pgtimeout" description:"Timeout (a time.Duration string) for most PostgreSQL queries used for user initiated queries."`
+	HidePGConfig   bool          `long:"hidepgconfig" description:"Blocks logging of the PostgreSQL db configuration on system start up."`
+	AddrCacheCap   int           `long:"addr-cache-cap" description:"Address cache capacity in bytes."`
+
+	NoDevPrefetch    bool `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected." env:"PFCDATA_DISABLE_DEV_PREFETCH"`
+	SyncAndQuit      bool `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API." env:"PFCDATA_ENABLE_SYNC_N_QUIT"`
+	ImportSideChains bool `long:"import-side-chains" description:"(experimental) Enable startup import of side chains retrieved from pfcd via getchaintips." env:"PFCDATA_IMPORT_SIDE_CHAINS"`
+
+	SyncStatusLimit int `long:"sync-status-limit" description:"Sets the number of blocks behind the current best height past which only the syncing status page can be served on the running web server. Value should be greater than 2 but less than 5000."`
 
 	// WatchAddresses []string `short:"w" long:"watchaddress" description:"Watched address (receiving). One per line."`
 	// SMTPUser     string `long:"smtpuser" description:"SMTP user name"`
@@ -119,34 +142,48 @@ type config struct {
 	// RPC client options
 	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name" env:"PFCDATA_PFCD_USER"`
 	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password" env:"PFCDATA_PFCD_PASS"`
-	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9709, testnet: localhost:19709, simnet: localhost:19556)" env:"PFCDATA_PFCD_URL"`
+	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)" env:"PFCDATA_PFCD_URL"`
 	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file" env:"PFCDATA_PFCD_CERT"`
 	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost" env:"PFCDATA_PFCD_DISABLE_TLS"`
+
+	// ExchangeBot settings
+	EnableExchangeBot bool   `long:"exchange-monitor" description:"Enable the exchange monitor" env:"PFCDATA_MONITOR_EXCHANGES"`
+	DisabledExchanges string `long:"disable-exchange" description:"Exchanges to disable. See /exchanges/exchanges.go for available exchanges. Use a comma to separate multiple exchanges" env:"PFCDATA_DISABLE_EXCHANGES"`
+	ExchangeCurrency  string `long:"exchange-currency" description:"The default bitcoin price index. A 3-letter currency code" env:"PFCDATA_EXCHANGE_INDEX"`
+	RateMaster        string `long:"ratemaster" description:"The address of a PFCRates instance. Exchange monitoring will get all data from a PFCRates subscription." env:"PFCDATA_RATE_MASTER"`
+	RateCertificate   string `long:"ratecert" description:"File containing PFCRates TLS certificate file." env:"PFCDATA_RATE_MASTER"`
 }
 
 var (
 	defaultConfig = config{
-		HomeDir:            defaultHomeDir,
-		DataDir:            defaultDataDir,
-		LogDir:             defaultLogDir,
-		ConfigFile:         defaultConfigFile,
-		DBFileName:         defaultDBFileName,
-		AgendaDBFileName:   defaultAgendDBFileName,
-		DebugLevel:         defaultLogLevel,
-		HTTPProfPath:       defaultHTTPProfPath,
-		APIProto:           defaultAPIProto,
-		APIListen:          defaultAPIListen,
-		IndentJSON:         defaultIndentJSON,
-		CacheControlMaxAge: defaultCacheControlMaxAge,
-		PfcdCert:           defaultDaemonRPCCertFile,
-		MonitorMempool:     defaultMonitorMempool,
-		MempoolMinInterval: defaultMempoolMinInterval,
-		MempoolMaxInterval: defaultMempoolMaxInterval,
-		MPTriggerTickets:   defaultMPTriggerTickets,
-		PGDBName:           defaultPGDBName,
-		PGUser:             defaultPGUser,
-		PGPass:             defaultPGPass,
-		PGHost:             defaultPGHost,
+		HomeDir:             defaultHomeDir,
+		DataDir:             defaultDataDir,
+		LogDir:              defaultLogDir,
+		ConfigFile:          defaultConfigFile,
+		DBFileName:          defaultDBFileName,
+		AgendasDBFileName:   defaultAgendasDBFileName,
+		ProposalsFileName:   defaultProposalsFileName,
+		PoliteiaAPIURL:      defaultPoliteiaAPIURl,
+		DebugLevel:          defaultLogLevel,
+		HTTPProfPath:        defaultHTTPProfPath,
+		APIProto:            defaultAPIProto,
+		APIListen:           defaultAPIListen,
+		IndentJSON:          defaultIndentJSON,
+		CacheControlMaxAge:  defaultCacheControlMaxAge,
+		InsightReqRateLimit: defaultInsightReqRateLimit,
+		PfcdCert:            defaultDaemonRPCCertFile,
+		MempoolMinInterval:  defaultMempoolMinInterval,
+		MempoolMaxInterval:  defaultMempoolMaxInterval,
+		MPTriggerTickets:    defaultMPTriggerTickets,
+		PGDBName:            defaultPGDBName,
+		PGUser:              defaultPGUser,
+		PGPass:              defaultPGPass,
+		PGHost:              defaultPGHost,
+		PGQueryTimeout:      defaultPGQueryTimeout,
+		AddrCacheCap:        defaultAddrCacheCap,
+		ExchangeCurrency:    defaultExchangeIndex,
+		DisabledExchanges:   defaultDisabledExchanges,
+		RateCertificate:     defaultRateCertFile,
 	}
 )
 
@@ -197,6 +234,37 @@ func cleanAndExpandPath(path string) string {
 	}
 
 	return filepath.Join(homeDir, path)
+}
+
+// normalizeNetworkAddress checks for a valid local network address format and
+// adds default host and port if not present. Invalidates addresses that include
+// a protocol identifier.
+func normalizeNetworkAddress(a, defaultHost, defaultPort string) (string, error) {
+	if strings.Contains(a, "://") {
+		return a, fmt.Errorf("Address %s contains a protocol identifier, which is not allowed", a)
+	}
+	if a == "" {
+		return defaultHost + ":" + defaultPort, nil
+	}
+	host, port, err := net.SplitHostPort(a)
+	if err != nil {
+		if strings.Contains(err.Error(), "missing port in address") {
+			normalized := a + ":" + defaultPort
+			host, port, err = net.SplitHostPort(normalized)
+			if err != nil {
+				return a, fmt.Errorf("Unable to address %s after port resolution: %v", normalized, err)
+			}
+		} else {
+			return a, fmt.Errorf("Unable to normalize address %s: %v", a, err)
+		}
+	}
+	if host == "" {
+		host = defaultHost
+	}
+	if port == "" {
+		port = defaultPort
+	}
+	return host + ":" + port, nil
 }
 
 // validLogLevel returns whether or not logLevel is a valid debug log level.
@@ -483,22 +551,27 @@ func loadConfig() (*config, error) {
 		log.Warnf("%v. Disabling balance prefetch (--no-dev-prefetch).", err)
 	}
 
-	// Check if sync-status-limit value has been set. If its equal to zero then
-	// it hasn't been set.
+	// Validate SyncStatusLimit has been set. Zero means always show sync status
+	// page instead of full block explorer pages.
 	if cfg.SyncStatusLimit != 0 {
-		// sync-status-limit value should not be set to a value less than 2 or to a
-		// value greater than 5000. 5000 is the max value that can be set by the user
-		// in pfcdata.conf file.
-		if cfg.SyncStatusLimit < 2 || cfg.SyncStatusLimit > 5000 {
-			return nil, fmt.Errorf("sync-status-limit should not be set to a value " +
-				"less than 2 or more than 5000")
+		// The sync-status-limit value should not be set to a value less than 2
+		// or greater than maxSyncStatusLimit.
+		if cfg.SyncStatusLimit < 2 || cfg.SyncStatusLimit > maxSyncStatusLimit {
+			return nil, fmt.Errorf("sync-status-limit should not be set to "+
+				"a value less than 2 or more than %d", maxSyncStatusLimit)
 		}
+	}
+
+	// Validate block purge options.
+	if cfg.PurgeNBestBlocks < 0 {
+		return nil, fmt.Errorf("purge-n-blocks must be non-negative")
 	}
 
 	// Set the host names and ports to the default if the user does not specify
 	// them.
-	if cfg.PfcdServ == "" {
-		cfg.PfcdServ = defaultHost + ":" + activeNet.JSONRPCClientPort
+	cfg.PfcdServ, err = normalizeNetworkAddress(cfg.PfcdServ, defaultHost, activeNet.JSONRPCClientPort)
+	if err != nil {
+		return loadConfigError(err)
 	}
 
 	// Output folder
@@ -521,6 +594,12 @@ func loadConfig() (*config, error) {
 		cfg.DebugLevel = "error"
 	}
 
+	// Validate DB timeout. Zero or negative should be set to the large default
+	// timeout to effectively disable timeouts.
+	if cfg.PGQueryTimeout <= 0 {
+		cfg.PGQueryTimeout = defaultPGQueryTimeout
+	}
+
 	// Parse, validate, and set debug log level(s).
 	if err := parseAndSetDebugLevels(cfg.DebugLevel); err != nil {
 		err = fmt.Errorf("%s: %v", funcName, err.Error())
@@ -528,6 +607,28 @@ func loadConfig() (*config, error) {
 		parser.WriteHelp(os.Stderr)
 		return loadConfigError(err)
 	}
+
+	// Checks if the expected format of the API URL was set. It also drops any
+	// unnecessary parts of the URL.
+	urlPath, err := retrieveRootPath(cfg.PoliteiaAPIURL)
+	if err != nil {
+		return loadConfigError(err)
+	}
+	cfg.PoliteiaAPIURL = urlPath
+
+	// Check the supplied APIListen address
+	cfg.APIListen, err = normalizeNetworkAddress(cfg.APIListen, defaultHost, defaultAPIPort)
+	if err != nil {
+		return loadConfigError(err)
+	}
+
+	// Expand some additional paths.
+	cfg.PfcdCert = cleanAndExpandPath(cfg.PfcdCert)
+	cfg.DBFileName = cleanAndExpandPath(cfg.DBFileName)
+	cfg.AgendasDBFileName = cleanAndExpandPath(cfg.AgendasDBFileName)
+	cfg.ProposalsFileName = cleanAndExpandPath(cfg.ProposalsFileName)
+	cfg.RateCertificate = cleanAndExpandPath(cfg.RateCertificate)
+
 	return &cfg, nil
 }
 
@@ -543,4 +644,25 @@ func netName(chainParams *netparams.Params) string {
 		log.Warnf("Unknown network: %s", chainParams.Name)
 	}
 	return chainParams.Name
+}
+
+// retrieveRootPath drops all extra characters that are not part of the root path.
+// i.e. with input http://www.mydomain.com/xxxxx, http://www.mydomain.com should
+// be returned.
+func retrieveRootPath(path string) (string, error) {
+	r, err := url.Parse(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid '%s' url used. error: %v", path, err)
+	}
+
+	// If the url scheme or host were not found, a regex expression can be used to
+	// eliminate the unwanted part.
+	if r.Scheme == "" || r.Host == "" {
+		exp := regexp.MustCompile(`([\/?]\S*)`)
+		return exp.ReplaceAllLiteralString(path, ""), nil
+	}
+
+	r.Path = ""     // Drop any set path and the leading slash
+	r.RawQuery = "" // Drop any set Query
+	return r.String(), nil
 }

@@ -3,11 +3,11 @@ package internal
 import (
 	"fmt"
 
-	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/picfight/pfcdata/v4/db/dbtypes"
 )
 
 const (
-	CreateBlockTable = `CREATE TABLE IF NOT EXISTS blocks (  
+	CreateBlockTable = `CREATE TABLE IF NOT EXISTS blocks (
 		id SERIAL PRIMARY KEY,
 		hash TEXT NOT NULL, -- UNIQUE
 		height INT4,
@@ -15,8 +15,6 @@ const (
 		is_valid BOOLEAN,
 		is_mainchain BOOLEAN,
 		version INT4,
-		merkle_root TEXT,
-		stake_root TEXT,
 		numtx INT4,
 		num_rtx INT4,
 		tx TEXT[],
@@ -24,10 +22,9 @@ const (
 		num_stx INT4,
 		stx TEXT[],
 		stxDbIDs INT8[],
-		time INT8,
+		time TIMESTAMPTZ,
 		nonce INT8,
 		vote_bits INT2,
-		final_state BYTEA,
 		voters INT2,
 		fresh_stake INT2,
 		revocations INT2,
@@ -35,9 +32,9 @@ const (
 		bits INT4,
 		sbits INT8,
 		difficulty FLOAT8,
-		extra_data BYTEA,
 		stake_version INT4,
-		previous_hash TEXT
+		previous_hash TEXT,
+		chainwork TEXT
 	);`
 
 	// Block inserts. is_valid refers to blocks that have been validated by
@@ -47,16 +44,16 @@ const (
 
 	// insertBlockRow is the basis for several block insert/upsert statements.
 	insertBlockRow = `INSERT INTO blocks (
-		hash, height, size, is_valid, is_mainchain, version, merkle_root, stake_root,
+		hash, height, size, is_valid, is_mainchain, version,
 		numtx, num_rtx, tx, txDbIDs, num_stx, stx, stxDbIDs,
-		time, nonce, vote_bits, final_state, voters,
-		fresh_stake, revocations, pool_size, bits, sbits, 
-		difficulty, extra_data, stake_version, previous_hash)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-		$9, $10, %s, %s, $11, %s, %s,
-		$12, $13, $14, $15, $16, 
-		$17, $18, $19, $20, $21,
-		$22, $23, $24, $25) `
+		time, nonce, vote_bits, voters,
+		fresh_stake, revocations, pool_size, bits, sbits,
+		difficulty, stake_version, previous_hash, chainwork)
+	VALUES ($1, $2, $3, $4, $5, $6,
+		$7, $8, %s, %s, $9, %s, %s,
+		$10, $11, $12, $13,
+		$14, $15, $16, $17, $18,
+		$19, $20, $21, $22) `
 
 	// InsertBlockRow inserts a new block row without checking for unique index
 	// conflicts. This should only be used before the unique indexes are created
@@ -65,7 +62,7 @@ const (
 
 	// UpsertBlockRow is an upsert (insert or update on conflict), returning
 	// the inserted/updated block row id.
-	UpsertBlockRow = insertBlockRow + `ON CONFLICT (hash) DO UPDATE 
+	UpsertBlockRow = insertBlockRow + `ON CONFLICT (hash) DO UPDATE
 		SET is_valid = $4, is_mainchain = $5 RETURNING id;`
 
 	// InsertBlockRowOnConflictDoNothing allows an INSERT with a DO NOTHING on
@@ -85,13 +82,13 @@ const (
 		LIMIT  1;`
 
 	// IndexBlockTableOnHash creates the unique index uix_block_hash on (hash).
-	IndexBlockTableOnHash   = `CREATE UNIQUE INDEX uix_block_hash ON blocks(hash);`
-	DeindexBlockTableOnHash = `DROP INDEX uix_block_hash;`
+	IndexBlockTableOnHash   = `CREATE UNIQUE INDEX ` + IndexOfBlocksTableOnHash + ` ON blocks(hash);`
+	DeindexBlockTableOnHash = `DROP INDEX ` + IndexOfBlocksTableOnHash + `;`
 
 	// IndexBlocksTableOnHeight creates the index uix_block_height on (height).
 	// This is not unique because of side chains.
-	IndexBlocksTableOnHeight   = `CREATE INDEX uix_block_height ON blocks(height);`
-	DeindexBlocksTableOnHeight = `DROP INDEX uix_block_height;`
+	IndexBlocksTableOnHeight   = `CREATE INDEX ` + IndexOfBlocksTableOnHeight + ` ON blocks(height);`
+	DeindexBlocksTableOnHeight = `DROP INDEX ` + IndexOfBlocksTableOnHeight + `;`
 
 	SelectBlockByTimeRangeSQL = `SELECT hash, height, size, time, numtx
 		FROM blocks WHERE time BETWEEN $1 and $2 ORDER BY time DESC LIMIT $3;`
@@ -100,7 +97,9 @@ const (
 	SelectBlockHashByHeight = `SELECT hash FROM blocks WHERE height = $1 AND is_mainchain = true;`
 	SelectBlockHeightByHash = `SELECT height FROM blocks WHERE hash = $1;`
 
-	RetrieveBestBlock          = `SELECT * FROM blocks ORDER BY height DESC LIMIT 0, 1;`
+	SelectBlockTimeByHeight = `SELECT time FROM blocks
+		WHERE height = $1 AND is_mainchain = true;`
+
 	RetrieveBestBlockHeightAny = `SELECT id, hash, height FROM blocks
 		ORDER BY height DESC LIMIT 1;`
 	RetrieveBestBlockHeight = `SELECT id, hash, height FROM blocks
@@ -123,6 +122,21 @@ const (
 		FROM blocks
 		GROUP BY window_start
 		ORDER BY window_start DESC
+		LIMIT $2 OFFSET $3;`
+
+	SelectBlocksTimeListingByLimit = `SELECT date_trunc($1, time) as index_value,
+		MAX(height),
+		SUM(num_rtx) AS txs,
+		SUM(fresh_stake) AS tickets,
+		SUM(voters) AS votes,
+		SUM(revocations) AS revocations,
+		SUM(size) AS size,
+		COUNT(*) AS blocks_count,
+		MIN(time) AS start_time,
+		MAX(time) AS end_time
+		FROM blocks
+		GROUP BY index_value
+		ORDER BY index_value DESC
 		LIMIT $2 OFFSET $3;`
 
 	SelectBlocksBlockSize = `SELECT time, size, numtx, height FROM blocks ORDER BY time;`
@@ -160,6 +174,10 @@ const (
 		WHERE is_valid = FALSE
 		ORDER BY height DESC;`
 
+	SelectTxsPerDay = `SELECT date_trunc('day',time) AS date, sum(numtx)
+		FROM blocks
+		GROUP BY date ORDER BY date;`
+
 	// blocks table updates
 
 	UpdateLastBlockValid = `UPDATE blocks SET is_valid = $2 WHERE id = $1;`
@@ -182,8 +200,12 @@ const (
 
 	SelectBlockChainRowIDByHash = `SELECT block_db_id FROM block_chain WHERE this_hash = $1;`
 
-	UpdateBlockNext       = `UPDATE block_chain SET next_hash = $2 WHERE block_db_id = $1;`
-	UpdateBlockNextByHash = `UPDATE block_chain SET next_hash = $2 WHERE this_hash = $1;`
+	UpdateBlockNext           = `UPDATE block_chain SET next_hash = $2 WHERE block_db_id = $1;`
+	UpdateBlockNextByHash     = `UPDATE block_chain SET next_hash = $2 WHERE this_hash = $1;`
+	UpdateBlockNextByNextHash = `UPDATE block_chain SET next_hash = $2 WHERE next_hash = $1;`
+
+	// Grab the timestamp and chainwork.
+	SelectChainWork = `SELECT time, chainwork FROM blocks WHERE is_mainchain = true ORDER BY height;`
 
 	// TODO: index block_chain where needed
 )

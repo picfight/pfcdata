@@ -8,10 +8,10 @@ import (
 	"runtime/pprof"
 
 	"github.com/decred/slog"
-	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
-	"github.com/picfight/pfcdata/v3/rpcutils"
-	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/picfight/pfcd/rpcclient/v2"
+	"github.com/picfight/pfcdata/v4/db/pfcsqlite"
+	"github.com/picfight/pfcdata/v4/rpcutils"
+	"github.com/picfight/pfcdata/v4/stakedb"
 )
 
 var (
@@ -79,7 +79,7 @@ func mainCore() int {
 	dbInfo := pfcsqlite.DBInfo{FileName: cfg.DBFileName}
 	//sqliteDB, err := pfcsqlite.InitDB(&dbInfo)
 	sqliteDB, cleanupDB, err := pfcsqlite.InitWiredDB(&dbInfo, nil, client,
-		activeChain, "rebuild_data", true)
+		activeChain, "rebuild_data")
 	defer cleanupDB()
 	if err != nil {
 		log.Errorf("Unable to initialize SQLite database: %v", err)

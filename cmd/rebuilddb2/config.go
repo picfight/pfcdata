@@ -12,10 +12,10 @@ import (
 	"runtime"
 	"strings"
 
-	flags "github.com/btcsuite/go-flags"
+	flags "github.com/jessevdk/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcdata/v3/netparams"
+	"github.com/picfight/pfcdata/v4/netparams"
 )
 
 const (
@@ -45,16 +45,17 @@ var (
 
 type config struct {
 	// General application behavior
-	ConfigFile  string `short:"C" long:"configfile" description:"Path to configuration file"`
-	ShowVersion bool   `short:"V" long:"version" description:"Display version information and exit"`
-	TestNet     bool   `long:"testnet" description:"Use the test network (default mainnet)"`
-	SimNet      bool   `long:"simnet" description:"Use the simulation test network (default mainnet)"`
-	DebugLevel  string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}"`
-	Quiet       bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error"`
-	LogDir      string `long:"logdir" description:"Directory to log output"`
-	HTTPProfile bool   `long:"httpprof" short:"p" description:"Start HTTP profiler."`
-	CPUProfile  string `long:"cpuprofile" description:"File for CPU profiling."`
-	MemProfile  string `long:"memprofile" description:"File for mempry profiling."`
+	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file"`
+	ShowVersion  bool   `short:"V" long:"version" description:"Display version information and exit"`
+	TestNet      bool   `long:"testnet" description:"Use the test network (default mainnet)"`
+	SimNet       bool   `long:"simnet" description:"Use the simulation test network (default mainnet)"`
+	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}"`
+	Quiet        bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error"`
+	LogDir       string `long:"logdir" description:"Directory to log output"`
+	HTTPProfile  bool   `long:"httpprof" short:"p" description:"Start HTTP profiler."`
+	CPUProfile   string `long:"cpuprofile" description:"File for CPU profiling."`
+	MemProfile   string `long:"memprofile" description:"File for mempry profiling."`
+	HidePGConfig bool   `long:"hidepgconfig" description:"Blocks logging of the PostgreSQL db configuration on system start up."`
 
 	// DB
 	DBHostPort             string `long:"dbhost" description:"DB host"`
@@ -70,7 +71,7 @@ type config struct {
 	// RPC client options
 	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name"`
 	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password"`
-	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9709, testnet: localhost:19709, simnet: localhost:19556)"`
+	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)"`
 	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file"`
 	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost"`
 }

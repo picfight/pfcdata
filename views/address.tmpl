@@ -6,428 +6,311 @@
 <body class="{{ theme }}">
     {{template "navbar" . }}
     {{with .Data}}
-    {{$TxnCount := .TxnCount}}
+    {{$TxnCount := add .TxnCount .NumUnconfirmed}}
     {{$txType := .TxnType}}
-    <div class="container main" data-controller="address">
-        <div class="row">
-            <div class="col-md-8 col-sm-6">
-                <h4>Address</h4>
-                <div class="mono" data-target="address.addr" data-address="{{.Address}}"
-                    id="{{$.OldestTxTime}}" style="margin-bottom: 12px;">
-                    {{.Address}}<a
-                        id="qrcode-init"
-                        href="javascript:showAddressQRCode('{{.Address}}');"
-                        class="pfcicon-qrcode jsonly no-underline color-inherit p10"
-                    ></a>
-                </div>
-                <div class="row">
-                    <a href="javascript:hideAddressQRCode();"
-                        id="address-qrcode"
-                        class="col opacity-transition d-block"
-                        style="opacity: 0">
-                    </a>
-                </div>
-                {{if .IsDummyAddress}}
-                  <br/>
-                  This is a dummy address, typically used for unspendable ticket change outputs.<br/>
-                  <br/>
+    <div class="container main"
+      data-controller="address newblock"
+      data-address-offset="{{.Offset}}"
+      data-address-pfcaddress="{{.Address}}"
+      data-address-txn-count="{{$TxnCount}}"
+      data-address-balance="{{toFloat64Amount .Balance.TotalUnspent}}"
+    >
+    <div class="row pb-4 px-2">
+      <div class="col-24 col-xl-10 bg-white px-3 py-3 position-relative">
+          {{if eq .Address $.DevAddress}}
+              <div class="fs22 pb-3">PicFight Treasury</div>
+          {{else}}
+              <div class="fs22 pb-3">Address</div>
+          {{end}}
+          <div class="text-left d-flex align-items-start flex-wrap">
+            <div class="fs15 font-weight-bold break-word d-inline-block hash-box mb-3" data-target="address.addr">{{.Address}}</div>
+            <a
+              data-action="click->address#showQRCode"
+              data-target="address.qricon"
+              class="pfcicon-qrcode jsonly no-underline color-inherit clickable lh1rem ml-2 mt-2 mb-3"
+            ></a>
+            <div class="d-inline-block" data-target="address.qrbox">
+                <div data-action="click->address#hideQRCode"
+                    data-target="address.qrimg"
+                    class="qrimg clickable d-inline-block mb-3"
+                ></div>
+            </div>
+          </div>
+          <div class="position-relative d-flex justify-content-between align-items-center flex-wrap">
+            <div class="d-inline-block text-left pr-2 pb-3">
+              <span class="text-secondary fs13">Balance</span>
+              <br>
+              <span class="lh1rem d-inline-block pt-1 fs18 fs14-decimal font-weight-bold">
+                {{if .Fullmode}}
+                      {{if .Balance}}
+                          {{template "decimalParts" (amountAsDecimalParts .Balance.TotalUnspent true)}}<span class="text-secondary fs14">PFC</span>
+                      {{else}}
+                      <span class="fs18">0</span> <span class="text-secondary fs14">PFC</span>
+                      {{end}}
                 {{else}}
-                <div class="btn-group mr-auto mb-0 align-bottom address-btn"
-                    data-toggle="buttons"
-                    data-target="address.btns"
-                    data-action="click->address#changeView"
-                >
-                    <input id="addr-btn" type="button" class="btn btn_sm btn-active" value="List" name="list">
-                    <input id="addr-btn" type="button" class="btn btn_sm" value="Charts"
-                    name="chart" {{if $.IsLiteMode}}disabled{{end}}>
-                </div>
+                    {{if ge .KnownTransactions .MaxTxLimit}}
+                      unavailable
+                    {{else}}
+                      {{.AmountUnspent.ToCoin}}
+                    {{end}}
                 {{end}}
+              </span>
+              <br>
+              {{if $.FiatBalance}}
+                <span class="text-secondary fs16 lh1rem">{{threeSigFigs $.FiatBalance.Value}} <span class="fs14">{{$.FiatBalance.Index}}</span></span>
+              {{end}}
             </div>
-            <div class="col-md-4 col-sm-6 d-flex pb-3">
-                <table>
-                    <tr  class="h2rem">
-                        <td id="{{.Balance.TotalUnspent}}" class="pr-2 lh1rem vam text-right xs-w91"
-                            data-target="address.unspent">TOTAL UNSPENT</td>
-                        {{if .Fullmode}}
-                            <td class="fs28 mono nowrap fs16-decimal d-flex align-items-center justify-content-end rm-spacing">
-                                {{if .Balance}}
-                                    {{template "decimalParts" (amountAsDecimalParts .Balance.TotalUnspent true)}}<span class="pl-1 unit">PFC</span>
-                                {{else}}
-                                <span class="pl-1 unit">0.000000000 PFC</span>
-                                {{end}}
-                            </td>
-                        {{else}}
-                            {{if ge .KnownTransactions .MaxTxLimit}}
-                            <td class="fs28 mono nowrap d-flex align-items-center justify-content-end">unavailable</td>
-                            {{else}}
-                            <td class="fs28 mono nowrap fs16-decimal d-flex align-items-center justify-content-end">{{.AmountUnspent.ToCoin}}</td>
-                            {{end}}
-                        {{end}}
-                    </tr>
-                    <tr>
-                        <td class="text-right pr-2">RECEIVED</td>
-                        {{if .Fullmode}}
-                            <td class="mono nowrap text-right rm-spacing justify-content-end">
-                                {{if .Balance}}
-                                    {{$received := add .Balance.TotalSpent .Balance.TotalUnspent}}
-                                    {{template "decimalParts" (amountAsDecimalParts $received true)}}<span class="pl-1 unit">PFC</span>
-                                {{else}}
-                                <span class="pl-1 unit">0.000000000 PFC</span>
-                                {{end}}
-                            </td>
-                        {{else}}
-                            {{if ge .KnownTransactions .MaxTxLimit}}
-                            <td class="mono nowrap text-right">unavailable</td>
-                            {{else}}
-                            <td class="mono nowrap text-right">{{.AmountReceived.ToCoin}}</td>
-                            {{end}}
-                        {{end}}
-                    </tr>
-                    <tr>
-                        <td class="text-right pr-2">SPENT</td>
-                        {{if .Fullmode}}
-                            <td class="mono nowrap text-right rm-spacing justify-content-end">
-                                {{if .Balance}}
-                                    {{template "decimalParts" (amountAsDecimalParts .Balance.TotalSpent true)}}<span class="pl-1 unit">PFC</span>
-                                {{else}}
-                                <span class="pl-1 unit">0.000000000 PFC</span>
-                                {{end}}
-                            </td>
-                        {{else}}
-                            {{if ge .KnownTransactions .MaxTxLimit}}
-                            <td class="mono nowrap text-right">unavailable</td>
-                            {{else}}
-                            <td class="mono nowrap text-right">{{.AmountSent.ToCoin}}</td>
-                            {{end}}
-                        {{end}}
-                    </tr>
-                    {{if ne .NumUnconfirmed 0}}
-                        <tr>
-                            <td class="text-right pr-2">UNCONFIRMED</td>
-                            <td class="mono nowrap text-right">
-                                {{.NumUnconfirmed}} transaction{{if gt .NumUnconfirmed 0}}s{{end}}
-                            </td>
-                        </tr>
-                    {{end}}
-                </table>
+            <div class="d-inline-block text-left pr-2 pb-3">
+              <span class="text-secondary fs13">Received</span>
+              <br>
+              {{if .Fullmode}}
+                  <span class="lh1rem d-inline-block pt-1 fs18 fs14-decimal font-weight-bold">
+                      {{if .Balance}}
+                          {{$received := add .Balance.TotalSpent .Balance.TotalUnspent}}
+                          {{template "decimalParts" (amountAsDecimalParts $received true)}} <span class="text-secondary fs14">PFC</span>
+                      {{else}}
+                          <span class="fs18">0</span> <span class="text-secondary fs14">PFC</span>
+                      {{end}}
+                  </span>
+                  <br>
+                  <span class="text-secondary fs16 lh1rem">{{intComma (add .Balance.NumSpent .Balance.NumUnspent)}} outputs</span>
+              {{else}}
+                  <span class="lh1rem d-inline-block pt-1 fs18 fs14-decimal font-weight-bold">
+                      {{if ge .KnownTransactions .MaxTxLimit}}
+                        unavailable
+                      {{else}}
+                        {{.AmountReceived.ToCoin}}
+                      {{end}}
+                  </span>
+              {{end}}
+              </span>
             </div>
+            <div class="d-inline-block text-left pr-2 pb-3">
+              <span class="text-secondary fs13">Spent</span>
+              <br>
+              {{if .Fullmode}}
+                  <span class="lh1rem d-inline-block pt-1 fs18 fs14-decimal font-weight-bold">
+                  {{if .Balance}}
+                      {{template "decimalParts" (amountAsDecimalParts .Balance.TotalSpent true)}} <span class="text-secondary fs14">PFC</span>
+                  {{else}}
+                      <span class="fs18">0</span> <span class="text-secondary fs14">PFC</span>
+                  {{end}}
+                  </span>
+                  <br>
+                  <span class="text-secondary fs16 lh1rem">{{intComma .Balance.NumSpent}} inputs</span>
+              {{else}}
+                  <span class="lh1rem d-inline-block pt-1 fs18 fs14-decimal font-weight-bold">
+                  {{if ge .KnownTransactions .MaxTxLimit}}
+                      unavailable
+                  {{else}}
+                      {{.AmountSent.ToCoin}}
+                  {{end}}
+                  </span>
+              {{end}}
+            </div>
+            <span></span>
+          </div>
+          <div class="row pb-2">
+              {{if ne .NumUnconfirmed 0}}
+                <div class="col-12 pb-2 fs14 text-secondary text-left" data-target="address.numUnconfirmed">
+                    <span class="font-weight-bold">Unconfirmed</span>: <span class="addr-unconfirmed-count">{{.NumUnconfirmed}}</span>
+                </div>
+              {{end}}
+              {{if .Balance.HasStakeOutputs}}
+                <div class="col-12 pb-2 fs14 text-secondary text-left">
+                    <span class="font-weight-bold">Stake spending</span>: {{printf "%.1f" (x100 .Balance.FromStake)}}%
+                </div>
+              {{end}}
+              {{if .Balance.HasStakeInputs}}
+                <div class="col-12 pb-2 fs14 text-secondary text-left">
+                    <span class="font-weight-bold">Stake income</span>: {{printf "%.1f" (x100 .Balance.ToStake)}}%
+                </div>
+              {{end}}
+          </div>
+          <div class="row pb-3 fs16">
+            <span class="col-24"><a href="https://github.com/decred/picfight-binaries/releases">Get Pfcredit</a>, the official desktop wallet.</span>
+          </div>
+          <div class="pb-1 fs14">
+            {{if .IsDummyAddress}}
+              *This a is dummy address, typically used for unspendable ticket change outputs.
+            {{end}}
+          </div>
+      </div>
+      <div class="col-24 col-xl-14 secondary-card p-2">
+        <noscript>
+          <div class="text-center pt-5 fs15">Enable Javascript to see charts</div>
+        </noscript>
+        <div class="jsonly h-100">
+          <div class="d-flex flex-column h-100">
+            <div class="d-flex flex-wrap justify-content-around align-items-start">
+              <div class="loader-v2 loading" data-target="address.chartLoader"></div>
+              <div class="btn-group-compact d-inline-flex flex-nowrap mx-2">
+                <label>Chart</label>
+                <select
+                    class="chart-box d-inline-flex"
+                    data-target="address.options"
+                    data-action="change->address#changeGraph"
+                >
+                    <option name="balance" value="balance">Balance</option>
+                    <option name="types" value="types">Tx Type</option>
+                    <option name="amountflow" value="amountflow">Sent/Received</option>
+                </select>
+              </div>
+              <div
+                  class="btn-group-compact d-inline-flex flex-nowrap mx-2"
+                  data-toggle="buttons"
+                  data-target="address.zoom"
+                  data-action="click->address#onZoom"
+              >
+                <label>Zoom</label>
+                <button class="btn-selected" name="all" data-fixed="1">All</button>
+                <button name="year">Year</button>
+                <button name="month">Month</button>
+                <button name="week">Week</button>
+                <button name="day">Day</button>
+              </div>
+              <div
+                  class="btn-group-compact d-inline-flex flex-nowrap mx-2"
+                  data-toggle="buttons"
+                  data-txcount="{{$TxnCount}}"
+                  data-target="address.interval"
+                  data-action="click->address#changeBin"
+              >
+                  <label class="d-inline-flex pr-1">Group By </label>
+                  <button name="year">Year</button>
+                  <button class="btn-selected" name="month">Month</button>
+                  <button name="week">Week</button>
+                  <button name="day" data-fixed="1">Day</button>
+                  <button name="all" data-fixed="1">Block</button>
+              </div>
+              <div class="row flex-nowrap d-inline-flex d-hide mx-2 mb-2" data-target="address.flow"
+                  data-action="change->address#updateFlow">
+                  <label class="customcheck ml-2 d-inline-flex">Sent
+                      <input type="checkbox" value="2">
+                      <span class="checkmark sent"></span>
+                  </label>
+                  <label class="customcheck ml-2 d-inline-flex">Received
+                      <input type="checkbox" checked="checked" value="1">
+                      <span class="checkmark received"></span>
+                  </label>
+                  <label class="customcheck mx-2 d-inline-flex">Net
+                      <input type="checkbox" value="4">
+                      <span class="checkmark net"></span>
+                  </label>
+              </div>
+            </div>
+            <div class="p-3 address_chart_wrap">
+              <div class="py-5 fs16 d-none" data-target="address.noconfirms"></div>
+              <div data-target="address.chart" class="address_chart"></div>
+            </div>
+          </div>
         </div>
-
-        {{if not .IsDummyAddress}}
-        <div class="row">
-            <div class="col">
-                <div class="d-flex flex-wrap align-items-center justify-content-end mb-1">
-                    <div class="chart-display row d-hide" style="width:100%; margin:.7rem 0 0 -15px !important;">
-                        <select
-                            id="selectBox"
-                            class="chart-display mr-auto chart-box d-hide"
-                            data-target="address.options"
-                            data-action="change->address#changeGraph"
-                        >
-                            <option value="types" selected>Transaction Types</option>
-                            <option value="amountflow">Sent and Received</option>
-                            <option value="unspent">Total Unspent</option>
-                        </select>
-                        <div id="toggle-charts" class="row t-charts d-hide" data-target="address.flow"
-                            data-action="change->address#updateFlow">
-                            <label class="customcheck">Sent
-                                <input type="checkbox" value="1">
-                                <span class="checkmark sent"></span>
-                            </label>
-                            <label class="customcheck">Received
-                                <input type="checkbox" checked="checked">
-                                <span class="checkmark received" value="0"></span>
-                            </label>
-                            <label class="customcheck">Net
-                                <input type="checkbox" value="2">
-                                <span class="checkmark net"></span>
-                            </label>
-                        </div>
-                        <label style="margin: 0 1% 0 .0rem;">Zoom </label>
-                        <div
-                            class="btn-group"
-                            data-toggle="buttons"
-                            data-target="address.zoom"
-                            data-action="click->address#onZoom"
-                        >
-                            <input id="chart-zoom" type="button" class="btn btn_sm btn-active all" value="All Time" name="0">
-                            <input id="chart-zoom" type="button" class="btn btn_sm year" value="Year" name="3.154e+10">
-                            <input id="chart-zoom" type="button" class="btn btn_sm month" value="Month" name="2.628e+9">
-                            <input id="chart-zoom" type="button" class="btn btn_sm week" value="Week" name="6.048e+8">
-                            <input id="chart-zoom" type="button" class="btn btn_sm day" value="Day" name="8.64e+7">
-                        </div>
-                        <label style="margin: 0 1% 0 2%;">Group By </label>
-                        <div
-                            class="btn-group"
-                            data-toggle="buttons"
-                            data-txcount="{{$TxnCount}}"
-                            data-target="address.interval"
-                            data-action="click->address#changeGraph"
-                        >
-                            <input id="chart-size" type="button" class="btn btn_sm year" value="Year" name="yr">
-                            <input id="chart-size" type="button" class="btn btn_sm month" value="Month" name="mo">
-                            <input id="chart-size" type="button" class="btn btn_sm week" value="Week" name="wk">
-                            <input id="chart-size" type="button" class="btn btn_sm day" value="Day" name="day">
-                            <input id="chart-size" type="button" class="btn btn_sm all btn-active" value="All Blocks" name="all">
-                        </div>
-                    </div>
-                    <h5 class="mr-auto mb-0 list-display">History</h5>
-                    {{if lt .NumTransactions $TxnCount}}
-                    <div class="d-flex flex-wrap-reverse align-items-center justify-content-end list-display">
-                        <span class="fs12 nowrap text-right">
-                            {{intComma (add .Offset 1)}} &mdash; {{intComma (add .Offset .NumTransactions)}} of {{intComma $TxnCount}} transactions
-                            {{if and (not .Fullmode) (ge .KnownTransactions .MaxTxLimit)}}
-                            <sup>*</sup>
-                            {{end}}
-                        </span>
-                        <nav aria-label="address transactions navigation" data-limit="{{.Limit}}" class="ml-2">
-                            <ul class="pagination mb-0 pagination-sm">
-                                <li class="page-item {{if eq .Offset 0}}disabled{{end}}">
-                                    <a
-                                        class="page-link"
-                                        href="{{.Path}}?n={{.Limit}}&start={{if gt (subtract .Offset .Limit) 0}}{{subtract .Offset .Limit}}{{else}}0{{end}}&txntype={{$txType}}"
-                                        id="prev"
-                                    >Previous</a>
-                                </li>
-                                <li class="page-item {{if lt (subtract $TxnCount .Offset) (add .Limit 1)}}disabled{{end}}">
-                                    <a
-                                        class="page-link"
-                                        href="{{.Path}}?n={{.Limit}}&start={{add .Offset .Limit}}&txntype={{$txType}}"
-                                        id="next">
-                                        Next
-                                    </a>
-                                </li>
-                            </ul>
-                        </nav>
-                    </div>
-                    {{else}}
-                    <span class="fs12 nowrap text-right list-display">{{intComma $TxnCount}} transaction{{if gt $TxnCount 1}}s{{end}}</span>
-                    {{end}}
-                </div>
-                <div class="list-display">
-                    {{if .Transactions}}
-                    <table class="table table-mono-cells table-sm striped" style="width: 100%;">
-                        <thead>
-                            <th>Tx Type</th>
-                            <th>Input/Output ID</th>
-                            {{if eq $txType "merged_debit"}}
-                                <th># of Input(s)</th>
-                            {{else}}
-                                <th class="text-right">Credit PFC</th>
-                            {{end}}
-                            {{if eq $txType "merged_debit"}}
-                                <th class="text-center">Debit PFC</th>
-                            {{else}}
-                                <th>Debit PFC</th>
-                            {{end}}
-                            <th>Time UTC</th>
-                            <th class="jsonly">Age</th>
-                            <th>Confirms</th>
-                            <th>Size</th>
-                        </thead>
-                        <tbody>
-                            {{range $i, $v := .Transactions}}
-                            <tr {{if eq .Confirmations 0}} data-addr-tx-pending="{{.TxID}}" {{end}}>
-                                {{with $v}}
-                                <td>{{.TxType}}</td>
-                                <td><a href="/tx/{{.TxID}}/{{if .IsFunding}}out{{else}}in{{end}}/{{.InOutID}}" class="hash" data-keynav-priority>{{.IOID $txType}}</a></td>
-                                {{if eq $txType "merged_debit"}}
-                                    <td class="text-right">{{.MergedTxnCount}}</td>
-                                {{else}}
-                                    {{if ne .ReceivedTotal 0.0}}
-                                        <td class="text-right fs15">
-                                        <span class="rm-spacing-tb">{{template "decimalParts" (float64AsDecimalParts .ReceivedTotal 8 false)}}</span>
-                                        </td>
-                                    {{else}}
-                                        {{if eq .SentTotal 0.0}}
-                                        <td class="text-right">sstxcommitment</td>
-                                        {{else}}
-                                            {{if ne .MatchedTx ""}}
-                                            <td class="text-right"><a href="/tx/{{.MatchedTx}}/out/{{.MatchedTxIndex}}" class="matchhash">source</a></td>
-                                            {{else}}
-                                            <td class="text-right">N/A</td>
-                                            {{end}}
-                                        {{end}}
-                                    {{end}}
-                                {{end}}
-                                {{if ne .SentTotal 0.0}}
-                                    {{if lt 0.0 .SentTotal}}
-                                    {{if eq $txType "merged_debit"}}
-                                            <td class="text-right fs15">
-                                            <span class="rm-spacing">{{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}</span>
-                                            </td>
-                                        {{else}}
-                                            <td class="fs15">
-                                            <span class="rm-spacing">{{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}</span>
-                                            </td>
-                                        {{end}}
-                                    {{else}}
-                                        <td class="text-right fs15">N/A</td>
-                                    {{end}}
-                                {{else}}
-                                    {{if ne .MatchedTx ""}}
-                                        <td><a href="/tx/{{.MatchedTx}}/in/{{.MatchedTxIndex}}" class="matchhash">spent</a></td>
-                                    {{else}}
-                                        <td>unspent</td>
-                                    {{end}}
-                                {{end}}
-                                <td class="addr-tx-time">
-                                    {{if eq .Confirmations 0}}
-                                        Unconfirmed
-                                    {{else}}
-                                        {{.FormattedTime}}
-                                    {{end}}
-                                </td>
-                                <td class="jsonly addr-tx-age">
-                                {{if eq .Time 0}}
-                                    N/A
-                                {{else}}
-                                    <span data-controller="main" data-target="main.age" data-age="{{.Time}}"></span>
-                                {{end}}
-                                </td>
-                                <td
-                                  {{if eq .Confirmations 0}}
-                                    class="addr-tx-confirms"
-                                  {{else}}
-                                    data-tx-block-height="{{index $.TxBlockHeights $i}}"
-                                  {{end}}
-                                  >{{.Confirmations}}</td>
-                                <td class="text-right">{{.FormattedSize}}</td>
-                                {{end}}
-                            </tr>
-                            {{end}}
-                        </tbody>
-                    </table>
-                    {{else}}
-                    <table class="table table-mono-cells table-sm striped">
-                        <tr>
-                            <td>
-                                No transactions found for this address.
-                            </td>
-                        </tr>
-                    </table>
-                    {{end}}
-                    <div
-                        id="txntype-wrapper"
-                        class="d-flex align-items-center justify-content-end"
-                    >
-                        <label class="mb-0 mr-1" for="txntype">Type</label>
-                        <select
-                            name="txntype"
-                            id="txntype"
-                            class="form-control-sm mb-2 mr-sm-2 mb-sm-0 {{if not .Fullmode}}disabled{{end}}"
-                            {{if not .Fullmode}}disabled="disabled"{{end}}
-                        >
-                            <option {{if eq $txType "all"}}selected{{end}} value="all">All</option>
-                            <option {{if eq $txType "credit"}}selected{{end}} value="credit">Credits</option>
-                            <option {{if eq $txType "debit"}}selected{{end}} value="debit">Debits</option>
-                            <option {{if eq $txType "merged_debit"}}selected{{end}} value="merged_debit">Merged Debits</option>
-                        </select>
-                    </div>
-                    {{if and (not .Fullmode) (ge .KnownTransactions .MaxTxLimit)}}
-                    <div>
-                        *Limit of {{.MaxTxLimit}} transactions shown in lite mode.
-                    </div>
-                    {{end}}
-                    <div
-                        id="pagesize-wrapper"
-                        class="hidden d-flex align-items-center justify-content-end"
-                    >
-                        <label class="mb-0 mr-1" for="pagesize">Page size</label>
-                        <select
-                            name="pagesize"
-                            id="pagesize"
-                            class="form-control-sm mb-2 mr-sm-2 mb-sm-0 {{if lt $TxnCount 20}}disabled{{end}}"
-                            {{if lt $TxnCount 20}}disabled="disabled"{{end}}
-                        >
-                        {{$Txlen := len .Transactions}}
-                        {{if ge $TxnCount 20}}<option {{if eq $Txlen 20}}selected{{end}} value="20">20</option>{{end}}
-                        {{if ge $TxnCount 100}}<option {{if eq $Txlen 100}}selected{{end}} value="100">100</option>{{end}}
-                        {{if lt $TxnCount 1000}}
-                            {{if eq $TxnCount 20 100}}{{else}}<option {{if eq $Txlen $TxnCount}}selected{{end}}
-                                value="{{$TxnCount}}">{{$TxnCount}}</option>{{end}}
-                        {{end}}
-                        {{if ge $TxnCount 1000}}<option {{if eq $Txlen 1000}}selected{{end}} value="1000">1000</option>{{end}}
-                        </select>
-                    </div>
-                </div>
-                <div class="chart-display d-hide">
-                    <div id="history-chart" style="width:100%; height:500px; margin-top:20 auto;"></div>
-                    <h5 id="no-bal" class="mt-2 bal-d" style="margin:7% auto 0 auto;">There are no confirmed transactions to display.</h5>
-                </div>
-            </div> <!-- col -->
-        </div> <!-- row -->
+      </div>
+    </div>
+    {{if not .IsDummyAddress}}
+    <div class="position-relative" data-target="address.listbox">
+        <div class="row align-items-center">
+          <div class="mr-auto mb-0 h4 col-24 col-sm-6">Transactions</div>
+          <div class="d-flex flex-wrap-reverse align-items-center justify-content-end py-1 col-24 col-sm-18">
+              <span class="fs12 nowrap text-right" data-target="address.range">
+                  showing {{intComma (add .Offset 1)}} &mdash; {{intComma (add .Offset .NumTransactions)}} of
+                      <span data-target="address.txnCount" data-txn-count="{{$TxnCount}}">{{intComma $TxnCount}}</span> transactions
+                  {{if and (not .Fullmode) (ge .KnownTransactions .MaxTxLimit)}}
+                  <sup>*</sup>
+                  {{end}}
+              </span>
+              <nav aria-label="address transactions navigation"
+                    data-limit="{{.Limit}}"
+                    class="my-1 ml-2{{if ge .NumTransactions $TxnCount}} d-hide{{end}}"
+                    data-target="address.pagebuttons">
+                  <ul class="pagination mb-0 pagination-sm">
+                      <li class="page-item {{if eq .Offset 0}}disabled{{end}}"
+                          data-target="address.pageminus">
+                          <a  class="page-link"
+                              href="{{.Path}}?n={{.Limit}}&start={{if gt (subtract .Offset .Limit) 0}}{{subtract .Offset .Limit}}{{else}}0{{end}}&txntype={{$txType}}"
+                              data-turbolinks="false"
+                              data-target="address.paginator"
+                              data-action="address#prevPage"
+                          >Previous</a>
+                      </li>
+                      <li class="page-item {{if lt (subtract $TxnCount .Offset) (add .Limit 1)}}disabled{{end}}"
+                          data-target="address.pageplus">
+                          <a  class="page-link"
+                              href="{{.Path}}?n={{.Limit}}&start={{add .Offset .Limit}}&txntype={{$txType}}"
+                              data-turbolinks="false"
+                              data-target="address.paginator"
+                              data-action="address#nextPage"
+                          >Next</a>
+                      </li>
+                  </ul>
+              </nav>
+          </div>
+        </div>
+        <div class="position-relative">
+          <div class="loader-v2" data-target="address.listLoader"></div>
+          <div class="position-relative" data-target="address.table">
+            {{template "addressTable" .}}
+          </div>
+        </div>
+        <span class="fs13 py-1 d-block{{if not .IsMerged}} d-hide{{end}}" data-target="address.mergedMsg">
+            *No unconfirmed transactions shown in merged views.
+        </span>
+        <div
+            class="d-flex align-items-center justify-content-between"
+        >
+          {{if gt $TxnCount 0}}<a class="d-inline-block p-2 rounded download text-nowrap" href="/download/address/io/{{.Address}}{{if $.CRLFDownload}}?cr=true{{end}}" type="text/csv" download><span class="pfcicon-download mx-1"></span> Download CSV</a>{{end}}
+          <!-- This dummy span ensures left/right alignment of the buttons, even if one is hidden -->
+          <span></span>
+          <div class="d-inline-block text-right">
+            <label class="mb-0 mr-1" for="txntype">Type</label>
+            <select
+                name="txntype"
+                data-target="address.txntype"
+                data-action="change->address#changeTxType"
+                class="form-control-sm mb-2 mr-sm-2 mb-sm-0 {{if not .Fullmode}}disabled{{end}}"
+                {{if not .Fullmode}}disabled="disabled"{{end}}
+            >
+                <option {{if eq $txType "all"}}selected{{end}} value="all">All</option>
+                <option {{if eq $txType "credit"}}selected{{end}} value="credit">Credits</option>
+                <option {{if eq $txType "debit"}}selected{{end}} value="debit">Debits</option>
+                <option {{if eq $txType "merged"}}selected{{end}} value="merged">Merged View</option>
+                <option {{if eq $txType "merged_credit"}}selected{{end}} value="merged_credit">Merged Credits</option>
+                <option {{if eq $txType "merged_debit"}}selected{{end}} value="merged_debit">Merged Debits</option>
+            </select>
+          </div>
+        </div>
+        {{if and (not .Fullmode) (ge .KnownTransactions .MaxTxLimit)}}
+          <div>
+              *Limit of {{.MaxTxLimit}} transactions shown in lite mode.
+          </div>
         {{end}}
-    </div> <!-- container main -->
-
-    <script>
-        $(".jsonly").show()
-        $('#list-display').hide()
-
-        $("#txntype").add("#pagesize").change(function(ev) {
-            var pagesize = "20"
-            var offset = "0"
-            if (ev.currentTarget.id.indexOf("pagesize") != -1){
-                pagesize = $("#pagesize option:selected").val()
-                offset = {{.Offset}}
-            }
-
-            Turbolinks.visit(
-                window.location.pathname
-                + "?txntype="+ $("#txntype option:selected").val()
-                + "&n=" + pagesize
-                + "&start=" + offset
-            )
-        })
-
-        function showAddressQRCode() {
-            var $qrcode = $("#address-qrcode")
-            $.getScript(
-                "/js/qrcode.min.js",
-                function() {
-                    new QRCode($qrcode[0], {{.Address}});
-                    $qrcode.css({
-                        margin: "0px 0px 12px",
-                        opacity: 1
-                })
-                $("#qrcode-init").hide()
-            })
-        }
-
-        function hideAddressQRCode() {
-            $("#qrcode-init").show()
-            $("#address-qrcode").css({
-                margin: "0",
-                opacity: 0
-            })
-            .html("")
-        }
-        $('.matchhash').hover(function() {
-            hashHighLight( $(this).attr('href'), true);
-        },function() {
-            hashHighLight( $(this).attr('href'), false);
-        });
-
-        function hashHighLight(matchHash, hoverOn) {
-            $('.hash').each(function() {
-                var thisHash =$(this).attr('href');
-                if(thisHash == matchHash && hoverOn) {
-                    $(this).addClass("matching-hash");
-                }else{
-                    $(this).removeClass("matching-hash");
-                }
-            })
-        }
-
-        $('input[type=button]').on('click', function(){
-            $('input#'+this.id).removeClass('btn-active');
-            $(this).toggleClass('btn-active');
-        });
-
-    </script>
-    {{end}}
-    {{ template "footer" . }}
-    <div class="modal"></div>
+        <div
+            class="hidden d-flex align-items-center justify-content-end"
+        >
+            <label class="my-2 mr-1" for="pagesize">Page size</label>
+            <select
+                name="pagesize"
+                id="pagesize"
+                data-target="address.pagesize"
+                data-action="change->address#changePageSize"
+                class="form-control-sm mb-2 mr-sm-2 mb-sm-0 {{if lt $TxnCount 20}}disabled{{end}}"
+                {{if lt $TxnCount 20}}disabled{{end}}
+            >
+            {{$Txlen := len .Transactions}}
+            <option {{if eq $Txlen 20}}selected{{end}} value="20"{{if lt $TxnCount 20}} disabled{{end}}>20</option>
+            <option {{if eq $Txlen 100}}selected{{end}} value="100"{{if lt $TxnCount 100}} disabled{{end}}>100</option>
+              {{if lt $TxnCount 1000}}
+                  <option{{if eq $Txlen $TxnCount}} selected{{end}} value="{{$TxnCount}}"{{if le $TxnCount 100}} disabled{{end}}>{{$TxnCount}}</option>
+              {{else}}
+                  <option{{if eq $Txlen 1000}} selected{{end}} value="1000">1000</option>
+              {{end}}
+            </select>
+        </div>
+    </div>
+    {{end}} {{/* if not .IsDummyAddress */}}
+  </div> <!-- container main -->
+  {{end}} {{/* with .Data */}}
+  {{ template "footer" . }}
 
 </body>
 </html>

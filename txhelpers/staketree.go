@@ -10,7 +10,7 @@ import (
 	"github.com/picfight/pfcd/database"
 	_ "github.com/picfight/pfcd/database/ffldb" // init the ffldb driver
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient/v2"
 	"github.com/picfight/pfcd/wire"
 )
 

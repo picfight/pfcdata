@@ -20,7 +20,7 @@ type Params struct {
 // pfcd on the main network (wire.MainNet).
 var MainNetParams = Params{
 	Params:            &chaincfg.MainNetParams,
-	JSONRPCClientPort: "9709",
+	JSONRPCClientPort: "9109",
 	JSONRPCServerPort: "9110",
 	GRPCServerPort:    "9111",
 }
@@ -29,7 +29,7 @@ var MainNetParams = Params{
 // pfcd on the test network (version 3) (wire.TestNet3).
 var TestNet3Params = Params{
 	Params:            &chaincfg.TestNet3Params,
-	JSONRPCClientPort: "19709",
+	JSONRPCClientPort: "19109",
 	JSONRPCServerPort: "19110",
 	GRPCServerPort:    "19111",
 }

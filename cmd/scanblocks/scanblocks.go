@@ -12,13 +12,14 @@ import (
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient"
-	apitypes "github.com/picfight/pfcdata/v3/api/types"
-	"github.com/picfight/pfcdata/v3/rpcutils"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/pfcd/rpcclient/v2"
+	apitypes "github.com/picfight/pfcdata/v4/api/types"
+	"github.com/picfight/pfcdata/v4/db/dbtypes"
+	"github.com/picfight/pfcdata/v4/rpcutils"
+	"github.com/picfight/pfcdata/v4/txhelpers"
 )
 
-var host = flag.String("host", "127.0.0.1:9709", "node RPC host:port")
+var host = flag.String("host", "127.0.0.1:9109", "node RPC host:port")
 var user = flag.String("user", "pfcd", "node RPC username")
 var pass = flag.String("pass", "bananas", "node RPC password")
 var cert = flag.String("cert", "pfcd.cert", "node RPC TLS certificate (when notls=false)")
@@ -94,7 +95,7 @@ func mainCore() int {
 			Hash:       blockhash.String(),
 			Difficulty: diffRatio,
 			StakeDiff:  pfcutil.Amount(header.SBits).ToCoin(),
-			Time:       header.Timestamp.Unix(),
+			Time:       apitypes.TimeAPI{S: dbtypes.NewTimeDef(header.Timestamp)},
 			PoolInfo: &apitypes.TicketPoolInfo{
 				Size: header.PoolSize,
 			},
