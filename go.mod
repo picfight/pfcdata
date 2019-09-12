@@ -38,8 +38,8 @@ require (
 	github.com/oleiade/lane v1.0.0
 	github.com/onsi/gomega v1.4.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
-	github.com/picfight/pfcd v0.0.0-20190907172210-9b78639c95e0
-	github.com/picfight/pfcwallet v0.0.0-20190912130906-06a771fbcb3f
+	github.com/picfight/pfcd v0.0.0-20190911115519-ce8d5b7f07a1
+	github.com/picfight/pfcwallet v0.0.0-20190912190536-482c9d6fc54e
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/cors v1.5.0
@@ -50,7 +50,7 @@ require (
 	github.com/stretchr/testify v1.2.2 // indirect
 	github.com/vmihailenco/msgpack v3.3.3+incompatible // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2 // indirect
-	golang.org/x/net v0.0.0-20190909003024-a7b16738d86b
+	golang.org/x/net v0.0.0-20190912160710-24e19bdeb0f2
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	gopkg.in/airbrake/gobrake.v2 v2.0.9 // indirect
 	gopkg.in/gemnasium/logrus-airbrake-hook.v2 v2.1.2 // indirect
