@@ -6,7 +6,6 @@ require (
 	github.com/Sereal/Sereal v0.0.0-20180727013122-68c42fd7bfdf // indirect
 	github.com/asdine/storm v2.1.1+incompatible
 	github.com/btcsuite/go-flags v0.0.0-20150116065318-6c288d648c1c
-	github.com/btcsuite/goleveldb v1.0.0 // indirect
 	github.com/caarlos0/env v3.3.0+incompatible
 	github.com/chappjc/logrus-prefix v0.0.0-20180227015900-3a1d64819adb
 	github.com/chappjc/trylock v1.0.0
@@ -38,8 +37,8 @@ require (
 	github.com/oleiade/lane v1.0.0
 	github.com/onsi/gomega v1.4.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
-	github.com/picfight/pfcd v0.0.0-20190911115519-ce8d5b7f07a1
-	github.com/picfight/pfcwallet v0.0.0-20190912190536-482c9d6fc54e
+	github.com/picfight/pfcd v0.0.0-20190912192232-982689204370
+	github.com/picfight/pfcwallet v0.0.0-20190912192604-6ad019be1536
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/cors v1.5.0

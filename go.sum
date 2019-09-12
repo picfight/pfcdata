@@ -13,6 +13,7 @@ github.com/btcsuite/go-flags v0.0.0-20150116065318-6c288d648c1c/go.mod h1:FAMFTQ
 github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd/go.mod h1:HHNXQzUsZCxOoE+CPiyCTO6x34Zs86zZUiwtpXoGdtg=
 github.com/btcsuite/goleveldb v1.0.0/go.mod h1:QiK9vBlgftBg6rWQIj6wFzbPfRjiykIEhBH4obrXJ/I=
 github.com/btcsuite/snappy-go v1.0.0/go.mod h1:8woku9dyThutzjeg+3xrA5iCpBRH8XEEg3lh6TiUghc=
+github.com/btcsuite/winsvc v1.0.0/go.mod h1:jsenWakMcC0zFBFurPLEAyrnc/teJEM1O46fmI40EZs=
 github.com/caarlos0/env v3.3.0+incompatible h1:jCfY0ilpzC2FFViyZyDKCxKybDESTwaR+ebh8zm6AOE=
 github.com/caarlos0/env v3.3.0+incompatible/go.mod h1:tdCsowwCzMLdkqRYDlHpZCp2UooDD3MspDBjZ2AD02Y=
 github.com/chappjc/logrus-prefix v0.0.0-20180227015900-3a1d64819adb h1:aZTKxMminKeQWHtzJBbV8TttfTxzdJ+7iEJFE6FmUzg=
@@ -85,10 +86,10 @@ github.com/onsi/gomega v1.4.1/go.mod h1:C1qb7wdrVGGVU+Z6iS04AVkA3Q65CEZX59MT0QO5
 github.com/onsi/gomega v1.4.2/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
-github.com/picfight/pfcd v0.0.0-20190911115519-ce8d5b7f07a1 h1:SOcrUOjbNgPeUtHyMBPS8FKyZdSOt+WzYjh81xbEPpo=
-github.com/picfight/pfcd v0.0.0-20190911115519-ce8d5b7f07a1/go.mod h1:pI2gIaAMoovLdAsJQ2vi1wSdUx8s+IBpkfpqlsYKsOI=
-github.com/picfight/pfcwallet v0.0.0-20190912190536-482c9d6fc54e h1:ZIoHvt/yUHiJfatqYVaUir86A8zxxgPFxEjyJc9jfDk=
-github.com/picfight/pfcwallet v0.0.0-20190912190536-482c9d6fc54e/go.mod h1:MEKqduLi++yOaCQoBSEBNf1jXZRSf4uHbzlayvnTxxY=
+github.com/picfight/pfcd v0.0.0-20190912192232-982689204370 h1:utu73AyJa/zzslBKZ/gP155sbQ21YVEHWqpMGZFENeg=
+github.com/picfight/pfcd v0.0.0-20190912192232-982689204370/go.mod h1:cij2uPamHbNccgfRGj/PYLD4Kwy8KBgPQHIxtbVHOT4=
+github.com/picfight/pfcwallet v0.0.0-20190912192604-6ad019be1536 h1:vem1DObp/tOngUE9c+/hXUpEXiRZVdfIuQDISeb8XfI=
+github.com/picfight/pfcwallet v0.0.0-20190912192604-6ad019be1536/go.mod h1:tbumqkCP3CINMCWmCtDg9okO7/e/evSNH5uwuGR0X0Y=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
