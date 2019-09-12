@@ -1,11 +1,6 @@
 language: go
 go:
-  - "1.x"
-
-addons:
-  apt:
-    packages:
-    - xz-utils
+  - 1.x
 
 sudo: required
 services:
@@ -24,4 +19,5 @@ cache:
     - ~/.cache
 
 script:
-  - ./run_tests.sh $GOVERSION
+  - ./run_tests.sh docker
+
