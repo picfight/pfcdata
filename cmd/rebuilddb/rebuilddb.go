@@ -8,10 +8,10 @@ import (
 	"runtime/pprof"
 
 	"github.com/decred/slog"
-	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
-	"github.com/picfight/pfcdata/v3/rpcutils"
-	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/picfight/pfcd/rpcclient/v2"
+	"github.com/picfight/pfcdata/db/pfcsqlite/v2"
+	"github.com/picfight/pfcdata/rpcutils"
+	"github.com/picfight/pfcdata/stakedb"
 )
 
 var (
@@ -56,7 +56,7 @@ func mainCore() int {
 
 	// Connect to node RPC server
 	client, _, err := rpcutils.ConnectNodeRPC(cfg.PfcdServ, cfg.PfcdUser,
-		cfg.PfcdPass, cfg.PfcdCert, cfg.DisableDaemonTLS)
+		cfg.PfcdPass, cfg.PfcdCert, cfg.DisableDaemonTLS, false)
 	if err != nil {
 		log.Fatalf("Unable to connect to RPC server: %v", err)
 		return 1
@@ -79,7 +79,7 @@ func mainCore() int {
 	dbInfo := pfcsqlite.DBInfo{FileName: cfg.DBFileName}
 	//sqliteDB, err := pfcsqlite.InitDB(&dbInfo)
 	sqliteDB, cleanupDB, err := pfcsqlite.InitWiredDB(&dbInfo, nil, client,
-		activeChain, "rebuild_data", true)
+		activeChain, "rebuild_data", func() {})
 	defer cleanupDB()
 	if err != nil {
 		log.Errorf("Unable to initialize SQLite database: %v", err)

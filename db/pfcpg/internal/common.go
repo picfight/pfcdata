@@ -1,64 +1,78 @@
 package internal
 
-import "fmt"
+import (
+	"bytes"
+	"strconv"
+)
 
 const (
 	IndexExists = `SELECT 1
-FROM   pg_class c
-JOIN   pg_namespace n ON n.oid = c.relnamespace
-WHERE  c.relname = $1 AND n.nspname = $2;`
+		FROM   pg_class c
+		JOIN   pg_namespace n ON n.oid = c.relnamespace
+		WHERE  c.relname = $1 AND n.nspname = $2;`
 
 	IndexIsUnique = `SELECT indisunique
-FROM   pg_index i
-JOIN   pg_class c ON c.oid = i.indexrelid
-JOIN   pg_namespace n ON n.oid = c.relnamespace
-WHERE  c.relname = $1 AND n.nspname = $2`
+		FROM   pg_index i
+		JOIN   pg_class c ON c.oid = i.indexrelid
+		JOIN   pg_namespace n ON n.oid = c.relnamespace
+		WHERE  c.relname = $1 AND n.nspname = $2`
+
+	CreateTestingTable = `CREATE TABLE IF NOT EXISTS testing (
+		id SERIAL8 PRIMARY KEY,
+		timestamp TIMESTAMP,
+		timestamptz TIMESTAMPTZ
+	);`
 )
 
 func makeARRAYOfTEXT(text []string) string {
 	if len(text) == 0 {
 		return "ARRAY['']"
 	}
-	sTEXTARRAY := "ARRAY["
+	buffer := bytes.NewBufferString("ARRAY[")
 	for i, txt := range text {
 		if i == len(text)-1 {
-			sTEXTARRAY += fmt.Sprintf(`'%s'`, txt)
+			buffer.WriteString(`'` + txt + `'`)
 			break
 		}
-		sTEXTARRAY += fmt.Sprintf(`'%s', `, txt)
+		buffer.WriteString(`'` + txt + `', `)
 	}
-	sTEXTARRAY += "]"
-	return sTEXTARRAY
+	buffer.WriteString("]")
+
+	return buffer.String()
 }
 
 func makeARRAYOfUnquotedTEXT(text []string) string {
 	if len(text) == 0 {
 		return "ARRAY[]"
 	}
-	sTEXTARRAY := "ARRAY["
+	buffer := bytes.NewBufferString("ARRAY[")
 	for i, txt := range text {
 		if i == len(text)-1 {
-			sTEXTARRAY += txt
+			buffer.WriteString(txt)
 			break
 		}
-		sTEXTARRAY += fmt.Sprintf(`%s, `, txt)
+		buffer.WriteString(txt + `, `)
 	}
-	sTEXTARRAY += "]"
-	return sTEXTARRAY
+	buffer.WriteString("]")
+
+	return buffer.String()
 }
 
 func makeARRAYOfBIGINTs(ints []uint64) string {
 	if len(ints) == 0 {
 		return "ARRAY[]::BIGINT[]"
 	}
-	ARRAY := "ARRAY["
+
+	buffer := bytes.NewBufferString("ARRAY[")
 	for i, v := range ints {
+		u := strconv.FormatUint(v, 10)
 		if i == len(ints)-1 {
-			ARRAY += fmt.Sprintf(`%d`, v)
+			buffer.WriteString(u)
 			break
 		}
-		ARRAY += fmt.Sprintf(`%d, `, v)
+		buffer.WriteString(u + `, `)
 	}
-	ARRAY += "]"
-	return ARRAY
+	buffer.WriteString("]")
+
+	return buffer.String()
 }

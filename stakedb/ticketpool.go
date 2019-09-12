@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/asdine/storm"
+	"github.com/decred/slog"
 	"github.com/dgraph-io/badger"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 )
@@ -24,7 +26,7 @@ import (
 // stores these diffs, with a cursor pointing to the next unapplied diff. An
 // on-disk database of diffs is maintained using the badger database.
 type TicketPool struct {
-	*sync.RWMutex
+	mtx    sync.RWMutex
 	cursor int64
 	tip    int64
 	diffs  []PoolDiff
@@ -46,17 +48,130 @@ type PoolDiffDBItem struct {
 	PoolDiff `storm:"inline"`
 }
 
+type badgerLogger struct {
+	slog.Logger
+}
+
+type logLevel int
+
+const (
+	logLevelSquash logLevel = iota
+	logLevelTrace
+	logLevelDebug
+	logLevelInfo
+	logLevelWarn
+	logLevelError
+)
+
+var logLevelOverrides = map[string]logLevel{
+	"Replaying file id:":                logLevelTrace,
+	"Replay took:":                      logLevelTrace,
+	"Storing value log head:":           logLevelTrace,
+	"Force compaction on level":         logLevelTrace,
+	"While forcing compaction on level": logLevelDebug,
+}
+
+// logf is used to filter the log messages from badger. It does the following:
+// removes trailing newlines, overrides the log level if the message is
+// recognized in the logLevelOverrides map, and then adds the prefix "badger: ".
+// If there are no log level overrides for the message, the provided
+// defaultLevel is used.
+func (l *badgerLogger) logf(defaultLevel logLevel, format string, v ...interface{}) {
+	// Badger randomly appends newlines. Strip them.
+	format = strings.TrimSuffix(format, "\n")
+
+	// Generate the log message for filtering.
+	message := fmt.Sprintf(format, v...)
+
+	// Check each known message prefix for a logLevel override.
+	level := defaultLevel
+	for substr, lvl := range logLevelOverrides {
+		if strings.HasPrefix(message, substr) { // consider Contains
+			level = lvl
+			break
+		}
+	}
+
+	message = "badger: " + message
+
+	switch level {
+	case logLevelSquash:
+		// Do not log these messages.
+	case logLevelTrace:
+		l.Logger.Tracef(message)
+	case logLevelDebug:
+		l.Logger.Debugf(message)
+	case logLevelInfo:
+		l.Logger.Infof(message)
+	case logLevelWarn:
+		l.Logger.Warnf(message)
+	case logLevelError:
+		l.Logger.Errorf(message)
+	default:
+		// Unknown log levels are logged as warnings.
+		l.Logger.Warnf(message)
+	}
+}
+
+// Infof filters messages through logf with logLevelInfo before sending the
+// message to the slog.Logger.
+func (l *badgerLogger) Infof(format string, v ...interface{}) {
+	l.logf(logLevelInfo, format, v...)
+}
+
+// Warningf filters messages through logf with logLevelWarn before sending the
+// message to the slog.Logger.
+func (l *badgerLogger) Warningf(format string, v ...interface{}) {
+	l.logf(logLevelWarn, format, v...)
+}
+
+// Errorf filters messages through logf with logLevelError before sending the
+// message to the slog.Logger.
+func (l *badgerLogger) Errorf(format string, v ...interface{}) {
+	l.logf(logLevelError, format, v...)
+}
+
 // NewTicketPool constructs a TicketPool by opening the persistent diff db,
 // loading all known diffs, initializing the TicketPool values.
-func NewTicketPool(dataDir, dbSubDir string) (*TicketPool, error) {
+func NewTicketPool(dataDir, dbSubDir string) (tp *TicketPool, err error) {
 	// Open ticket pool diffs database
 	badgerDbPath := filepath.Join(dataDir, dbSubDir)
 	opts := badger.DefaultOptions
 	opts.Dir = badgerDbPath
 	opts.ValueDir = badgerDbPath
+	opts.Logger = &badgerLogger{log}
 	db, err := badger.Open(opts)
+	if err == badger.ErrTruncateNeeded {
+		log.Warnf("NewTicketPool badger db: %v", err)
+		// Try again with value log truncation enabled.
+		opts.Truncate = true
+		log.Warnf("Attempting to reopening ticket pool db with the Truncate option set...")
+		db, err = badger.Open(opts)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed badger.Open: %v", err)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			db.Close()
+			panic(r)
+		}
+		if err != nil {
+			db.Close()
+		}
+	}()
+
+	// Attempt garbage collection of badger value log. If greater than
+	// rewriteThreshold of the space was discarded, rewrite the entire value
+	// log. However, there should be few discards as chain reorgs that cause
+	// data to be deleted are a small percentage of the ticket pool data.
+	rewriteThreshold := 0.5
+	err = db.RunValueLogGC(rewriteThreshold)
+	if err != nil {
+		if err != badger.ErrNoRewrite {
+			return nil, fmt.Errorf("failed badger.RunValueLogGC: %v", err)
+		}
+		log.Debugf("badger value log not rewritten (OK).")
 	}
 
 	// Attempt migration from storm to badger if badger was empty
@@ -78,34 +193,18 @@ func NewTicketPool(dataDir, dbSubDir string) (*TicketPool, error) {
 
 	// Load all diffs
 	log.Infof("Loading all ticket pool diffs...")
-	var poolDiffs []PoolDiffDBItem
-	poolDiffs, err = LoadAllPoolDiffs(db)
+	poolDiffs, err := LoadAllPoolDiffs(db)
 	if err != nil {
 		return nil, fmt.Errorf("failed LoadAllPoolDiffs: %v", err)
 	}
-
-	if len(poolDiffs) > 0 {
-		log.Debugf("len(poolDiffs)=%d", len(poolDiffs))
-		endHeight := poolDiffs[len(poolDiffs)-1].Height
-		log.Debugf("poolDiffs[0].Height=%d, poolDiffs[end].Height=%d",
-			poolDiffs[0].Height, endHeight)
-		if int64(len(poolDiffs)) != endHeight {
-			panic(fmt.Sprintf("last poolDiff Height (%d) != %d", endHeight, len(poolDiffs)))
-		}
-	}
-
-	diffs := make([]PoolDiff, len(poolDiffs))
-	for i := range poolDiffs {
-		diffs[i] = poolDiffs[i].PoolDiff
-	}
+	log.Infof("Successfully loaded %d ticket pool diffs", len(poolDiffs))
 
 	// Construct TicketPool with loaded diffs and diff DB
 	return &TicketPool{
-		RWMutex: new(sync.RWMutex),
-		pool:    make(map[chainhash.Hash]struct{}),
-		diffs:   diffs,             // make([]PoolDiff, 0, 100000)
-		tip:     int64(len(diffs)), // number of blocks connected over genesis
-		diffDB:  db,
+		pool:   make(map[chainhash.Hash]struct{}),
+		diffs:  poolDiffs,
+		tip:    int64(len(poolDiffs)), // number of blocks connected over genesis
+		diffDB: db,
 	}, nil
 }
 
@@ -171,8 +270,8 @@ func MigrateFromStorm(stormDBFile string, db *badger.DB) (bool, error) {
 }
 
 // LoadAllPoolDiffs loads all found ticket pool diffs from badger DB.
-func LoadAllPoolDiffs(db *badger.DB) ([]PoolDiffDBItem, error) {
-	var poolDiffs []PoolDiffDBItem
+func LoadAllPoolDiffs(db *badger.DB) ([]PoolDiff, error) {
+	var poolDiffs []PoolDiff
 	err := db.View(func(txn *badger.Txn) error {
 		// Create the badger iterator
 		opts := badger.IteratorOptions{
@@ -184,37 +283,44 @@ func LoadAllPoolDiffs(db *badger.DB) ([]PoolDiffDBItem, error) {
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		var hashesBytes []byte
 		var lastheight uint64
 		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
 			height := binary.BigEndian.Uint64(item.Key())
 
-			var err error
-			hashesBytes, err = item.ValueCopy(hashesBytes)
-			if err != nil {
-				log.Warnf("Key [%x]. Error while fetching value [%v]\n", item.Key(), err)
-				continue
+			// Don't waste time with a copy since we are going to read the data in
+			// this transaction.
+			var hashReader bytes.Reader
+			//nolint:unparam
+			errTx := item.Value(func(v []byte) error {
+				hashReader.Reset(v)
+				return nil
+			})
+			if errTx != nil {
+				return fmt.Errorf("key [%x]. Error while fetching value [%v]",
+					item.Key(), errTx)
 			}
-
-			hashReader := bytes.NewReader(hashesBytes)
 
 			var poolDiff PoolDiff
-			if err = gob.NewDecoder(hashReader).Decode(&poolDiff); err != nil {
-				log.Errorf("failed to decode PoolDiff[%d]: %v", height, hashesBytes)
-				return err
+			if errTx = gob.NewDecoder(&hashReader).Decode(&poolDiff); errTx != nil {
+				log.Errorf("failed to decode PoolDiff[%d]: %v", height, errTx)
+				return errTx
 			}
 
-			poolDiffs = append(poolDiffs, PoolDiffDBItem{
-				Height:   int64(height),
-				PoolDiff: poolDiff,
-			})
-
+			poolDiffs = append(poolDiffs, poolDiff)
 			if lastheight+1 != height {
 				panic(fmt.Sprintf("height: %d, lastheight: %d", height, lastheight))
 			}
 			lastheight = height
 		}
+		// extra sanity check
+		poolDiffLen := uint64(len(poolDiffs))
+		if poolDiffLen > 0 {
+			if poolDiffLen != lastheight {
+				panic(fmt.Sprintf("last poolDiff Height (%d) != %d", lastheight, poolDiffLen))
+			}
+		}
+
 		return nil
 	})
 	return poolDiffs, err
@@ -227,15 +333,15 @@ func (tp *TicketPool) Close() error {
 
 // Tip returns the current length of the diffs slice.
 func (tp *TicketPool) Tip() int64 {
-	tp.RLock()
-	defer tp.RUnlock()
+	tp.mtx.RLock()
+	defer tp.mtx.RUnlock()
 	return tp.tip
 }
 
 // Cursor returns the current cursor, the location of the next unapplied diff.
 func (tp *TicketPool) Cursor() int64 {
-	tp.RLock()
-	defer tp.RUnlock()
+	tp.mtx.RLock()
+	defer tp.mtx.RUnlock()
 	return tp.cursor
 }
 
@@ -266,8 +372,8 @@ func (tp *TicketPool) trim() (int64, PoolDiff) {
 // Trim removes the end diff and decrements the tip height. If the cursor would
 // fall beyond the end of the diffs, the removed diffs are applied in reverse.
 func (tp *TicketPool) Trim() (int64, PoolDiff) {
-	tp.Lock()
-	defer tp.Unlock()
+	tp.mtx.Lock()
+	defer tp.mtx.Unlock()
 	return tp.trim()
 }
 
@@ -293,10 +399,11 @@ func storeDiffs(db *badger.DB, diffs []*PoolDiff, heights []int64) error {
 		return
 	}
 
+	poolDiffBuffer := new(bytes.Buffer)
 	txn := db.NewTransaction(true)
 	for i, h := range heights {
 		heightBytes := heightToBytes(h)
-		poolDiffBuffer := new(bytes.Buffer)
+		poolDiffBuffer.Reset()
 		gobEnc := gob.NewEncoder(poolDiffBuffer)
 		err := gobEnc.Encode(diffs[i])
 		if err != nil {
@@ -306,7 +413,7 @@ func storeDiffs(db *badger.DB, diffs []*PoolDiff, heights []int64) error {
 		err = txn.Set(heightBytes[:], poolDiffBuffer.Bytes())
 		// If this transaction got too big, commit and make a new one
 		if err == badger.ErrTxnTooBig {
-			if err = txn.Commit(nil); err != nil {
+			if err = txn.Commit(); err != nil {
 				txn.Discard()
 				return err
 			}
@@ -320,9 +427,8 @@ func storeDiffs(db *badger.DB, diffs []*PoolDiff, heights []int64) error {
 			txn.Discard()
 			return err
 		}
-		//poolDiffBuffer.Reset()
 	}
-	return txn.Commit(nil)
+	return txn.Commit()
 }
 
 func (tp *TicketPool) storeDiff(diff *PoolDiff, height int64) error {
@@ -336,20 +442,28 @@ func (tp *TicketPool) fetchDiff(height int64) (*PoolDiffDBItem, error) {
 
 	var diff *PoolDiffDBItem
 	err := tp.diffDB.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(heightBytes[:])
-		if err != nil {
-			return fmt.Errorf("failed to find height %d in TicketPool", height)
-		}
-		hashesBytes, err := item.Value()
-		if err != nil {
-			return fmt.Errorf("key [%x]. Error while fetching value [%v]", item.Key(), err)
+		item, errTx := txn.Get(heightBytes[:])
+		if errTx != nil {
+			return fmt.Errorf("failed to find height %d in TicketPool: %v",
+				height, errTx)
 		}
 
-		hashReader := bytes.NewReader(hashesBytes)
+		// Don't waste time with a copy since we are going to read the data in
+		// this transaction.
+		var hashReader bytes.Reader
+		//nolint:unparam
+		errTx = item.Value(func(v []byte) error {
+			hashReader.Reset(v)
+			return nil
+		})
+		if errTx != nil {
+			return fmt.Errorf("key [%x]. Error while fetching value [%v]",
+				item.Key(), errTx)
+		}
 
 		var poolDiff PoolDiff
-		if err = gob.NewDecoder(hashReader).Decode(&poolDiff); err != nil {
-			return fmt.Errorf("failed to decode PoolDiff")
+		if errTx = gob.NewDecoder(&hashReader).Decode(&poolDiff); errTx != nil {
+			return fmt.Errorf("failed to decode PoolDiff: %v", errTx)
 		}
 
 		diff = &PoolDiffDBItem{
@@ -369,8 +483,8 @@ func (tp *TicketPool) Append(diff *PoolDiff, height int64) error {
 	if height != tp.tip+1 {
 		return fmt.Errorf("block height %d does not build on %d", height, tp.tip)
 	}
-	tp.Lock()
-	defer tp.Unlock()
+	tp.mtx.Lock()
+	defer tp.mtx.Unlock()
 	tp.append(diff)
 	return tp.storeDiff(diff, height)
 }
@@ -381,8 +495,8 @@ func (tp *TicketPool) AppendAndAdvancePool(diff *PoolDiff, height int64) error {
 	if height != tp.tip+1 {
 		return fmt.Errorf("block height %d does not build on %d", height, tp.tip)
 	}
-	tp.Lock()
-	defer tp.Unlock()
+	tp.mtx.Lock()
+	defer tp.mtx.Unlock()
 	tp.append(diff)
 	if err := tp.storeDiff(diff, height); err != nil {
 		return err
@@ -407,15 +521,15 @@ func (tp *TicketPool) currentPool() ([]chainhash.Hash, int64) {
 // the ticket hashes is random as they are extracted from a the pool map with a
 // range statement.
 func (tp *TicketPool) CurrentPool() ([]chainhash.Hash, int64) {
-	tp.RLock()
-	defer tp.RUnlock()
+	tp.mtx.RLock()
+	defer tp.mtx.RUnlock()
 	return tp.currentPool()
 }
 
 // CurrentPoolSize returns the number of tickets stored in the current pool map.
 func (tp *TicketPool) CurrentPoolSize() int {
-	tp.RLock()
-	defer tp.RUnlock()
+	tp.mtx.RLock()
+	defer tp.mtx.RUnlock()
 	return len(tp.pool)
 }
 
@@ -423,8 +537,8 @@ func (tp *TicketPool) CurrentPoolSize() int {
 // will advance/retreat the cursor as needed to reach the desired height, and
 // then extract the tickets from the resulting pool map.
 func (tp *TicketPool) Pool(height int64) ([]chainhash.Hash, error) {
-	tp.Lock()
-	defer tp.Unlock()
+	tp.mtx.Lock()
+	defer tp.mtx.Unlock()
 
 	if height > tp.tip {
 		return nil, fmt.Errorf("block height %d is not connected yet, tip is %d", height, tp.tip)
@@ -486,8 +600,8 @@ func (tp *TicketPool) advanceTo(height int64) error {
 // the cursor will stop just beyond the last element of the diffs slice. It will
 // not be possible to advance further, only retreat.
 func (tp *TicketPool) AdvanceToTip() (int64, error) {
-	tp.Lock()
-	defer tp.Unlock()
+	tp.mtx.Lock()
+	defer tp.mtx.Unlock()
 	err := tp.advanceTo(tp.tip)
 	return tp.cursor - 1, err
 }

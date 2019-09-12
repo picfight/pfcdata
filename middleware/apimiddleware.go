@@ -1,4 +1,4 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
@@ -7,25 +7,29 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/docgen"
+	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	apitypes "github.com/picfight/pfcdata/v3/api/types"
+	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/wire"
+	apitypes "github.com/picfight/pfcdata/api/types/v2"
 )
 
 type contextKey int
 
 const (
 	ctxAPIDocs contextKey = iota
-	ctxAPIStatus
 	CtxAddress
 	ctxBlockIndex0
 	ctxBlockIndex
@@ -34,7 +38,6 @@ const (
 	ctxTxHash
 	ctxTxns
 	ctxTxInOutIndex
-	ctxSearch
 	ctxN
 	ctxCount
 	ctxOffset
@@ -47,22 +50,42 @@ const (
 	ctxChartType
 	ctxChartGrouping
 	ctxTp
+	ctxAgendaId
 )
 
 type DataSource interface {
-	GetHeight() int
+	GetHeight() (int64, error)
 	GetBlockHeight(hash string) (int64, error)
 	GetBlockHash(idx int64) (string, error)
 }
 
 type StakeVersionsLatest func() (*pfcjson.StakeVersions, error)
 
+// writeHTMLBadRequest is used for the Insight API error response for a BAD REQUEST.
+// This means the request was malformed in some way or the request HASH,
+// ADDRESS, BLOCK was not valid.
+func writeHTMLBadRequest(w http.ResponseWriter, str string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
+	io.WriteString(w, str)
+}
+
+// writeHTMLNotFound is used for the Insight API response for an item NOT FOUND.
+// This means the request was valid but no records were found for the item in
+// question.  For some endpoints responding with an empty array [] is expected
+// such as a transaction query for addresses with no transactions.
+func writeHTMLNotFound(w http.ResponseWriter, str string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	io.WriteString(w, str)
+}
+
 // GetBlockStepCtx retrieves the ctxBlockStep data from the request context. If
 // not set, the return value is -1.
 func GetBlockStepCtx(r *http.Request) int {
 	step, ok := r.Context().Value(ctxBlockStep).(int)
 	if !ok {
-		apiLog.Error("block step not set")
+		apiLog.Error("block step is not set or is not an int")
 		return -1
 	}
 	return step
@@ -73,7 +96,7 @@ func GetBlockStepCtx(r *http.Request) int {
 func GetBlockIndex0Ctx(r *http.Request) int {
 	idx, ok := r.Context().Value(ctxBlockIndex0).(int)
 	if !ok {
-		apiLog.Error("block index0 not set")
+		apiLog.Error("block index0 is not set or is not an int")
 		return -1
 	}
 	return idx
@@ -84,7 +107,7 @@ func GetBlockIndex0Ctx(r *http.Request) int {
 func GetTxIOIndexCtx(r *http.Request) int {
 	index, ok := r.Context().Value(ctxTxInOutIndex).(int)
 	if !ok {
-		apiLog.Trace("txinoutindex not set")
+		apiLog.Warn("txinoutindex is not set or is not an int")
 		return -1
 	}
 	return index
@@ -95,7 +118,7 @@ func GetTxIOIndexCtx(r *http.Request) int {
 func GetNCtx(r *http.Request) int {
 	N, ok := r.Context().Value(ctxN).(int)
 	if !ok {
-		apiLog.Trace("N not set")
+		apiLog.Trace("N is not set or is not an int")
 		return -1
 	}
 	return N
@@ -106,7 +129,7 @@ func GetNCtx(r *http.Request) int {
 func GetMCtx(r *http.Request) int {
 	M, ok := r.Context().Value(ctxM).(int)
 	if !ok {
-		apiLog.Trace("M not set")
+		apiLog.Trace("M is not set or is not an int")
 		return -1
 	}
 	return M
@@ -125,35 +148,95 @@ func GetTpCtx(r *http.Request) string {
 
 // GetRawHexTx retrieves the ctxRawHexTx data from the request context. If not
 // set, the return value is an empty string.
-func GetRawHexTx(r *http.Request) string {
+func GetRawHexTx(r *http.Request) (string, error) {
 	rawHexTx, ok := r.Context().Value(ctxRawHexTx).(string)
 	if !ok {
 		apiLog.Trace("hex transaction id not set")
-		return ""
+		return "", fmt.Errorf("hex transaction id not set")
 	}
-	return rawHexTx
+
+	msgtx := wire.NewMsgTx()
+	err := msgtx.Deserialize(hex.NewDecoder(strings.NewReader(rawHexTx)))
+	if err != nil {
+		return "", fmt.Errorf("failed to deserialize tx: %v", err)
+	}
+	return rawHexTx, nil
+}
+
+// PostBroadcastTxCtx is middleware that checks for parameters given in POST
+// request body of the broadcast transaction endpoint.
+func PostBroadcastTxCtx(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req apitypes.InsightRawTx
+		body, err := ioutil.ReadAll(r.Body)
+		r.Body.Close()
+		if err != nil {
+			writeHTMLBadRequest(w, fmt.Sprintf("Error reading JSON message: %v", err))
+			return
+		}
+
+		err = json.Unmarshal(body, &req)
+		if err != nil {
+			writeHTMLBadRequest(w, fmt.Sprintf("Failed to parse request: %v", err))
+			return
+		}
+
+		// Successful extraction of Body JSON as long as the rawtx is not empty
+		// string we should return it.
+		if req.Rawtx == "" {
+			writeHTMLBadRequest(w, fmt.Sprintf("rawtx cannot be an empty string."))
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), ctxRawHexTx, req.Rawtx)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // GetTxIDCtx retrieves the ctxTxHash data from the request context. If not set,
 // the return value is an empty string.
-func GetTxIDCtx(r *http.Request) string {
-	hash, ok := r.Context().Value(ctxTxHash).(string)
+func GetTxIDCtx(r *http.Request) (*chainhash.Hash, error) {
+	hashStr, ok := r.Context().Value(ctxTxHash).(string)
 	if !ok {
 		apiLog.Trace("txid not set")
-		return ""
+		return nil, fmt.Errorf("txid not set")
 	}
-	return hash
+	hash, err := chainhash.NewHashFromStr(hashStr)
+	if err != nil {
+		apiLog.Trace("invalid hash '%s': %v", hashStr, err)
+		return nil, fmt.Errorf("invalid hash '%s': %v",
+			hashStr, err)
+	}
+	return hash, nil
 }
 
 // GetTxnsCtx retrieves the ctxTxns data from the request context. If not set,
 // the return value is an empty string slice.
-func GetTxnsCtx(r *http.Request) []string {
-	hashes, ok := r.Context().Value(ctxTxns).([]string)
-	if !ok {
+func GetTxnsCtx(r *http.Request) ([]*chainhash.Hash, error) {
+	hashStrs, ok := r.Context().Value(ctxTxns).([]string)
+	if !ok || len(hashStrs) == 0 {
 		apiLog.Trace("ctxTxns not set")
-		return nil
+		return nil, fmt.Errorf("ctxTxns not set")
 	}
-	return hashes
+
+	var hashes []*chainhash.Hash
+	for _, hashStr := range hashStrs {
+		hash, err := chainhash.NewHashFromStr(hashStr)
+		if err != nil {
+			apiLog.Trace("invalid hash '%s': %v", hashStr, err)
+			return nil, fmt.Errorf("invalid hash '%s': %v", hashStr, err)
+		}
+		hashes = append(hashes, hash)
+	}
+
+	return hashes, nil
+}
+
+// Next is a dummy middleware that just continues with the next http.Handler.
+func Next(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+	})
 }
 
 // PostTxnsCtx extract transaction IDs from the POST body
@@ -201,23 +284,62 @@ func ValidateTxnsPostCtx(next http.Handler) http.Handler {
 
 // GetBlockHashCtx retrieves the ctxBlockHash data from the request context. If
 // not set, the return value is an empty string.
-func GetBlockHashCtx(r *http.Request) string {
+func GetBlockHashCtx(r *http.Request) (string, error) {
 	hash, ok := r.Context().Value(ctxBlockHash).(string)
 	if !ok {
 		apiLog.Trace("block hash not set")
+		return "", fmt.Errorf("block hash not set")
 	}
-	return hash
+	if _, err := chainhash.NewHashFromStr(hash); err != nil {
+		apiLog.Trace("invalid hash '%s': %v", hash, err)
+		return "", fmt.Errorf("invalid hash '%s': %v", hash, err)
+	}
+
+	return hash, nil
 }
 
-// GetAddressCtx retrieves the ctxAddress data from the request context. If not
-// set, the return value is an empty string.
-func GetAddressCtx(r *http.Request) string {
-	address, ok := r.Context().Value(CtxAddress).(string)
-	if !ok {
+// GetAddressCtx retrieves the CtxAddress data from the request context. If not
+// set, the return value is an empty string. The CtxAddress string data may be a
+// comma-separated list of addresses, subject to the provided maximum number of
+// addresses allowed. Duplicate addresses are removed, but the limit is enforced
+// prior to removal of duplicates.
+func GetAddressCtx(r *http.Request, activeNetParams *chaincfg.Params, maxAddrs int) ([]string, error) {
+	addressStr, ok := r.Context().Value(CtxAddress).(string)
+	if !ok || len(addressStr) == 0 {
 		apiLog.Trace("address not set")
-		return ""
+		return nil, fmt.Errorf("address not set")
 	}
-	return address
+	addressStrs := strings.Split(addressStr, ",")
+	if len(addressStrs) > maxAddrs {
+		return nil, fmt.Errorf("maximum of %d addresses allowed", maxAddrs)
+	}
+
+	strInSlice := func(sl []string, s string) bool {
+		for i := range sl {
+			if sl[i] == s {
+				return true
+			}
+		}
+		return false
+	}
+
+	var addrStrs []string
+	for _, addrStr := range addressStrs {
+		address, err := pfcutil.DecodeAddress(addrStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address '%v': %v",
+				addrStr, err)
+		}
+		if !address.IsForNet(activeNetParams) {
+			return nil, fmt.Errorf("%v is invalid for this network",
+				addrStr)
+		}
+		if strInSlice(addrStrs, addrStr) {
+			continue
+		}
+		addrStrs = append(addrStrs, addrStr)
+	}
+	return addrStrs, nil
 }
 
 // GetChartTypeCtx retrieves the ctxChart data from the request context.
@@ -243,23 +365,22 @@ func GetChartGroupingCtx(r *http.Request) string {
 }
 
 // GetCountCtx retrieves the ctxCount data ("to") URL path element from the
-// request context. If not set, the return value is 20. TODO: rename this
-// function.
+// request context. If not set, the return value is 20.
 func GetCountCtx(r *http.Request) int {
 	count, ok := r.Context().Value(ctxCount).(int)
 	if !ok {
-		apiLog.Trace("count not set")
+		apiLog.Warn("count is not set or is not an int")
 		return 20
 	}
 	return count
 }
 
-// GetCountCtx retrieves the ctxOffset data ("from") from the request context.
-// If not set, the return value is 0. TODO: rename this function.
+// GetOffsetCtx retrieves the ctxOffset data ("from") from the request context.
+// If not set, the return value is 0.
 func GetOffsetCtx(r *http.Request) int {
 	offset, ok := r.Context().Value(ctxOffset).(int)
 	if !ok {
-		apiLog.Trace("offset not set")
+		apiLog.Warn("offset is not set or is not an int")
 		return 0
 	}
 	return offset
@@ -270,7 +391,7 @@ func GetOffsetCtx(r *http.Request) int {
 func GetStatusInfoCtx(r *http.Request) string {
 	statusInfo, ok := r.Context().Value(ctxGetStatus).(string)
 	if !ok {
-		apiLog.Error("status info no set")
+		apiLog.Warn("status info is not set or is not a string")
 		return ""
 	}
 	return statusInfo
@@ -288,7 +409,7 @@ func GetBlockDateCtx(r *http.Request) string {
 func GetBlockIndexCtx(r *http.Request) int {
 	idx, ok := r.Context().Value(ctxBlockIndex).(int)
 	if !ok {
-		apiLog.Trace("block index not set")
+		apiLog.Warn("block index not set or is not an int")
 		return -1
 	}
 	return idx
@@ -329,7 +450,7 @@ func BlockIndexPathCtx(next http.Handler) http.Handler {
 		idx, err := strconv.Atoi(pathIdxStr)
 		if err != nil {
 			apiLog.Infof("No/invalid idx value (int64): %v", err)
-			http.NotFound(w, r)
+			http.Error(w, "Valid index not provided", http.StatusBadRequest)
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxBlockIndex, idx)
@@ -349,7 +470,7 @@ func BlockIndexOrHashPathCtx(next http.Handler) http.Handler {
 			idx, err := strconv.Atoi(pathIdxOrHashStr)
 			if err != nil {
 				apiLog.Infof("No/invalid idx value (int64): %v", err)
-				http.NotFound(w, r)
+				http.Error(w, "Hash or index not provided", http.StatusBadRequest)
 				return
 			}
 			ctx = context.WithValue(r.Context(), ctxBlockIndex, idx)
@@ -496,17 +617,6 @@ func apiDocs(mux *chi.Mux) func(next http.Handler) http.Handler {
 	}
 }
 
-// SearchPathCtx returns a http.HandlerFunc that embeds the value at the url part
-// {search} into the request context (Still need this for the error page)
-// TODO: make new error system
-func SearchPathCtx(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		str := chi.URLParam(r, "search")
-		ctx := context.WithValue(r.Context(), ctxSearch, str)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
 // APIDirectory is the actual handler used with apiDocs
 // (e.g. mux.With(apiDocs(mux)).HandleFunc("/help", APIDirectory))
 func APIDirectory(w http.ResponseWriter, r *http.Request) {
@@ -590,6 +700,27 @@ func BlockDateQueryCtx(next http.Handler) http.Handler {
 	})
 }
 
+// AgendIdCtx returns a http.HandlerFunc that embeds the value at the url
+// part {agendaId} into the request context.
+func AgendIdCtx(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agendaId := chi.URLParam(r, "agendaId")
+		ctx := context.WithValue(r.Context(), ctxAgendaId, agendaId)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// GetAgendaIdCtx retrieves the ctxAgendaId data from the request context.
+// If not set, the return value is an empty string.
+func GetAgendaIdCtx(r *http.Request) string {
+	agendaId, ok := r.Context().Value(ctxAgendaId).(string)
+	if !ok {
+		apiLog.Error("agendaId not parsed")
+		return ""
+	}
+	return agendaId
+}
+
 // BlockHashPathAndIndexCtx embeds the value at the url part {blockhash}, and
 // the corresponding block index, into a request context.
 func BlockHashPathAndIndexCtx(r *http.Request, source DataSource) context.Context {
@@ -599,17 +730,18 @@ func BlockHashPathAndIndexCtx(r *http.Request, source DataSource) context.Contex
 		apiLog.Errorf("Unable to GetBlockHeight(%d): %v", height, err)
 	}
 	ctx := context.WithValue(r.Context(), ctxBlockHash, hash)
-	return context.WithValue(ctx, ctxBlockIndex, height)
+	return context.WithValue(ctx, ctxBlockIndex, int(height)) // Must be int!
 }
 
 // StatusInfoCtx embeds the best block index and the POST form data for
 // parameter "q" into a request context.
 func StatusInfoCtx(r *http.Request, source DataSource) context.Context {
-	idx := -1
-	if source.GetHeight() >= 0 {
-		idx = source.GetHeight()
+	idx := int64(-1)
+	h, err := source.GetHeight()
+	if h >= 0 && err == nil {
+		idx = h
 	}
-	ctx := context.WithValue(r.Context(), ctxBlockIndex, idx)
+	ctx := context.WithValue(r.Context(), ctxBlockIndex, int(idx)) // Must be int!
 
 	q := r.FormValue("q")
 	return context.WithValue(ctx, ctxGetStatus, q)
@@ -622,15 +754,15 @@ func BlockHashLatestCtx(r *http.Request, source DataSource) context.Context {
 	// if hash, err = c.BlockData.GetBestBlockHash(int64(idx)); err != nil {
 	// 	apiLog.Errorf("Unable to GetBestBlockHash: %v", idx, err)
 	// }
-	idx := source.GetHeight()
-	if idx >= 0 {
+	idx, err := source.GetHeight()
+	if idx >= 0 && err == nil {
 		var err error
-		if hash, err = source.GetBlockHash(int64(idx)); err != nil {
+		if hash, err = source.GetBlockHash(idx); err != nil {
 			apiLog.Errorf("Unable to GetBlockHash(%d): %v", idx, err)
 		}
 	}
 
-	ctx := context.WithValue(r.Context(), ctxBlockIndex, idx)
+	ctx := context.WithValue(r.Context(), ctxBlockIndex, int(idx)) // Must be int!
 	return context.WithValue(ctx, ctxBlockHash, hash)
 }
 
@@ -648,32 +780,31 @@ func StakeVersionLatestCtx(r *http.Request, stakeVerFun StakeVersionsLatest) con
 
 // BlockIndexLatestCtx embeds the current block height into a request context.
 func BlockIndexLatestCtx(r *http.Request, source DataSource) context.Context {
-	idx := -1
-	if source.GetHeight() >= 0 {
-		idx = source.GetHeight()
+	idx := int64(-1)
+	h, err := source.GetHeight()
+	if h >= 0 && err == nil {
+		idx = h
 	}
 
-	return context.WithValue(r.Context(), ctxBlockIndex, idx)
-}
-
-// StatusCtx embeds the specified apitypes.Status into a request context.
-func StatusCtx(r *http.Request, status apitypes.Status) context.Context {
-	return context.WithValue(r.Context(), ctxAPIStatus, status)
+	return context.WithValue(r.Context(), ctxBlockIndex, int(idx)) // Must be int!
 }
 
 // GetBlockHeightCtx returns the block height for the block index or hash
 // specified on the URL path.
-func GetBlockHeightCtx(r *http.Request, source DataSource) int64 {
+func GetBlockHeightCtx(r *http.Request, source DataSource) (int64, error) {
 	idxI, ok := r.Context().Value(ctxBlockIndex).(int)
 	idx := int64(idxI)
 	if !ok || idx < 0 {
-		var err error
-		idx, err = source.GetBlockHeight(GetBlockHashCtx(r))
+		hash, err := GetBlockHashCtx(r)
 		if err != nil {
-			apiLog.Errorf("Unable to GetBlockHeight: %v", err)
+			return 0, err
+		}
+		idx, err = source.GetBlockHeight(hash)
+		if err != nil {
+			return 0, err
 		}
 	}
-	return idx
+	return idx, nil
 }
 
 // GetLatestVoteVersionCtx attempts to retrieve the latest stake version
@@ -681,7 +812,7 @@ func GetBlockHeightCtx(r *http.Request, source DataSource) int64 {
 func GetLatestVoteVersionCtx(r *http.Request) int {
 	ver, ok := r.Context().Value(ctxStakeVersionLatest).(int)
 	if !ok {
-		apiLog.Error("latest stake version not set")
+		apiLog.Error("latest stake version is not set or is not an int")
 		return -1
 	}
 	return ver

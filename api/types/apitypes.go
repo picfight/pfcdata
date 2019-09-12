@@ -1,12 +1,69 @@
+// Copyright (c) 2019, The Decred developers
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
 package types
 
 import (
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/picfight/pfcd/pfcjson/v2"
+	"github.com/picfight/pfcdata/db/dbtypes"
+	"github.com/picfight/pfcdata/txhelpers"
 )
+
+// TimeAPI is a fall back dbtypes.TimeDef wrapper that allows API endpoints that
+// previously returned a timestamp instead of a formatted string time to continue
+// working.
+type TimeAPI struct {
+	S dbtypes.TimeDef
+}
+
+// String formats the time in a human-friendly layout.
+func (t TimeAPI) String() string {
+	return t.S.String()
+}
+
+// UNIX returns the UNIX epoch time stamp.
+func (t TimeAPI) UNIX() int64 {
+	return t.S.UNIX()
+}
+
+// MarshalJSON is set as the default marshalling function for TimeAPI struct.
+func (t *TimeAPI) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.S.UNIX())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (t *TimeAPI) UnmarshalJSON(data []byte) error {
+	if t == nil {
+		return fmt.Errorf("TimeAPI: UnmarshalJSON on nil pointer")
+	}
+	var ts int64
+	if err := json.Unmarshal(data, &ts); err != nil {
+		return err
+	}
+	*t = NewTimeAPIFromUNIX(ts)
+	return nil
+}
+
+// NewTimeAPI constructs a TimeAPI from the given time.Time. It presets the
+// timezone for formatting to UTC.
+func NewTimeAPI(t time.Time) TimeAPI {
+	return TimeAPI{
+		S: dbtypes.NewTimeDef(t),
+	}
+}
+
+// NewTimeAPIFromUNIX constructs a TimeAPI from the given UNIX epoch time stamp
+// in seconds. It presets the timezone for formatting to UTC.
+func NewTimeAPIFromUNIX(t int64) TimeAPI {
+	return NewTimeAPI(time.Unix(t, 0))
+}
 
 // much of the time, pfcdata will be using the types in pfcjson, but others are
 // defined here
@@ -41,6 +98,21 @@ type TxShort struct {
 	Expiry   uint32        `json:"expiry"`
 	Vin      []pfcjson.Vin `json:"vin"`
 	Vout     []Vout        `json:"vout"`
+}
+
+// AgendasInfo holds the high level details about an agenda.
+type AgendasInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	*dbtypes.MileStone
+	VoteVersion uint32 `json:"voteversion"`
+	Mask        uint16 `json:"mask"`
+}
+
+// AgendaAPIResponse holds two sets of AgendaVoteChoices charts data.
+type AgendaAPIResponse struct {
+	ByHeight *dbtypes.AgendaVoteChoices `json:"by_height"`
+	ByTime   *dbtypes.AgendaVoteChoices `json:"by_time"`
 }
 
 // TrimmedTx models data to resemble to result of the decoderawtransaction RPC.
@@ -82,6 +154,13 @@ type BlockID struct {
 	BlockTime   int64  `json:"blocktime"`
 }
 
+// BlockRaw contains the hexadecimal encoded bytes of a serialized block.
+type BlockRaw struct {
+	Height uint32 `json:"height"`
+	Hash   string `json:"hash"`
+	Hex    string `json:"hex"`
+}
+
 // VoutMined appends a best block hash, number of confimations and if a
 // transaction is a coinbase to a transaction output
 type VoutMined struct {
@@ -104,6 +183,96 @@ type Vout struct {
 type TxInputID struct {
 	Hash  string `json:"hash"`
 	Index uint32 `json:"vin_index"`
+}
+
+// ScriptClass represent the type of a transaction output's pkscript. The values
+// of this type are NOT compatible with pfcd's txscript.ScriptClass values! Use
+// ScriptClassFromName to get a text representation of a ScriptClass.
+type ScriptClass uint8
+
+// Classes of script payment known about in the blockchain.
+const (
+	ScriptClassNonStandard     ScriptClass = iota // None of the recognized forms.
+	ScriptClassPubKey                             // Pay pubkey.
+	ScriptClassPubkeyAlt                          // Alternative signature pubkey.
+	ScriptClassPubKeyHash                         // Pay pubkey hash.
+	ScriptClassPubkeyHashAlt                      // Alternative signature pubkey hash.
+	ScriptClassScriptHash                         // Pay to script hash.
+	ScriptClassMultiSig                           // Multi signature.
+	ScriptClassNullData                           // Empty data-only (provably prunable).
+	ScriptClassStakeSubmission                    // Stake submission.
+	ScriptClassStakeGen                           // Stake generation
+	ScriptClassStakeRevocation                    // Stake revocation.
+	ScriptClassStakeSubChange                     // Change for stake submission tx.
+	ScriptClassInvalid
+)
+
+var scriptClassToName = map[ScriptClass]string{
+	ScriptClassNonStandard:     "nonstandard",
+	ScriptClassPubKey:          "pubkey",
+	ScriptClassPubkeyAlt:       "pubkeyalt",
+	ScriptClassPubKeyHash:      "pubkeyhash",
+	ScriptClassPubkeyHashAlt:   "pubkeyhashalt",
+	ScriptClassScriptHash:      "scripthash",
+	ScriptClassMultiSig:        "multisig",
+	ScriptClassNullData:        "nulldata",
+	ScriptClassStakeSubmission: "stakesubmission",
+	ScriptClassStakeGen:        "stakegen",
+	ScriptClassStakeRevocation: "stakerevoke",
+	ScriptClassStakeSubChange:  "sstxchange",
+	ScriptClassInvalid:         "invalid",
+}
+
+var scriptNameToClass = map[string]ScriptClass{
+	"nonstandard":     ScriptClassNonStandard,
+	"pubkey":          ScriptClassPubKey,
+	"pubkeyalt":       ScriptClassPubkeyAlt,
+	"pubkeyhash":      ScriptClassPubKeyHash,
+	"pubkeyhashalt":   ScriptClassPubkeyHashAlt,
+	"scripthash":      ScriptClassScriptHash,
+	"multisig":        ScriptClassMultiSig,
+	"nulldata":        ScriptClassNullData,
+	"stakesubmission": ScriptClassStakeSubmission,
+	"stakegen":        ScriptClassStakeGen,
+	"stakerevoke":     ScriptClassStakeRevocation,
+	"sstxchange":      ScriptClassStakeSubChange,
+	// No "invalid" mapping!
+}
+
+// ScriptClassFromName attempts to identify the ScriptClass for the given script
+// class/type name. An unknown script name will return ScriptClassInvalid. This
+// may be used to map the Type field of the ScriptPubKey data type to a known
+// class. If pfcd's txscript package changes its strings, this function may be
+// unable to identify the types from pfcd.
+func ScriptClassFromName(name string) ScriptClass {
+	class, found := scriptNameToClass[strings.ToLower(name)]
+	if !found {
+		return ScriptClassInvalid // not even non-standard
+	}
+	return class
+}
+
+// IsValidScriptClass indicates the the provided string corresponds to a known
+// ScriptClass (including "nonstandard"). Note that "invalid" is not valid,
+// although a ScriptClassInvalid value mapping to "invalid" exists.
+func IsValidScriptClass(name string) (isValid bool) {
+	_, isValid = scriptNameToClass[strings.ToLower(name)]
+	return
+}
+
+// String returns the name of the ScriptClass. If the ScriptClass is
+// unrecognized it is treated as ScriptClassInvalid.
+func (sc ScriptClass) String() string {
+	name, found := scriptClassToName[sc]
+	if !found {
+		return ScriptClassInvalid.String() // better be in scriptClassToName!
+	}
+	return name
+}
+
+// IsNullDataScript indicates if the script class name is a nulldata class.
+func IsNullDataScript(name string) bool {
+	return name == ScriptClassNullData.String()
 }
 
 // ScriptPubKey is the result of decodescript(ScriptPubKeyHex)
@@ -160,8 +329,8 @@ type AddressTxRaw struct {
 	Vout          []Vout               `json:"vout"`
 	Confirmations int64                `json:"confirmations"`
 	BlockHash     string               `json:"blockhash"`
-	Time          int64                `json:"time,omitempty"`
-	Blocktime     int64                `json:"blocktime,omitempty"`
+	Time          TimeAPI              `json:"time,omitempty"`
+	Blocktime     TimeAPI              `json:"blocktime,omitempty"`
 }
 
 // AddressTxShort is a subset of AddressTxRaw with just the basic tx details
@@ -169,7 +338,7 @@ type AddressTxRaw struct {
 type AddressTxShort struct {
 	TxID          string  `json:"txid"`
 	Size          int32   `json:"size"`
-	Time          int64   `json:"time"`
+	Time          TimeAPI `json:"time"`
 	Value         float64 `json:"value"`
 	Confirmations int64   `json:"confirmations"`
 }
@@ -182,7 +351,7 @@ type AddressTotals struct {
 	BlockHeight  uint64  `json:"blockheight"`
 	NumSpent     int64   `json:"num_stxos"`
 	NumUnspent   int64   `json:"num_utxos"`
-	CoinsSpent   float64 `json:"dcr_spent"`
+	CoinsSpent   float64 `json:"pfc_spent"`
 	CoinsUnspent float64 `json:"dcr_unspent"`
 }
 
@@ -238,9 +407,20 @@ type VinPrevOut struct {
 
 // end copy-paste from pfcjson
 
-// Status indicates the state of the server, including the API version and the
-// software version.
+// Status indicates the state of the server. All fields are mutex protected and
+// and should be set with the getters and setters.
 type Status struct {
+	sync.RWMutex
+	ready           bool
+	dbHeight        uint32
+	dbLastBlockTime int64
+	height          uint32
+	nodeConnections int64
+	api             APIStatus
+}
+
+// APIStatus is for the JSON-formatted response at /status.
+type APIStatus struct {
 	Ready           bool   `json:"ready"`
 	DBHeight        uint32 `json:"db_height"`
 	DBLastBlockTime int64  `json:"db_block_time"`
@@ -248,6 +428,80 @@ type Status struct {
 	NodeConnections int64  `json:"node_connections"`
 	APIVersion      int    `json:"api_version"`
 	PfcdataVersion  string `json:"pfcdata_version"`
+	NetworkName     string `json:"network_name"`
+}
+
+// NewStatus is the constructor for a new Status.
+func NewStatus(nodeHeight uint32, conns int64, apiVersion int, pfcdataVersion, netName string) *Status {
+	return &Status{
+		height:          nodeHeight,
+		nodeConnections: conns,
+		api: APIStatus{
+			APIVersion:     apiVersion,
+			PfcdataVersion: pfcdataVersion,
+			NetworkName:    netName,
+		},
+	}
+}
+
+// API is a method for creating an APIStatus from Status.
+func (s *Status) API() APIStatus {
+	s.RLock()
+	defer s.RUnlock()
+	return APIStatus{
+		Ready:           s.ready,
+		DBHeight:        s.dbHeight,
+		DBLastBlockTime: s.dbLastBlockTime,
+		Height:          s.height,
+		NodeConnections: s.nodeConnections,
+		APIVersion:      s.api.APIVersion,
+		PfcdataVersion:  s.api.PfcdataVersion,
+		NetworkName:     s.api.NetworkName,
+	}
+}
+
+// Height is the last known node height.
+func (s *Status) Height() uint32 {
+	s.RLock()
+	defer s.RUnlock()
+	return s.height
+}
+
+// SetHeight stores the node height. Additionally, Status.ready is set to true
+// if Status.height is the same as Status.dbHeight.
+func (s *Status) SetHeight(height uint32) {
+	s.Lock()
+	defer s.Unlock()
+	s.ready = height == s.dbHeight
+	s.height = height
+}
+
+// SetHeightAndConnections simultaneously sets the node height and node
+// connection count. Status.ready is set to true if the height and dbHeight are
+// the same.
+func (s *Status) SetHeightAndConnections(height uint32, conns int64) {
+	s.Lock()
+	defer s.Unlock()
+	s.nodeConnections = conns
+	s.ready = height == s.dbHeight
+	s.height = height
+}
+
+// SetReady sets the ready state.
+func (s *Status) SetReady(ready bool) {
+	s.Lock()
+	defer s.Unlock()
+	s.ready = ready
+}
+
+// DBUpdate updates both the height and time of the best DB block. Status.ready
+// is set to true if Status.height is the same as Status.dbHeight.
+func (s *Status) DBUpdate(height uint32, blockTime int64) {
+	s.Lock()
+	defer s.Unlock()
+	s.dbHeight = height
+	s.dbLastBlockTime = blockTime
+	s.ready = s.dbHeight == height
 }
 
 // CoinSupply models the coin supply at a certain best block.
@@ -276,15 +530,17 @@ type TicketPoolValsAndSizes struct {
 	Size        []float64 `json:"size"`
 }
 
-// BlockDataBasic models primary information about block at height Height
+// BlockDataBasic models primary information about a block.
 type BlockDataBasic struct {
-	Height     uint32  `json:"height,omitemtpy"`
-	Size       uint32  `json:"size,omitemtpy"`
-	Hash       string  `json:"hash,omitemtpy"`
-	Difficulty float64 `json:"diff,omitemtpy"`
-	StakeDiff  float64 `json:"sdiff,omitemtpy"`
-	Time       int64   `json:"time,omitemtpy"`
-	NumTx      uint32  `json:"txlength,omitempty"`
+	Height     uint32  `json:"height"`
+	Size       uint32  `json:"size"`
+	Hash       string  `json:"hash"`
+	Difficulty float64 `json:"diff"`
+	StakeDiff  float64 `json:"sdiff"`
+	Time       TimeAPI `json:"time"`
+	NumTx      uint32  `json:"txlength"`
+	MiningFee  *int64  `json:"fees,omitempty"`
+	TotalSent  *int64  `json:"total_sent,omitempty"`
 	// TicketPoolInfo may be nil for side chain blocks.
 	PoolInfo *TicketPoolInfo `json:"ticket_pool,omitempty"`
 }
@@ -299,13 +555,13 @@ func NewBlockDataBasic() *BlockDataBasic {
 // BlockExplorerBasic models primary information about block at height Height
 // for the block explorer.
 type BlockExplorerBasic struct {
-	Height      uint32  `json:"height"`
-	Size        uint32  `json:"size"`
-	Voters      uint16  `json:"votes"`
-	FreshStake  uint8   `json:"tickets"`
-	Revocations uint8   `json:"revocations"`
-	StakeDiff   float64 `json:"sdiff"`
-	Time        int64   `json:"time"`
+	Height      uint32          `json:"height"`
+	Size        uint32          `json:"size"`
+	Voters      uint16          `json:"votes"`
+	FreshStake  uint8           `json:"tickets"`
+	Revocations uint8           `json:"revocations"`
+	StakeDiff   float64         `json:"sdiff"`
+	Time        dbtypes.TimeDef `json:"time"`
 	BlockExplorerExtraInfo
 }
 
@@ -313,7 +569,6 @@ type BlockExplorerBasic struct {
 // explorer.
 type BlockExplorerExtraInfo struct {
 	TxLen            int                            `json:"tx"`
-	FormattedTime    string                         `json:"formatted_time"`
 	CoinSupply       int64                          `json:"coin_supply"`
 	NextBlockSubsidy *pfcjson.GetBlockSubsidyResult `json:"next_block_subsidy"`
 }
@@ -349,6 +604,7 @@ type StakeDiff struct {
 
 // StakeInfoExtended models data about the fee, pool and stake difficulty
 type StakeInfoExtended struct {
+	Hash             string               `json:"hash"`
 	Feeinfo          pfcjson.FeeInfoBlock `json:"feeinfo"`
 	StakeDiff        float64              `json:"stakediff"`
 	PriceWindowNum   int                  `json:"window_number"`
@@ -367,6 +623,7 @@ func NewStakeInfoExtended() *StakeInfoExtended {
 // StakeInfoExtendedEstimates is similar to StakeInfoExtended but includes stake
 // difficulty estimates with the stake difficulty
 type StakeInfoExtendedEstimates struct {
+	Hash             string               `json:"hash"`
 	Feeinfo          pfcjson.FeeInfoBlock `json:"feeinfo"`
 	StakeDiff        StakeDiff            `json:"stakediff"`
 	PriceWindowNum   int                  `json:"window_number"`
@@ -413,3 +670,38 @@ type MempoolTicketDetails struct {
 // TicketsDetails is an array of pointers of TicketDetails used in
 // MempoolTicketDetails
 type TicketsDetails []*TicketDetails
+
+// TicketInfo combines spend and pool statuses and relevant block and spending
+// transaction IDs.
+type TicketInfo struct {
+	Status           string     `json:"status"`
+	PurchaseBlock    *TinyBlock `json:"purchase_block"`
+	MaturityHeight   uint32     `json:"maturity_height"`
+	ExpirationHeight uint32     `json:"expiration_height"`
+	LotteryBlock     *TinyBlock `json:"lottery_block"`
+	Vote             *string    `json:"vote"`
+	Revocation       *string    `json:"revocation"`
+}
+
+// TinyBlock is the hash and height of a block.
+type TinyBlock struct {
+	Hash   string `json:"hash"`
+	Height uint32 `json:"height"`
+}
+
+// TicketPoolChartsData is for data used to display ticket pool statistics at
+// /ticketpool.
+type TicketPoolChartsData struct {
+	ChartHeight uint64                   `json:"height"`
+	TimeChart   *dbtypes.PoolTicketsData `json:"time_chart"`
+	PriceChart  *dbtypes.PoolTicketsData `json:"price_chart"`
+	DonutChart  *dbtypes.PoolTicketsData `json:"donut_chart"`
+	Mempool     *PriceCountTime          `json:"mempool"`
+}
+
+// PriceCountTime is a basic set of information about ticket in the mempool.
+type PriceCountTime struct {
+	Price float64         `json:"price"`
+	Count int             `json:"count"`
+	Time  dbtypes.TimeDef `json:"time"`
+}

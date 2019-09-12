@@ -2,10 +2,9 @@
 <!DOCTYPE html>
 <html lang="en">
 {{template "html-head" "PicFight Charts"}}
-<body class="{{ theme }}">
     {{template "navbar" . }}
 
-    <div data-controller="charts">
+    <div data-controller="charts" data-charts-tps="{{.ChainParams.TicketExpiry}}">
 
         <div class="container main">
 
@@ -21,20 +20,22 @@
                             data-action="charts#selectChart"
                             style="width: 250px"
                         >
-                            <option value="ticket-price">Ticket Price</option>
-                            <option value="ticket-pool-size">Ticket Pool Size</option>
-                            <option value="ticket-pool-value">Ticket Pool Value</option>
-                            <option value="avg-block-size">Average Block Size</option>
-                            <option value="blockchain-size">BlockChain Size</option>
-                            <option value="tx-per-block">Transactions Per Block</option>
-                            <option value="tx-per-day">Transactions Per Day</option>
-                            <option value="pow-difficulty">PoW Difficulty</option>
-                            <option value="coin-supply">Total Coin Supply</option>
-                            <option value="fee-per-block">Total Fee Per Block</option>
-                            <option value="duration-btw-blocks">Duration Between Blocks</option>
-                            <option value="ticket-spend-type">Ticket Spend Types</option>
-                            <option value="ticket-by-outputs-windows">Ticket Outputs by Price Window</option>
-                            <option value="ticket-by-outputs-blocks">Ticket Outputs by Block</option>
+                            <option name="ticket-price" value="ticket-price">Ticket Price</option>
+                            <option name="ticket-pool-size" value="ticket-pool-size">Ticket Pool Size</option>
+                            <option name="ticket-pool-value" value="ticket-pool-value">Ticket Pool Value</option>
+                            <option name="avg-block-size" value="avg-block-size">Average Block Size</option>
+                            <option name="blockchain-size" value="blockchain-size">Blockchain Size</option>
+                            <option name="tx-per-block" value="tx-per-block">Transactions Per Block</option>
+                            <option name="tx-per-day" value="tx-per-day">Transactions Per Day</option>
+                            <option name="pow-difficulty" value="pow-difficulty">PoW Difficulty</option>
+                            <option name="coin-supply" value="coin-supply">Coin Supply</option>
+                            <option name="fee-per-block" value="fee-per-block">Total Fee Per Block</option>
+                            <option name="duration-btw-blocks" value="duration-btw-blocks">Duration Between Blocks</option>
+                            <option name="ticket-spend-type" value="ticket-spend-type">Ticket Spend Types</option>
+                            <option name="ticket-by-outputs-windows" value="ticket-by-outputs-windows">Ticket Outputs by Price Window</option>
+                            <option name="ticket-by-outputs-blocks" value="ticket-by-outputs-blocks">Ticket Outputs by Block</option>
+                            <option name="chainwork" value="chainwork">Total Work</option>
+                            <option name="hashrate" value="hashrate">Network Hashrate</option>
                         </select>
                     </div>
                 </div>
@@ -47,11 +48,11 @@
                         >
                             <li class="nav-item">
                                 <a
-                                    class="nav-link"
+                                    class="nav-link active"
                                     href="javascript:void(0);"
                                     data-target="charts.zoomOption"
                                     data-action="click->charts#onZoom"
-                                    data-zoom="0"
+                                    data-zoom="all"
                                 >All</a>
                             </li>
                             <li class="nav-item">
@@ -60,7 +61,7 @@
                                     href="javascript:void(0);"
                                     data-target="charts.zoomOption"
                                     data-action="click->charts#onZoom"
-                                    data-zoom="105120"
+                                    data-zoom="year"
                                 >Year</a>
                             </li>
                             <li class="nav-item">
@@ -69,7 +70,7 @@
                                     href="javascript:void(0);"
                                     data-target="charts.zoomOption"
                                     data-action="click->charts#onZoom"
-                                    data-zoom="8760"
+                                    data-zoom="month"
                                 >Month</a>
                             </li>
                             <li class="nav-item">
@@ -78,7 +79,7 @@
                                     href="javascript:void(0);"
                                     data-target="charts.zoomOption"
                                     data-action="click->charts#onZoom"
-                                    data-zoom="2016"
+                                    data-zoom="week"
                                 >Week</a>
                             </li>
                             <li class="nav-item">
@@ -87,14 +88,14 @@
                                     href="javascript:void(0);"
                                     data-target="charts.zoomOption"
                                     data-action="click->charts#onZoom"
-                                    data-zoom="288"
+                                    data-zoom="day"
                                 >Day</a>
                             </li>
                         </ul>
                     </div>
                 </div>
 
-                <div class="chart-control-wrapper mb-1" data-target="charts.zoomSelector">
+                <div class="chart-control-wrapper mr-2 mb-1" data-target="charts.zoomSelector">
                     <div class="chart-control-label">MOVING AVG</div>
                     <div class="chart-control">
                         <input
@@ -107,6 +108,34 @@
                             data-target="charts.rollPeriodInput"
                             data-action="change->charts#onRollPeriodChange"
                         >
+                    </div>
+                </div>
+
+                <div class="chart-control-wrapper mb-1">
+                    <div class="chart-control-label">SCALE</div>
+                    <div class="chart-control">
+                        <ul
+                            class="nav nav-pills"
+                        >
+                            <li class="nav-item active">
+                                <a
+                                    class="nav-link active"
+                                    href="javascript:void(0);"
+                                    data-target="charts.linearBttn"
+                                    data-action="click->charts#linearScale"
+                                    data-zoom="all"
+                                >Linear</a>
+                            </li>
+                            <li class="nav-item">
+                                <a
+                                    class="nav-link"
+                                    href="javascript:void(0);"
+                                    data-target="charts.logBttn"
+                                    data-action="click->charts#logScale"
+                                    data-zoom="year"
+                                >Log</a>
+                            </li>
+                        </ul>
                     </div>
                 </div>
 
@@ -134,11 +163,6 @@
         </div>
 
     </div>
-
-    <script type="text/javascript">
-        var ticketsPrice = {{.Data}};
-    </script>
-
     {{ template "footer" . }}
 
 </body>

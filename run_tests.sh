@@ -2,71 +2,75 @@
 
 # usage:
 # ./run_tests.sh                         # local, go 1.11
-# GOVERSION=1.10 ./run_tests.sh          # local, go 1.10 (vgo)
 # ./run_tests.sh docker                  # docker, go 1.11
-# GOVERSION=1.10 ./run_tests.sh docker   # docker, go 1.10 (vgo)
 # ./run_tests.sh podman                  # podman, go 1.11
-# GOVERSION=1.10 ./run_tests.sh podman   # podman, go 1.10 (vgo)
 
 set -ex
 
 # The script does automatic checking on a Go package and its sub-packages,
 # including:
 # 1. gofmt         (http://golang.org/cmd/gofmt/)
-# 2. gosimple      (https://github.com/dominikh/go-simple)
-# 3. unconvert     (https://github.com/mdempsky/unconvert)
-# 4. ineffassign   (https://github.com/gordonklaus/ineffassign)
-# 5. race detector (http://blog.golang.org/race-detector)
+# 2. go vet        (http://golang.org/cmd/vet)
+# 3. gosimple      (https://github.com/dominikh/go-simple)
+# 4. unconvert     (https://github.com/mdempsky/unconvert)
+# 5. ineffassign   (https://github.com/gordonklaus/ineffassign)
+# 6. race detector (http://blog.golang.org/race-detector)
 
-# gometalinter (github.com/alecthomas/gometalinter) is used to run each each
+# golangci-lint (github.com/golangci/golangci-lint) is used to run each each
 # static checker.
-
-# To run on docker on windows, symlink /mnt/c to /c and then execute the script
-# from the repo path under /c.  See:
-# https://github.com/Microsoft/BashOnWindows/issues/1854
-# for more details.
 
 # Default GOVERSION
 [[ ! "$GOVERSION" ]] && GOVERSION=1.11
 REPO=pfcdata
 
 testrepo () {
-  GO=go
-  if [[ $GOVERSION == 1.10 ]]; then
-    GO=vgo
-  fi
+  TMPDIR=$(mktemp -d)
+  TMPFILE=$(mktemp)
+  export GO111MODULE=on
 
-  $GO version
+  go version
 
-  # binary needed for RPC tests
-  env CC=gcc $GO build
-  pushd $GOPATH
-  dir
-  popd
-  #cp "$REPO" "$GOPATH/bin/"
+  ROOTPATH=$(go list -m -f {{.Dir}} 2>/dev/null)
+  ROOTPATHPATTERN=$(echo $ROOTPATH | sed 's/\\/\\\\/g' | sed 's/\//\\\//g')
+  MODPATHS=$(go list -m -f {{.Dir}} all 2>/dev/null | grep "^$ROOTPATHPATTERN")
+
+  # Test application install
+  go build
+  (cd cmd/rebuilddb && go build)
+  (cd cmd/rebuilddb2 && go build)
+  (cd cmd/scanblocks && go build)
+
+  # Check tests
+  git clone https://github.com/pfclabs/bug-free-happiness $TMPDIR/test-data-repo
+  tar xvf $TMPDIR/test-data-repo/stakedb/test_ticket_pool.bdgr.tar.xz -C ./stakedb
 
   # run tests on all modules
-  ROOTPATH=$($GO list -m -f {{.Dir}} 2>/dev/null)
-  ROOTPATHPATTERN=$(echo $ROOTPATH | sed 's/\\/\\\\/g' | sed 's/\//\\\//g')
-  MODPATHS=$($GO list -m -f {{.Dir}} all 2>/dev/null | grep "^$ROOTPATHPATTERN"\
-    | sed -e "s/^$ROOTPATHPATTERN//" -e 's/^\\//' -e 's/^\///')
-  MODPATHS=". $MODPATHS"
-  for module in $MODPATHS; do
-    echo "==> ${module}"
-    (cd $module && env GORACE='halt_on_error=1' CC=gcc $GO test -short -race \
-	  -tags rpctest ./...)
+  for MODPATH in $MODPATHS; do
+    env GORACE='halt_on_error=1' go test -v -race $(cd $MODPATH && go list -m)
   done
 
   # check linters
-  if [[ $GOVERSION != 1.10 ]]; then
-    # linters do not work with modules yet
-    go mod vendor
-    unset GO111MODULE
+  golangci-lint run --deadline=10m \
+    --disable-all \
+    --enable govet \
+    --enable staticcheck \
+    --enable gosimple \
+    --enable unconvert \
+    --enable ineffassign \
+    --enable structcheck \
+    --enable goimports \
+    --enable misspell \
+    --enable unparam
 
-  fi
+  # webpack
+  npm install
+  npm run build
 
   echo "------------------------------------------"
   echo "Tests completed successfully!"
+
+  # Remove all the tests data
+  rm -rf $TMPDIR $TMPFILE
 }
 
 DOCKER=
@@ -76,20 +80,12 @@ if [ ! "$DOCKER" ]; then
     exit
 fi
 
-# use Travis cache with docker
 DOCKER_IMAGE_TAG=pfcdata-golang-builder-$GOVERSION
-mkdir -p ~/.cache
-if [ -f ~/.cache/$DOCKER_IMAGE_TAG.tar ]; then
-  # load via cache
-  $DOCKER load -i ~/.cache/$DOCKER_IMAGE_TAG.tar
-else
-  # pull and save image to cache
-  $DOCKER pull picfight/$DOCKER_IMAGE_TAG
-  $DOCKER save picfight/$DOCKER_IMAGE_TAG > ~/.cache/$DOCKER_IMAGE_TAG.tar
-fi
+$DOCKER pull picfight/$DOCKER_IMAGE_TAG
 
-$DOCKER run --rm -it -v $(pwd):/src:Z picfight/$DOCKER_IMAGE_TAG /bin/bash -c "\
-  rsync -ra --filter=':- .gitignore'  \
+$DOCKER run --rm -it -v $(pwd):/src picfight/$DOCKER_IMAGE_TAG /bin/bash -c "\
+  rsync -ra --include-from=<(git --git-dir=/src/.git ls-files) \
+  --filter=':- .gitignore' \
   /src/ /go/src/github.com/picfight/$REPO/ && \
-  dir && \
+  cd github.com/picfight/$REPO/ && \
   env GOVERSION=$GOVERSION GO111MODULE=on bash run_tests.sh"

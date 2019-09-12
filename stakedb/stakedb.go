@@ -13,72 +13,77 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/oleiade/lane"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/database"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient/v2"
 	"github.com/picfight/pfcd/wire"
-	apitypes "github.com/picfight/pfcdata/v3/api/types"
-	"github.com/picfight/pfcdata/v3/rpcutils"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	apitypes "github.com/picfight/pfcdata/api/types/v2"
+	"github.com/picfight/pfcdata/rpcutils"
+	"github.com/picfight/pfcdata/txhelpers"
 )
 
 // PoolInfoCache contains a map of block hashes to ticket pool info data at that
 // block height.
 type PoolInfoCache struct {
-	sync.RWMutex
+	mtx         sync.RWMutex
 	poolInfo    map[chainhash.Hash]*apitypes.TicketPoolInfo
-	expireQueue *lane.Queue
+	expireQueue []chainhash.Hash
 	maxSize     int
 }
 
 // NewPoolInfoCache constructs a new PoolInfoCache, and is needed to initialize
 // the internal map.
-func NewPoolInfoCache(size int) *PoolInfoCache {
+func NewPoolInfoCache(size int) (*PoolInfoCache, error) {
+	if size < 2 {
+		return nil, fmt.Errorf("size %d is less than 2", size)
+	}
 	return &PoolInfoCache{
 		poolInfo:    make(map[chainhash.Hash]*apitypes.TicketPoolInfo, size),
-		expireQueue: lane.NewQueue(),
+		expireQueue: make([]chainhash.Hash, 0, size),
 		maxSize:     size,
-	}
+	}, nil
 }
 
 // Get attempts to fetch the ticket pool info for a given block hash, returning
 // a *apitypes.TicketPoolInfo, and a bool indicating if the hash was found in
 // the map.
 func (c *PoolInfoCache) Get(hash chainhash.Hash) (*apitypes.TicketPoolInfo, bool) {
-	c.RLock()
-	defer c.RUnlock()
+	c.mtx.RLock()
+	defer c.mtx.RUnlock()
 	tpi, ok := c.poolInfo[hash]
 	return tpi, ok
 }
 
 // Set stores the ticket pool info for the given hash in the pool info cache.
 func (c *PoolInfoCache) Set(hash chainhash.Hash, p *apitypes.TicketPoolInfo) {
-	c.Lock()
-	defer c.Unlock()
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	c.poolInfo[hash] = p
-	c.expireQueue.Enqueue(hash)
-	if c.expireQueue.Size() >= c.maxSize {
-		expireHash := c.expireQueue.Dequeue().(chainhash.Hash)
+	if len(c.expireQueue)+1 >= c.maxSize {
+		expireHash := c.expireQueue[0]
+		c.expireQueue = c.expireQueue[1:]
 		delete(c.poolInfo, expireHash)
 	}
+	c.expireQueue = append(c.expireQueue, hash)
 }
 
 // SetCapacity sets the cache capacity to the specified number of elements. If
 // the new capacity is smaller than the current cache size, elements are
 // automatically evicted until the desired size is reached.
-func (c *PoolInfoCache) SetCapacity(cap int) error {
-	c.Lock()
-	defer c.Unlock()
-	c.maxSize = cap
-	for c.expireQueue.Size() >= c.maxSize {
-		expireHash, ok := c.expireQueue.Dequeue().(chainhash.Hash)
-		if !ok {
-			return fmt.Errorf("failed to reduce pool cache capacity")
-		}
+func (c *PoolInfoCache) SetCapacity(size int) error {
+	if size < 2 {
+		return fmt.Errorf("size %d is less than 2", size)
+	}
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	c.maxSize = size
+	for len(c.expireQueue) >= c.maxSize {
+		expireHash := c.expireQueue[0]
+		c.expireQueue = c.expireQueue[1:]
 		delete(c.poolInfo, expireHash)
 	}
 	return nil
@@ -133,13 +138,16 @@ func LoadAndRecover(client *rpcclient.Client, params *chaincfg.Params,
 	if err != nil {
 		return nil, fmt.Errorf("unable to open ticket pool DB: %v", err)
 	}
-
+	poolInfoCache, err := NewPoolInfoCache(513)
+	if err != nil {
+		return nil, err
+	}
 	sDB := &StakeDatabase{
 		params:          params,
 		NodeClient:      client,
 		blockCache:      make(map[int64]*pfcutil.Block),
 		liveTicketCache: make(map[chainhash.Hash]int64, params.TicketPoolSize*(params.TicketsPerBlock+1)),
-		poolInfo:        NewPoolInfoCache(513),
+		poolInfo:        poolInfoCache,
 		PoolDB:          poolDB,
 		heightWaiters:   make(map[int64][]chan *chainhash.Hash),
 	}
@@ -246,12 +254,17 @@ func NewStakeDatabase(client *rpcclient.Client, params *chaincfg.Params,
 	if err != nil {
 		return nil, height, fmt.Errorf("unable to open ticket pool DB: %v", err)
 	}
+	poolInfoCache, err := NewPoolInfoCache(513)
+	if err != nil {
+		return nil, height, err
+	}
+
 	sDB := &StakeDatabase{
 		params:          params,
 		NodeClient:      client,
 		blockCache:      make(map[int64]*pfcutil.Block),
 		liveTicketCache: make(map[chainhash.Hash]int64, params.TicketPoolSize*(params.TicketsPerBlock+1)),
-		poolInfo:        NewPoolInfoCache(513),
+		poolInfo:        poolInfoCache,
 		PoolDB:          poolDB,
 		heightWaiters:   make(map[int64][]chan *chainhash.Hash),
 	}
@@ -270,14 +283,6 @@ func NewStakeDatabase(client *rpcclient.Client, params *chaincfg.Params,
 	// to recover.
 	heightStakeDB, heightTicketPool := int64(sDB.Height()), sDB.PoolDB.Tip()
 	if heightStakeDB != heightTicketPool {
-		if heightStakeDB-heightTicketPool > 16 {
-			log.Warnf("The ticket DB format has changed in v2.1. Did you upgrade?")
-			// Try to close but ignore any error
-			_ = sDB.Close()
-			_ = poolDB.Close()
-			return nil, heightTicketPool, fmt.Errorf("Remove %s and start pfcdata again.",
-				filepath.Join(dataDir, DefaultTicketPoolDbFolder))
-		}
 		// Roll stake DB back to the height of the ticket pool DB
 		for heightStakeDB > heightTicketPool {
 			if err = sDB.DisconnectBlock(true); err != nil {
@@ -689,7 +694,7 @@ func (db *StakeDatabase) disconnectBlock(neglectCache bool) error {
 		}
 	}
 
-	log.Debugf("Disconnecting block %d.", childHeight)
+	log.Tracef("Disconnecting block %d.", childHeight)
 	childUndoData := append(stake.UndoTicketDataSlice(nil), db.BestNode.UndoData()...)
 
 	// previous best node

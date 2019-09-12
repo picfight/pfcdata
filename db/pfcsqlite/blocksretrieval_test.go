@@ -4,85 +4,89 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/testutil"
+	"github.com/picfight/pfcdata/db/dbtypes"
 )
 
 func TestEmptyDBRetrieveAllPoolValAndSize(t *testing.T) {
-	testutil.BindCurrentTestSetup(t)
-	db := ObtainReusableEmptyDB()
-
-	result, err := db.RetrieveAllPoolValAndSize()
+	db, err := ReusableEmptyDB()
 	if err != nil {
-		testutil.ReportTestFailed(
-			"RetrieveAllPoolValAndSize() failed: default result expected: %v",
-			err)
+		t.Fatalf("Failed to obtain test DB: %v", err)
 	}
 
-	// Expected value:
-	var defaultChartsData dbtypes.ChartsData
+	var result = new(dbtypes.ChartsData)
+	result.Time, result.SizeF, result.ValueF, err = db.RetrievePoolAllValueAndSize(result.Time,
+		result.SizeF, result.ValueF)
+	if err != nil {
+		t.Fatalf("RetrieveAllPoolValAndSize() failed: default result expected: %v", err)
+	}
 
+	var defaultChartsData dbtypes.ChartsData
 	if !cmp.Equal(*result, defaultChartsData) {
-		testutil.ReportTestFailed(
-			"RetrieveAllPoolValAndSize() failed: default result expected:\n%v",
+		t.Fatalf("RetrieveAllPoolValAndSize() failed: default result expected:\n%v",
 			cmp.Diff(*result, defaultChartsData))
 	}
 }
 
 func TestEmptyDBRetrieveBlockFeeInfo(t *testing.T) {
-	testutil.BindCurrentTestSetup(t)
-	db := ObtainReusableEmptyDB()
-	result, err := db.RetrieveBlockFeeInfo()
+	db, err := ReusableEmptyDB()
 	if err != nil {
-		testutil.ReportTestFailed(
-			"RetrieveBlockFeeInfo() failed: default result expected: %v",
-			err)
+		t.Fatalf("Failed to obtain test DB: %v", err)
 	}
 
-	// Expected value:
-	var defaultChartsData dbtypes.ChartsData
+	heightArr, feeArr, err := db.RetrieveBlockFeeInfo(nil, nil)
+	if err != nil {
+		t.Fatalf("RetrieveBlockFeeInfo() failed: default result expected: %v", err)
+	}
 
-	if !cmp.Equal(*result, defaultChartsData) {
-		testutil.ReportTestFailed(
-			"RetrieveBlockFeeInfo() failed: default result expected:\n%v",
-			cmp.Diff(*result, defaultChartsData))
+	var defaultHeights []uint64
+	var defaultFees []float64
+
+	if !cmp.Equal(heightArr, defaultHeights) {
+		t.Fatalf("RetrieveBlockFeeInfo() failed: default result for heights array expected:\n%v",
+			cmp.Diff(heightArr, defaultHeights))
+	}
+
+	if !cmp.Equal(feeArr, defaultFees) {
+		t.Fatalf("RetrieveBlockFeeInfo() failed: default result for fees array expected:\n%v",
+			cmp.Diff(feeArr, defaultFees))
 	}
 }
 
 func TestEmptyDBGetBestBlockHash(t *testing.T) {
-	testutil.BindCurrentTestSetup(t)
-	db := ObtainReusableEmptyDB()
+	db, err := ReusableEmptyDB()
+	if err != nil {
+		t.Fatalf("Failed to obtain test DB: %v", err)
+	}
+
 	str := db.GetBestBlockHash()
 	if str != "" {
-		testutil.ReportTestFailed(
-			"GetBestBlockHash() failed: expected empty string, returned %v",
-			str)
+		t.Fatalf("GetBestBlockHash() failed: expected empty string, returned %v", str)
 	}
 }
 
 func TestEmptyDBGetBestBlockHeight(t *testing.T) {
-	testutil.BindCurrentTestSetup(t)
-	db := ObtainReusableEmptyDB()
+	db, err := ReusableEmptyDB()
+	if err != nil {
+		t.Fatalf("Failed to obtain test DB: %v", err)
+	}
+
 	h := db.GetBestBlockHeight()
 	if h != -1 {
-		testutil.ReportTestFailed(
-			"db.GetBestBlockHeight() returned %d, expected -1",
-			h)
+		t.Fatalf("db.GetBestBlockHeight() returned %d, expected -1", h)
 	}
 }
 
 func TestEmptyDBGetStakeInfoHeight(t *testing.T) {
-	testutil.BindCurrentTestSetup(t)
-	db := ObtainReusableEmptyDB()
+	db, err := ReusableEmptyDB()
+	if err != nil {
+		t.Fatalf("Failed to obtain test DB: %v", err)
+	}
+
 	endHeight, err := db.GetStakeInfoHeight()
 	if err != nil {
-		testutil.ReportTestFailed(
-			"GetStakeInfoHeight() failed: %v",
-			err)
+		t.Fatalf("GetStakeInfoHeight() failed: %v", err)
 	}
 	if endHeight != -1 {
-		testutil.ReportTestFailed(
-			"GetStakeInfoHeight() failed: returned %d, expected -1",
-			endHeight)
+		t.Fatalf("GetStakeInfoHeight() failed: returned %d, expected -1", endHeight)
 	}
 }

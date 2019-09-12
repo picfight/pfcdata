@@ -1,10 +1,11 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
 package rpcutils
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,13 +14,13 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/pfcjson/v2"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient/v2"
 	"github.com/picfight/pfcd/wire"
-	apitypes "github.com/picfight/pfcdata/v3/api/types"
-	"github.com/picfight/pfcdata/v3/semver"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	apitypes "github.com/picfight/pfcdata/api/types/v2"
+	"github.com/picfight/pfcdata/semver"
+	"github.com/picfight/pfcdata/txhelpers"
 )
 
 // Any of the following pfcd RPC API versions are deemed compatible with
@@ -40,7 +41,7 @@ var (
 
 // ConnectNodeRPC attempts to create a new websocket connection to a pfcd node,
 // with the given credentials and optional notification handlers.
-func ConnectNodeRPC(host, user, pass, cert string, disableTLS bool,
+func ConnectNodeRPC(host, user, pass, cert string, disableTLS, disableReconnect bool,
 	ntfnHandlers ...*rpcclient.NotificationHandlers) (*rpcclient.Client, semver.Semver, error) {
 	var pfcdCerts []byte
 	var err error
@@ -61,12 +62,13 @@ func ConnectNodeRPC(host, user, pass, cert string, disableTLS bool,
 	}
 
 	connCfgDaemon := &rpcclient.ConnConfig{
-		Host:         host,
-		Endpoint:     "ws", // websocket
-		User:         user,
-		Pass:         pass,
-		Certificates: pfcdCerts,
-		DisableTLS:   disableTLS,
+		Host:                 host,
+		Endpoint:             "ws", // websocket
+		User:                 user,
+		Pass:                 pass,
+		Certificates:         pfcdCerts,
+		DisableTLS:           disableTLS,
+		DisableAutoReconnect: disableReconnect,
 	}
 
 	var ntfnHdlrs *rpcclient.NotificationHandlers
@@ -138,7 +140,8 @@ func BuildBlockHeaderVerbose(header *wire.BlockHeader, params *chaincfg.Params,
 		Time:          header.Timestamp.Unix(),
 		Nonce:         header.Nonce,
 		Difficulty:    diffRatio,
-		NextHash:      next,
+		// Cannot get ChainWork from the wire.BlockHeader
+		NextHash: next,
 	}
 
 	return &blockHeaderResult
@@ -146,7 +149,7 @@ func BuildBlockHeaderVerbose(header *wire.BlockHeader, params *chaincfg.Params,
 
 // GetBlockHeaderVerbose creates a *pfcjson.GetBlockHeaderVerboseResult for the
 // block at height idx via an RPC connection to a chain server.
-func GetBlockHeaderVerbose(client *rpcclient.Client, idx int64) *pfcjson.GetBlockHeaderVerboseResult {
+func GetBlockHeaderVerbose(client BlockFetcher, idx int64) *pfcjson.GetBlockHeaderVerboseResult {
 	blockhash, err := client.GetBlockHash(idx)
 	if err != nil {
 		log.Errorf("GetBlockHash(%d) failed: %v", idx, err)
@@ -164,7 +167,7 @@ func GetBlockHeaderVerbose(client *rpcclient.Client, idx int64) *pfcjson.GetBloc
 
 // GetBlockHeaderVerboseByString creates a *pfcjson.GetBlockHeaderVerboseResult
 // for the block specified by hash via an RPC connection to a chain server.
-func GetBlockHeaderVerboseByString(client *rpcclient.Client, hash string) *pfcjson.GetBlockHeaderVerboseResult {
+func GetBlockHeaderVerboseByString(client BlockFetcher, hash string) *pfcjson.GetBlockHeaderVerboseResult {
 	blockhash, err := chainhash.NewHashFromStr(hash)
 	if err != nil {
 		log.Errorf("Invalid block hash %s: %v", blockhash, err)
@@ -238,7 +241,7 @@ func GetStakeDiffEstimates(client *rpcclient.Client) *apitypes.StakeDiff {
 }
 
 // GetBlock gets a block at the given height from a chain server.
-func GetBlock(ind int64, client *rpcclient.Client) (*pfcutil.Block, *chainhash.Hash, error) {
+func GetBlock(ind int64, client BlockFetcher) (*pfcutil.Block, *chainhash.Hash, error) {
 	blockhash, err := client.GetBlockHash(ind)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetBlockHash(%d) failed: %v", ind, err)
@@ -255,7 +258,7 @@ func GetBlock(ind int64, client *rpcclient.Client) (*pfcutil.Block, *chainhash.H
 }
 
 // GetBlockByHash gets the block with the given hash from a chain server.
-func GetBlockByHash(blockhash *chainhash.Hash, client *rpcclient.Client) (*pfcutil.Block, error) {
+func GetBlockByHash(blockhash *chainhash.Hash, client BlockFetcher) (*pfcutil.Block, error) {
 	msgBlock, err := client.GetBlock(blockhash)
 	if err != nil {
 		return nil, fmt.Errorf("GetBlock failed (%s): %v", blockhash, err)
@@ -335,13 +338,7 @@ func reverseStringSlice(s []string) {
 }
 
 // GetTransactionVerboseByID get a transaction by transaction id
-func GetTransactionVerboseByID(client *rpcclient.Client, txid string) (*pfcjson.TxRawResult, error) {
-	txhash, err := chainhash.NewHashFromStr(txid)
-	if err != nil {
-		log.Errorf("Invalid transaction hash %s", txid)
-		return nil, err
-	}
-
+func GetTransactionVerboseByID(client *rpcclient.Client, txhash *chainhash.Hash) (*pfcjson.TxRawResult, error) {
 	txraw, err := client.GetRawTransactionVerbose(txhash)
 	if err != nil {
 		log.Errorf("GetRawTransactionVerbose failed for: %v", txhash)
@@ -376,7 +373,7 @@ func SearchRawTransaction(client *rpcclient.Client, count int, address string) (
 // other chain, that block will be shared between the two chains, and the common
 // ancestor will be the previous block. However, the intended use of this
 // function is to find a common ancestor for two chains with no common blocks.
-func CommonAncestor(client *rpcclient.Client, hashA, hashB chainhash.Hash) (*chainhash.Hash, []chainhash.Hash, []chainhash.Hash, error) {
+func CommonAncestor(client BlockFetcher, hashA, hashB chainhash.Hash) (*chainhash.Hash, []chainhash.Hash, []chainhash.Hash, error) {
 	if client == nil {
 		return nil, nil, nil, errors.New("nil RPC client")
 	}
@@ -446,4 +443,187 @@ func CommonAncestor(client *rpcclient.Client, hashA, hashB chainhash.Hash) (*cha
 
 	// hashA == hashB
 	return &hashA, chainA, chainB, nil
+}
+
+type BlockHashGetter interface {
+	GetBlockHash(int64) (*chainhash.Hash, error)
+}
+
+// OrphanedTipLength finds a common ancestor by iterating block heights
+// backwards until a common block hash is found. Unlike CommonAncestor, an
+// orphaned DB tip whose corresponding block is not known to pfcd will not cause
+// an error. The number of blocks that have been orphaned is returned.
+// Realistically, this should rarely be anything but 0 or 1, but no limits are
+// placed here on the number of blocks checked.
+func OrphanedTipLength(ctx context.Context, client BlockHashGetter,
+	tipHeight int64, hashFunc func(int64) (string, error)) (int64, error) {
+	commonHeight := tipHeight
+	var dbHash string
+	var err error
+	var pfcdHash *chainhash.Hash
+	for {
+		// Since there are no limits on the number of blocks scanned, allow
+		// cancellation for a clean exit.
+		select {
+		case <-ctx.Done():
+			return 0, nil
+		default:
+		}
+
+		dbHash, err = hashFunc(commonHeight)
+		if err != nil {
+			return -1, fmt.Errorf("Unable to retrieve block at height %d: %v", commonHeight, err)
+		}
+		pfcdHash, err = client.GetBlockHash(commonHeight)
+		if err != nil {
+			return -1, fmt.Errorf("Unable to retrive pfcd block at height %d: %v", commonHeight, err)
+		}
+		if pfcdHash.String() == dbHash {
+			break
+		}
+
+		commonHeight--
+		if commonHeight < 0 {
+			return -1, fmt.Errorf("Unable to find a common ancestor")
+		}
+		// Reorgs are soft-limited to depth 6 by pfcd. More than six blocks without
+		// a match probably indicates an issue.
+		if commonHeight-tipHeight == 7 {
+			log.Warnf("No common ancestor within 6 blocks. This is abnormal")
+		}
+
+	}
+	return tipHeight - commonHeight, nil
+}
+
+// GetChainWork fetches the pfcjson.BlockHeaderVerbose and returns only the
+// ChainWork field as a string.
+func GetChainWork(client BlockFetcher, hash *chainhash.Hash) (string, error) {
+	header, err := client.GetBlockHeaderVerbose(hash)
+	if err != nil {
+		return "", err
+	}
+	return header.ChainWork, nil
+}
+
+type MempoolAddressChecker interface {
+	UnconfirmedTxnsForAddress(address string) (*txhelpers.AddressOutpoints, int64, error)
+}
+
+type mempoolAddressChecker struct {
+	client *rpcclient.Client
+	params *chaincfg.Params
+}
+
+func (m *mempoolAddressChecker) UnconfirmedTxnsForAddress(address string) (*txhelpers.AddressOutpoints, int64, error) {
+	return UnconfirmedTxnsForAddress(m.client, address, m.params)
+}
+
+func NewMempoolAddressChecker(client *rpcclient.Client, params *chaincfg.Params) MempoolAddressChecker {
+	return &mempoolAddressChecker{client, params}
+}
+
+// UnconfirmedTxnsForAddress returns the chainhash.Hash of all transactions in
+// mempool that (1) pay to the given address, or (2) spend a previous outpoint
+// that paid to the address.
+func UnconfirmedTxnsForAddress(client *rpcclient.Client, address string, params *chaincfg.Params) (*txhelpers.AddressOutpoints, int64, error) {
+	// Mempool transactions
+	var numUnconfirmed int64
+	mempoolTxns, err := client.GetRawMempoolVerbose(pfcjson.GRMAll)
+	if err != nil {
+		log.Warnf("GetRawMempool failed for address %s: %v", address, err)
+		return nil, numUnconfirmed, err
+	}
+
+	// Check each transaction for involvement with provided address.
+	addressOutpoints := txhelpers.NewAddressOutpoints(address)
+	for hash, tx := range mempoolTxns {
+		// Transaction details from pfcd
+		txhash, err1 := chainhash.NewHashFromStr(hash)
+		if err1 != nil {
+			log.Errorf("Invalid transaction hash %s", hash)
+			return addressOutpoints, 0, err1
+		}
+
+		Tx, err1 := client.GetRawTransaction(txhash)
+		if err1 != nil {
+			log.Warnf("Unable to GetRawTransaction(%s): %v", hash, err1)
+			err = err1
+			continue
+		}
+		// Scan transaction for inputs/outputs involving the address of interest
+		outpoints, prevouts, prevTxns := txhelpers.TxInvolvesAddress(Tx.MsgTx(),
+			address, client, params)
+		if len(outpoints) == 0 && len(prevouts) == 0 {
+			continue
+		}
+		// Update previous outpoint txn slice with mempool time
+		for f := range prevTxns {
+			prevTxns[f].MemPoolTime = tx.Time
+		}
+
+		// Add present transaction to previous outpoint txn slice
+		numUnconfirmed++
+		thisTxUnconfirmed := &txhelpers.TxWithBlockData{
+			Tx:          Tx.MsgTx(),
+			MemPoolTime: tx.Time,
+		}
+		prevTxns = append(prevTxns, thisTxUnconfirmed)
+		// Merge the I/Os and the transactions into results
+		addressOutpoints.Update(prevTxns, outpoints, prevouts)
+	}
+
+	return addressOutpoints, numUnconfirmed, err
+}
+
+// APITransaction uses the RPC client to retrieve the specified transaction, and
+// convert the data into a *apitypes.Tx.
+func APITransaction(client *rpcclient.Client, txid *chainhash.Hash) (tx *apitypes.Tx, hex string, err error) {
+	txraw, err := GetTransactionVerboseByID(client, txid)
+	if err != nil {
+		err = fmt.Errorf("APITransaction failed for %v: %v", txid, err)
+		return
+	}
+	hex = txraw.Hex
+
+	tx = new(apitypes.Tx)
+	tx.TxID = txraw.Txid
+	tx.Size = int32(len(hex) / 2)
+	tx.Version = txraw.Version
+	tx.Locktime = txraw.LockTime
+	tx.Expiry = txraw.Expiry
+	tx.Vin = make([]pfcjson.Vin, len(txraw.Vin))
+	copy(tx.Vin, txraw.Vin)
+	tx.Vout = make([]apitypes.Vout, len(txraw.Vout))
+	for i := range txraw.Vout {
+		tx.Vout[i].Value = txraw.Vout[i].Value
+		tx.Vout[i].N = txraw.Vout[i].N
+		tx.Vout[i].Version = txraw.Vout[i].Version
+		spk := &tx.Vout[i].ScriptPubKeyDecoded
+		spkRaw := &txraw.Vout[i].ScriptPubKey
+		spk.Asm = spkRaw.Asm
+		spk.Hex = spkRaw.Hex
+		spk.ReqSigs = spkRaw.ReqSigs
+		spk.Type = spkRaw.Type
+		spk.Addresses = make([]string, len(spkRaw.Addresses))
+		for j := range spkRaw.Addresses {
+			spk.Addresses[j] = spkRaw.Addresses[j]
+		}
+		if spkRaw.CommitAmt != nil {
+			spk.CommitAmt = new(float64)
+			*spk.CommitAmt = *spkRaw.CommitAmt
+		}
+	}
+
+	tx.Confirmations = txraw.Confirmations
+
+	// BlockID
+	tx.Block = new(apitypes.BlockID)
+	tx.Block.BlockHash = txraw.BlockHash
+	tx.Block.BlockHeight = txraw.BlockHeight
+	tx.Block.BlockIndex = txraw.BlockIndex
+	tx.Block.Time = txraw.Time
+	tx.Block.BlockTime = txraw.Blocktime
+
+	return
 }

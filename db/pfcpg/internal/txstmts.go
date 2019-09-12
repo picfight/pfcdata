@@ -12,8 +12,8 @@ const (
 		/*block_db_id INT4,*/
 		block_hash TEXT,
 		block_height INT8,
-		block_time INT8,
-		time INT8,
+		block_time TIMESTAMPTZ,
+		time TIMESTAMPTZ,
 		tx_type INT4,
 		version INT4,
 		tree INT2,
@@ -36,12 +36,12 @@ const (
 	// insertTxRow is the basis for several tx insert/upsert statements.
 	insertTxRow = `INSERT INTO transactions (
 		block_hash, block_height, block_time, time,
-		tx_type, version, tree, tx_hash, block_index, 
-		lock_time, expiry, size, spent, sent, fees, 
+		tx_type, version, tree, tx_hash, block_index,
+		lock_time, expiry, size, spent, sent, fees,
 		num_vin, vin_db_ids, num_vout, vout_db_ids,
 		is_valid, is_mainchain)
 	VALUES (
-		$1, $2, $3, $4, 
+		$1, $2, $3, $4,
 		$5, $6, $7, $8, $9,
 		$10, $11, $12, $13, $14, $15,
 		$16, $17, $18, $19,
@@ -54,7 +54,7 @@ const (
 
 	// UpsertTxRow is an upsert (insert or update on conflict), returning the
 	// inserted/updated transaction row id.
-	UpsertTxRow = insertTxRow + `ON CONFLICT (tx_hash, block_hash) DO UPDATE 
+	UpsertTxRow = insertTxRow + `ON CONFLICT (tx_hash, block_hash) DO UPDATE
 		SET is_valid = $20, is_mainchain = $21 RETURNING id;`
 
 	// InsertTxRowOnConflictDoNothing allows an INSERT with a DO NOTHING on
@@ -84,16 +84,16 @@ const (
 
 	// IndexTransactionTableOnHashes creates the unique index uix_tx_hashes on
 	// (tx_hash, block_hash).
-	IndexTransactionTableOnHashes = `CREATE UNIQUE INDEX uix_tx_hashes
-		 ON transactions(tx_hash, block_hash);`
-	DeindexTransactionTableOnHashes = `DROP INDEX uix_tx_hashes;`
+	IndexTransactionTableOnHashes = `CREATE UNIQUE INDEX ` + IndexOfTransactionsTableOnHashes +
+		` ON transactions(tx_hash, block_hash);`
+	DeindexTransactionTableOnHashes = `DROP INDEX ` + IndexOfTransactionsTableOnHashes + `;`
 
 	// Investigate removing this. block_hash is already indexed. It would be
 	// unique with just (block_hash, block_index). And tree is likely not
 	// important to index.  NEEDS TESTING BEFORE REMOVAL.
-	IndexTransactionTableOnBlockIn = `CREATE UNIQUE INDEX uix_tx_block_in
-		ON transactions(block_hash, block_index, tree);`
-	DeindexTransactionTableOnBlockIn = `DROP INDEX uix_tx_block_in;`
+	IndexTransactionTableOnBlockIn = `CREATE UNIQUE INDEX ` + IndexOfTransactionsTableOnBlockInd +
+		` ON transactions(block_hash, block_index, tree);`
+	DeindexTransactionTableOnBlockIn = `DROP INDEX ` + IndexOfTransactionsTableOnBlockInd + `;`
 
 	SelectTxByHash = `SELECT id, block_hash, block_index, tree
 		FROM transactions
@@ -108,19 +108,16 @@ const (
 		ORDER BY is_mainchain DESC, is_valid DESC, block_time DESC
 		LIMIT 1;`
 
-	SelectTxsPerDay = `SELECT to_timestamp(time)::date as date, count(*) FROM transactions
-		GROUP BY date ORDER BY date;`
-
-	SelectFullTxByHash = `SELECT id, block_hash, block_height, block_time, 
-		time, tx_type, version, tree, tx_hash, block_index, lock_time, expiry, 
+	SelectFullTxByHash = `SELECT id, block_hash, block_height, block_time,
+		time, tx_type, version, tree, tx_hash, block_index, lock_time, expiry,
 		size, spent, sent, fees, num_vin, vin_db_ids, num_vout, vout_db_ids,
 		is_valid, is_mainchain
 		FROM transactions WHERE tx_hash = $1
 		ORDER BY is_mainchain DESC, is_valid DESC, block_time DESC
 		LIMIT 1;`
 
-	SelectFullTxsByHash = `SELECT id, block_hash, block_height, block_time, 
-		time, tx_type, version, tree, tx_hash, block_index, lock_time, expiry, 
+	SelectFullTxsByHash = `SELECT id, block_hash, block_height, block_time,
+		time, tx_type, version, tree, tx_hash, block_index, lock_time, expiry,
 		size, spent, sent, fees, num_vin, vin_db_ids, num_vout, vout_db_ids,
 		is_valid, is_mainchain
 		FROM transactions WHERE tx_hash = $1
@@ -145,15 +142,15 @@ const (
 		ORDER BY is_valid DESC, is_mainchain DESC, block_height DESC;`
 
 	UpdateRegularTxnsValidMainchainByBlock = `UPDATE transactions
-		SET is_valid=$1, is_mainchain=$2 
+		SET is_valid=$1, is_mainchain=$2
 		WHERE block_hash=$3 and tree=0;`
 
 	UpdateRegularTxnsValidByBlock = `UPDATE transactions
-		SET is_valid=$1 
+		SET is_valid=$1
 		WHERE block_hash=$2 and tree=0;`
 
 	UpdateTxnsMainchainByBlock = `UPDATE transactions
-		SET is_mainchain=$1 
+		SET is_mainchain=$1
 		WHERE block_hash=$2
 		RETURNING id;`
 
@@ -188,6 +185,8 @@ const (
 		ON transactions.id=purchase_tx_db_id WHERE pool_status=0
 		AND tickets.is_mainchain = TRUE GROUP BY ticket_bucket;`
 
+	SelectTxnByDbID = `SELECT block_hash, block_height, tx_hash FROM transactions WHERE id = $1;`
+
 	//SelectTxByPrevOut = `SELECT * FROM transactions WHERE vins @> json_build_array(json_build_object('prevtxhash',$1)::jsonb)::jsonb;`
 	//SelectTxByPrevOut = `SELECT * FROM transactions WHERE vins #>> '{"prevtxhash"}' = '$1';`
 
@@ -207,21 +206,29 @@ const (
 )
 
 var (
-	SelectAllRevokes = fmt.Sprintf(`SELECT id, tx_hash, block_height, vin_db_ids[0] `+
-		`FROM transactions WHERE tx_type = %d;`, stake.TxTypeSSRtx)
+	SelectAllRevokes = fmt.Sprintf(`SELECT id, tx_hash, block_height, vin_db_ids[0]
+		FROM transactions
+		WHERE tx_type = %d;`,
+		stake.TxTypeSSRtx)
 
-	SelectTicketsOutputCountByAllBlocks = fmt.Sprintf(`SELECT block_height,
+	SelectTicketsOutputCountByAllBlocks = `SELECT block_height,
 		SUM(CASE WHEN num_vout = 3 THEN 1 ELSE 0 END) as solo,
 		SUM(CASE WHEN num_vout = 5 THEN 1 ELSE 0 END) as pooled
-		FROM transactions WHERE tx_type = %d GROUP BY block_height
-		ORDER BY block_height;`, stake.TxTypeSStx)
+		FROM transactions 
+		WHERE tx_type = $1
+		AND block_height > $2 
+		GROUP BY block_height
+		ORDER BY block_height;`
 
-	SelectTicketsOutputCountByTPWindow = fmt.Sprintf(`SELECT
-		floor(block_height/144) as count,
+	SelectTicketsOutputCountByTPWindow = `SELECT
+		floor(block_height/$3) as count,
 		SUM(CASE WHEN num_vout = 3 THEN 1 ELSE 0 END) as solo,
 		SUM(CASE WHEN num_vout = 5 THEN 1 ELSE 0 END) as pooled
-		FROM transactions WHERE tx_type = %d
-		GROUP BY count ORDER BY count;`, stake.TxTypeSStx)
+		FROM transactions
+		WHERE tx_type = $1
+		AND block_height > $2
+		GROUP BY count
+		ORDER BY count;`
 )
 
 // func makeTxInsertStatement(voutDbIDs, vinDbIDs []uint64, vouts []*dbtypes.Vout, checked bool) string {

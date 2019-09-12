@@ -1,4 +1,4 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
@@ -10,15 +10,13 @@ import (
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/pfcjson/v2"
 	"github.com/picfight/pfcd/pfcutil"
-	"github.com/picfight/pfcd/rpcclient"
+	"github.com/picfight/pfcd/rpcclient/v2"
 	"github.com/picfight/pfcd/wire"
-	"github.com/picfight/pfcdata/v3/api/insight"
-	"github.com/picfight/pfcdata/v3/explorer"
-	"github.com/picfight/pfcdata/v3/mempool"
-	"github.com/picfight/pfcdata/v3/rpcutils"
-	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/pfcdata/rpcutils"
+	"github.com/picfight/pfcdata/txhelpers"
+	"github.com/picfight/pfcdata/v4/api/insight"
 	"github.com/picfight/pfcwallet/wallet/udb"
 )
 
@@ -72,7 +70,7 @@ type blockHashHeight struct {
 
 type collectionQueue struct {
 	q            chan *blockHashHeight
-	syncHandlers []func(hash *chainhash.Hash)
+	syncHandlers []func(hash *chainhash.Hash) error
 	prevHash     chainhash.Hash
 	prevHeight   int64
 }
@@ -91,7 +89,7 @@ var blockQueue = NewCollectionQueue()
 
 // SetSynchronousHandlers sets the slice of synchronous new block handler
 // functions, which are called in the order they occur in the slice.
-func (q *collectionQueue) SetSynchronousHandlers(syncHandlers []func(hash *chainhash.Hash)) {
+func (q *collectionQueue) SetSynchronousHandlers(syncHandlers []func(hash *chainhash.Hash) error) {
 	q.syncHandlers = syncHandlers
 }
 
@@ -135,7 +133,10 @@ func (q *collectionQueue) processBlock(bh *blockHashHeight) {
 
 	// Run synchronous block connected handlers in order.
 	for _, h := range q.syncHandlers {
-		h(&hash)
+		if err := h(&hash); err != nil {
+			log.Errorf("synchronous handler failed: %v", err)
+			return
+		}
 	}
 
 	// Record this block as the best block connected by the collectionQueue.
@@ -145,17 +146,7 @@ func (q *collectionQueue) processBlock(bh *blockHashHeight) {
 
 	// Signal to mempool monitors that a block was mined.
 	select {
-	case NtfnChans.NewTxChan <- &mempool.NewTx{
-		Hash: nil,
-		T:    time.Now(),
-	}:
-	default:
-	}
-
-	select {
-	case NtfnChans.ExpNewTxChan <- &explorer.NewMempoolTx{
-		Hex: "",
-	}:
+	case NtfnChans.NewTxChan <- nil:
 	default:
 	}
 
@@ -235,7 +226,17 @@ func signalReorg(d ReorgData) {
 	// Send reorg data to ChainDB's monitor.
 	d.WG.Add(1)
 	select {
-	case NtfnChans.ReorgChanDcrpgDB <- fullData:
+	case NtfnChans.ReorgChanPfcpgDB <- fullData:
+	default:
+		d.WG.Done()
+	}
+	d.WG.Wait()
+
+	// Ensure all the other chain reorgs are successful before initiating the
+	// charts cache reorg. Send common ancestor reorg data to charts cache monitor.
+	d.WG.Add(1)
+	select {
+	case NtfnChans.ReorgChartsCache <- fullData:
 	default:
 		d.WG.Done()
 	}
@@ -248,7 +249,7 @@ func signalReorg(d ReorgData) {
 // anyQueue is a buffered channel used queueing the handling of different types
 // of event notifications, while keeping the order in which they were received
 // from the daemon. See superQueue.
-var anyQueue = make(chan interface{}, 1e7)
+var anyQueue = make(chan interface{}, 16)
 
 // superQueue manages the event notification queue, keeping the events in the
 // same order they were received by the rpcclient.NotificationHandlers, and
@@ -279,11 +280,14 @@ func MakeNodeNtfnHandlers() (*rpcclient.NotificationHandlers, *collectionQueue) 
 	go superQueue()
 	// ReorgSignaler must be started after creating the RPC client.
 	return &rpcclient.NotificationHandlers{
-		OnBlockConnected: func(blockHeaderSerialized []byte, transactions [][]byte) {
+		// TODO: considering using txns [][]byte to save on downstream RPCs.
+		OnBlockConnected: func(blockHeaderSerialized []byte, _ [][]byte) {
 			blockHeader := new(wire.BlockHeader)
 			err := blockHeader.FromBytes(blockHeaderSerialized)
 			if err != nil {
-				log.Error("Failed to serialize blockHeader in new block notification.")
+				log.Error("Failed to deserialize blockHeader in new block notification: "+
+					"%v", err)
+				return
 			}
 			height := int32(blockHeader.Height)
 			hash := blockHeader.BlockHash()
@@ -327,21 +331,22 @@ func MakeNodeNtfnHandlers() (*rpcclient.NotificationHandlers, *collectionQueue) 
 			}
 		},
 
-		OnWinningTickets: func(blockHash *chainhash.Hash, blockHeight int64,
-			tickets []*chainhash.Hash) {
+		// block height and hash are unused by OnWinningTickets.
+		OnWinningTickets: func(_ *chainhash.Hash, _ int64, tickets []*chainhash.Hash) {
 			var txstr []string
 			for _, t := range tickets {
 				txstr = append(txstr, t.String())
 			}
 			log.Tracef("Winning tickets: %v", strings.Join(txstr, ", "))
 		},
-		// maturing tickets. Thanks for fixing the tickets type bug, jolan!
-		OnNewTickets: func(hash *chainhash.Hash, height int64, stakeDiff int64,
-			tickets []*chainhash.Hash) {
+
+		// Maturing tickets (maturing or mined?  clarify before use!).
+		OnNewTickets: func(_ *chainhash.Hash, _ int64, _ int64, tickets []*chainhash.Hash) {
 			for _, tick := range tickets {
 				log.Tracef("Mined new ticket: %v", tick.String())
 			}
 		},
+
 		// OnRelevantTxAccepted is invoked when a transaction containing a
 		// registered address is inserted into mempool.
 		OnRelevantTxAccepted: func(transaction []byte) {
@@ -363,15 +368,8 @@ func MakeNodeNtfnHandlers() (*rpcclient.NotificationHandlers, *collectionQueue) 
 		// for the mempool monitors to avoid an extra call to pfcd for
 		// the tx details
 		OnTxAcceptedVerbose: func(txDetails *pfcjson.TxRawResult) {
-
-			select {
-			case NtfnChans.ExpNewTxChan <- &explorer.NewMempoolTx{
-				Time: time.Now().Unix(),
-				Hex:  txDetails.Hex,
-			}:
-			default:
-				log.Warn("expNewTxChan buffer full!")
-			}
+			// Current UNIX time to assign the new transaction.
+			now := time.Now().Unix()
 
 			select {
 			case NtfnChans.InsightNewTxChan <- &insight.NewTx{
@@ -384,12 +382,11 @@ func MakeNodeNtfnHandlers() (*rpcclient.NotificationHandlers, *collectionQueue) 
 				}
 			}
 
-			hash, _ := chainhash.NewHashFromStr(txDetails.Txid)
+			// Patch txDetails.Time, which is 0, with current time.
+			txDetails.Time = now
+
 			select {
-			case NtfnChans.NewTxChan <- &mempool.NewTx{
-				Hash: hash,
-				T:    time.Now(),
-			}:
+			case NtfnChans.NewTxChan <- txDetails:
 			default:
 				log.Warn("NewTxChan buffer full!")
 			}

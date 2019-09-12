@@ -1,10 +1,9 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
-// package txhelpers contains helper functions for working with transactions and
+// Package txhelpers contains helper functions for working with transactions and
 // blocks (e.g. checking for a transaction in a block).
-
 package txhelpers
 
 import (
@@ -17,6 +16,7 @@ import (
 	"math/big"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/decred/base58"
@@ -24,8 +24,9 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/pfcjson/v2"
 	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/rpcclient/v2"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 )
@@ -40,7 +41,17 @@ var CoinbaseScript = append([]byte{0x00, 0x00}, []byte(CoinbaseFlags)...)
 
 // ReorgData contains details of a chain reorganization, including the full old
 // and new chains, and the common ancestor that should not be included in either
-// chain.
+// chain. Below is the description of the reorg data with the letter indicating
+// the various blocks in the chain:
+// 			A  -> B  -> C
+//   			\  -> B' -> C' -> D'
+// CommonAncestor - Hash of A
+// OldChainHead - Hash of C
+// OldChainHeight - Height of C
+// OldChain - Chain from B to C
+// NewChainHead - Hash of D'
+// NewChainHeight - Height of D'
+// NewChain - Chain from B' to D'
 type ReorgData struct {
 	CommonAncestor chainhash.Hash
 	OldChainHead   chainhash.Hash
@@ -64,6 +75,7 @@ type RawTransactionGetter interface {
 // for GetRawTransactionVerbose.
 type VerboseTransactionGetter interface {
 	GetRawTransactionVerbose(txHash *chainhash.Hash) (*pfcjson.TxRawResult, error)
+	GetRawTransactionVerboseAsync(txHash *chainhash.Hash) rpcclient.FutureGetRawTransactionVerboseResult
 }
 
 // BlockWatchedTx contains, for a certain block, the transactions for certain
@@ -194,16 +206,16 @@ func NewAddressOutpoints(address string) *AddressOutpoints {
 }
 
 // Update appends the provided outpoints, and merges the transactions.
-func (a *AddressOutpoints) Update(Txns []*TxWithBlockData,
-	Outpoints []*wire.OutPoint, PrevOutpoint []PrevOut) {
+func (a *AddressOutpoints) Update(txns []*TxWithBlockData,
+	outpoints []*wire.OutPoint, prevOutpoint []PrevOut) {
 	// Relevant outpoints
-	a.Outpoints = append(a.Outpoints, Outpoints...)
+	a.Outpoints = append(a.Outpoints, outpoints...)
 
 	// Previous outpoints (inputs)
-	a.PrevOuts = append(a.PrevOuts, PrevOutpoint...)
+	a.PrevOuts = append(a.PrevOuts, prevOutpoint...)
 
 	// Referenced transactions
-	for _, t := range Txns {
+	for _, t := range txns {
 		a.TxnsStore[t.Hash()] = t
 	}
 }
@@ -236,35 +248,244 @@ func TxInvolvesAddress(msgTx *wire.MsgTx, addr string, c VerboseTransactionGette
 	return
 }
 
+// MempoolAddressStore organizes AddressOutpoints by address.
+type MempoolAddressStore map[string]*AddressOutpoints
+
+// TxnsStore allows quick lookup of a TxWithBlockData by transaction Hash.
+type TxnsStore map[chainhash.Hash]*TxWithBlockData
+
+// TxOutpointsByAddr sets the Outpoints field for the AddressOutpoints stored in
+// the input MempoolAddressStore. For addresses not yet present in the
+// MempoolAddressStore, a new AddressOutpoints is added to the store. The
+// provided MempoolAddressStore must be initialized. The number of msgTx outputs
+// that pay to any address are counted and returned. The addresses paid to by
+// the transaction are listed in the output addrs map, where the value of the
+// stored bool indicates the address is new to the MempoolAddressStore.
+func TxOutpointsByAddr(txAddrOuts MempoolAddressStore, msgTx *wire.MsgTx, params *chaincfg.Params) (newOuts int, addrs map[string]bool) {
+	if txAddrOuts == nil {
+		panic("TxAddressOutpoints: input map must be initialized: map[string]*AddressOutpoints")
+	}
+
+	// Check the addresses associated with the PkScript of each TxOut.
+	txTree := TxTree(msgTx)
+	hash := msgTx.TxHash()
+	addrs = make(map[string]bool)
+	for outIndex, txOut := range msgTx.TxOut {
+		_, txOutAddrs, _, err := txscript.ExtractPkScriptAddrs(txOut.Version,
+			txOut.PkScript, params)
+		if err != nil {
+			fmt.Printf("ExtractPkScriptAddrs: %v", err.Error())
+			continue
+		}
+		if len(txOutAddrs) == 0 {
+			continue
+		}
+		newOuts++
+
+		// Check if we are watching any address for this TxOut.
+		for _, txAddr := range txOutAddrs {
+			addr := txAddr.EncodeAddress()
+
+			op := wire.NewOutPoint(&hash, uint32(outIndex), txTree)
+
+			addrOuts := txAddrOuts[addr]
+			if addrOuts == nil {
+				addrOuts = &AddressOutpoints{
+					Address:   addr,
+					Outpoints: []*wire.OutPoint{op},
+				}
+				txAddrOuts[addr] = addrOuts
+				addrs[addr] = true // new
+				continue
+			}
+			if _, found := addrs[addr]; !found {
+				addrs[addr] = false // not new to the address store
+			}
+			addrOuts.Outpoints = append(addrOuts.Outpoints, op)
+		}
+	}
+	return
+}
+
+// TxPrevOutsByAddr sets the PrevOuts field for the AddressOutpoints stored in
+// the MempoolAddressStore. For addresses not yet present in the
+// MempoolAddressStore, a new AddressOutpoints is added to the store. The
+// provided MempoolAddressStore must be initialized. A VerboseTransactionGetter
+// is required to retrieve the pkScripts for the previous outpoints. The number
+// of consumed previous outpoints that paid addresses in the provided
+// transaction are counted and returned. The addresses in the previous outpoints
+// are listed in the output addrs map, where the value of the stored bool
+// indicates the address is new to the MempoolAddressStore.
+func TxPrevOutsByAddr(txAddrOuts MempoolAddressStore, txnsStore TxnsStore, msgTx *wire.MsgTx, c VerboseTransactionGetter, params *chaincfg.Params) (newPrevOuts int, addrs map[string]bool) {
+	if txAddrOuts == nil {
+		panic("TxPrevOutAddresses: input map must be initialized: map[string]*AddressOutpoints")
+	}
+	if txnsStore == nil {
+		panic("TxPrevOutAddresses: input map must be initialized: map[string]*AddressOutpoints")
+	}
+
+	// Send all the raw transaction requests
+	type promiseGetRawTransaction struct {
+		result rpcclient.FutureGetRawTransactionVerboseResult
+		inIdx  int
+	}
+	promisesGetRawTransaction := make([]promiseGetRawTransaction, 0, len(msgTx.TxIn))
+
+	for inIdx, txIn := range msgTx.TxIn {
+		hash := &txIn.PreviousOutPoint.Hash
+		if zeroHash.IsEqual(hash) {
+			continue // coinbase or stakebase
+		}
+		promisesGetRawTransaction = append(promisesGetRawTransaction, promiseGetRawTransaction{
+			result: c.GetRawTransactionVerboseAsync(hash),
+			inIdx:  inIdx,
+		})
+	}
+
+	addrs = make(map[string]bool)
+
+	// For each TxIn of this transaction, inspect the previous outpoint.
+	for i := range promisesGetRawTransaction {
+		// Previous outpoint for this TxIn
+		inIdx := promisesGetRawTransaction[i].inIdx
+		prevOut := &msgTx.TxIn[inIdx].PreviousOutPoint
+		hash := prevOut.Hash
+
+		prevTxRaw, err := promisesGetRawTransaction[i].result.Receive()
+		if err != nil {
+			fmt.Printf("Unable to get raw transaction for %v: %v\n", hash, err)
+			return
+		}
+
+		if prevTxRaw.Txid != hash.String() {
+			fmt.Printf("TxPrevOutsByAddr error: %v != %v", prevTxRaw.Txid, hash.String())
+			continue
+		}
+
+		prevTx, err := MsgTxFromHex(prevTxRaw.Hex)
+		if err != nil {
+			fmt.Printf("TxPrevOutsByAddr: MsgTxFromHex failed: %s\n", err)
+			continue
+		}
+
+		// prevOut.Index indicates which output.
+		txOut := prevTx.TxOut[prevOut.Index]
+		// Extract the addresses from this output's PkScript.
+		_, txAddrs, _, err := txscript.ExtractPkScriptAddrs(
+			txOut.Version, txOut.PkScript, params)
+		if err != nil {
+			fmt.Printf("TxPrevOutsByAddr: ExtractPkScriptAddrs: %v\n", err.Error())
+			continue
+		}
+
+		if len(txAddrs) == 0 {
+			fmt.Printf("pkScript of a previous transaction output "+
+				"(%v:%d) unexpectedly encoded no addresses.",
+				prevOut.Hash, prevOut.Index)
+			continue
+		}
+
+		newPrevOuts++
+
+		// Put the previous outpoint's transaction in the txnsStore.
+		txnsStore[hash] = &TxWithBlockData{
+			Tx:          prevTx,
+			BlockHeight: prevTxRaw.BlockHeight,
+			BlockHash:   prevTxRaw.BlockHash,
+		}
+
+		outpoint := wire.NewOutPoint(&hash,
+			prevOut.Index, TxTree(prevTx))
+		prevOutExtended := PrevOut{
+			TxSpending:       msgTx.TxHash(),
+			InputIndex:       inIdx,
+			PreviousOutpoint: outpoint,
+		}
+
+		// For each address paid to by this previous outpoint, record the
+		// previous outpoint and the containing transactions.
+		for _, txAddr := range txAddrs {
+			addr := txAddr.EncodeAddress()
+
+			// Check if it is already in the address store.
+			addrOuts := txAddrOuts[addr]
+			if addrOuts == nil {
+				// Insert into affected address map.
+				addrs[addr] = true // new
+				// Insert into the address store.
+				txAddrOuts[addr] = &AddressOutpoints{
+					Address:  addr,
+					PrevOuts: []PrevOut{prevOutExtended},
+				}
+				continue
+			}
+
+			// Address already in the address store, append the prevout.
+			addrOuts.PrevOuts = append(addrOuts.PrevOuts, prevOutExtended)
+
+			// See if the address was new before processing this transaction or
+			// if it was added by a different prevout consumed by this
+			// transaction. Only set new=false if this is the first occurrence
+			// of this address in a prevout of this transaction.
+			if _, found := addrs[addr]; !found {
+				addrs[addr] = false // not new to the address store
+			}
+		}
+	}
+	return
+}
+
 // TxConsumesOutpointWithAddress checks a transaction for inputs that spend an
 // outpoint paying to the given address. Returned are the identified input
 // indexes and the corresponding previous outpoints determined.
 func TxConsumesOutpointWithAddress(msgTx *wire.MsgTx, addr string,
 	c VerboseTransactionGetter, params *chaincfg.Params) (prevOuts []PrevOut, prevTxs []*TxWithBlockData) {
-	// For each TxIn of this transaction, inspect the previous outpoint.
+	// Send all the raw transaction requests
+	type promiseGetRawTransaction struct {
+		result rpcclient.FutureGetRawTransactionVerboseResult
+		inIdx  int
+	}
+	numPrevOut := len(msgTx.TxIn)
+	promisesGetRawTransaction := make([]promiseGetRawTransaction, 0, numPrevOut)
+
 	for inIdx, txIn := range msgTx.TxIn {
+		hash := &txIn.PreviousOutPoint.Hash
+		if zeroHash.IsEqual(hash) {
+			continue // coinbase or stakebase
+		}
+		promisesGetRawTransaction = append(promisesGetRawTransaction, promiseGetRawTransaction{
+			result: c.GetRawTransactionVerboseAsync(hash),
+			inIdx:  inIdx,
+		})
+	}
+
+	// For each TxIn of this transaction, inspect the previous outpoint.
+	for i := range promisesGetRawTransaction {
 		// Previous outpoint for this TxIn
-		prevOut := &txIn.PreviousOutPoint
-		if bytes.Equal(zeroHash[:], prevOut.Hash[:]) {
-			continue
-		}
-		// GetRawTransactionVerbose provides the height and hash of the block in
-		// which the transaction is included, if it is confirmed.
-		prevTxRaw, err := c.GetRawTransactionVerbose(&prevOut.Hash)
+		inIdx := promisesGetRawTransaction[i].inIdx
+		prevOut := &msgTx.TxIn[inIdx].PreviousOutPoint
+		hash := prevOut.Hash
+
+		prevTxRaw, err := promisesGetRawTransaction[i].result.Receive()
 		if err != nil {
-			fmt.Printf("Unable to get raw transaction for %s\n", prevOut.Hash.String())
-			continue
+			fmt.Printf("Unable to get raw transaction for %v: %v\n", hash, err)
+			return nil, nil
 		}
+
+		if prevTxRaw.Txid != hash.String() {
+			fmt.Printf("%v != %v", prevTxRaw.Txid, hash.String())
+			return nil, nil
+		}
+
 		prevTx, err := MsgTxFromHex(prevTxRaw.Hex)
 		if err != nil {
 			fmt.Printf("MsgTxFromHex failed: %s\n", err)
 			continue
 		}
-		txHash := prevTx.TxHash()
 
-		// prevOut.Index tells indicates which output
+		// prevOut.Index indicates which output.
 		txOut := prevTx.TxOut[prevOut.Index]
-		// extract the addresses from this output's PkScript
+		// Extract the addresses from this output's PkScript.
 		_, txAddrs, _, err := txscript.ExtractPkScriptAddrs(
 			txOut.Version, txOut.PkScript, params)
 		if err != nil {
@@ -277,7 +498,7 @@ func TxConsumesOutpointWithAddress(msgTx *wire.MsgTx, addr string,
 		for _, txAddr := range txAddrs {
 			addrstr := txAddr.EncodeAddress()
 			if addr == addrstr {
-				outpoint := wire.NewOutPoint(&txHash,
+				outpoint := wire.NewOutPoint(&hash,
 					prevOut.Index, TxTree(prevTx))
 				prevOuts = append(prevOuts, PrevOut{
 					TxSpending:       msgTx.TxHash(),
@@ -768,14 +989,10 @@ func FeeRateInfoBlock(block *pfcutil.Block) *pfcjson.FeeInfoBlock {
 	return feeInfo
 }
 
-// MsgTxFromHex returns a wire.MsgTx struct built from the transaction hex string
+// MsgTxFromHex returns a wire.MsgTx struct built from the transaction hex string.
 func MsgTxFromHex(txhex string) (*wire.MsgTx, error) {
-	txBytes, err := hex.DecodeString(txhex)
-	if err != nil {
-		return nil, err
-	}
 	msgTx := wire.NewMsgTx()
-	if err = msgTx.FromBytes(txBytes); err != nil {
+	if err := msgTx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
 		return nil, err
 	}
 	return msgTx, nil
@@ -868,7 +1085,8 @@ func TxFee(msgTx *wire.MsgTx) pfcutil.Amount {
 	return pfcutil.Amount(amtIn - amtOut)
 }
 
-// TxFeeRate computes and returns the fee rate in PFC/KB for a given tx
+// TxFeeRate computes and returns the total fee in atoms and fee rate in
+// atoms/kB for a given tx.
 func TxFeeRate(msgTx *wire.MsgTx) (pfcutil.Amount, pfcutil.Amount) {
 	var amtIn int64
 	for iv := range msgTx.TxIn {
@@ -878,7 +1096,19 @@ func TxFeeRate(msgTx *wire.MsgTx) (pfcutil.Amount, pfcutil.Amount) {
 	for iv := range msgTx.TxOut {
 		amtOut += msgTx.TxOut[iv].Value
 	}
-	return pfcutil.Amount(amtIn - amtOut), pfcutil.Amount(1000 * (amtIn - amtOut) / int64(msgTx.SerializeSize()))
+	txSize := int64(msgTx.SerializeSize())
+	return pfcutil.Amount(amtIn - amtOut), pfcutil.Amount(FeeRate(amtIn, amtOut, txSize))
+}
+
+// FeeRate computes the fee rate in atoms/kB for a transaction provided the
+// total amount of the transaction's inputs, the total amount of the
+// transaction's outputs, and the size of the transaction in bytes. Note that a
+// kB refers to 1000 bytes, not a kiB. If the size is 0, the returned fee is -1.
+func FeeRate(amtIn, amtOut, sizeBytes int64) int64 {
+	if sizeBytes == 0 {
+		return -1
+	}
+	return 1000 * (amtIn - amtOut) / sizeBytes
 }
 
 // TotalOutFromMsgTx computes the total value out of a MsgTx
@@ -911,7 +1141,7 @@ func GenesisTxHash(params *chaincfg.Params) chainhash.Hash {
 }
 
 // IsZeroHashP2PHKAddress checks if the given address is the dummy (zero pubkey
-// hash) address. See https://github.com/picfight/pfcdata/v3/issues/358 for details.
+// hash) address. See https://github.com/picfight/pfcdata/issues/358 for details.
 func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) bool {
 	zeroed := [20]byte{}
 	// expecting DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg address for mainnet
@@ -921,6 +1151,16 @@ func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) 
 	}
 	zeroAddress := address.String()
 	return checkAddressString == zeroAddress
+}
+
+// IsZeroHash checks if the Hash is the zero hash.
+func IsZeroHash(hash chainhash.Hash) bool {
+	return hash == zeroHash
+}
+
+// IsZeroHashStr checks if the string is the zero hash string.
+func IsZeroHashStr(hash string) bool {
+	return hash == string(zeroHashStringBytes)
 }
 
 // ValidateNetworkAddress checks if the given address is valid on the given
@@ -933,7 +1173,7 @@ func ValidateNetworkAddress(address pfcutil.Address, p *chaincfg.Params) bool {
 type AddressError error
 
 var (
-	AddressErrorNoError      AddressError = nil
+	AddressErrorNoError      AddressError
 	AddressErrorZeroAddress  AddressError = errors.New("null address")
 	AddressErrorWrongNet     AddressError = errors.New("wrong network")
 	AddressErrorDecodeFailed AddressError = errors.New("decoding failed")
@@ -953,11 +1193,9 @@ const (
 
 // AddressValidation performs several validation checks on the given address
 // string. Initially, decoding as a PicFight address is attempted. If it fails to
-// decode, btcutil is used to try decoding it as a Bitcoin address. If both
-// decoding fails, AddressErrorDecodeFailed is returned with AddressTypeUnknown.
-// If the address is a Bitcoin address, AddressErrorBitcoin is returned with
-// AddressTypeBitcoin. If the address decoded successfully as a PicFight address,
-// it is checked against the specified network. If it is the wrong network,
+// decode, AddressErrorDecodeFailed is returned with AddressTypeUnknown.
+// If the address decoded successfully as a PicFight address, it is checked
+// against the specified network. If it is the wrong network,
 // AddressErrorWrongNet is returned with AddressTypeUnknown. If the address is
 // the correct network, the address type is obtained. A final check is performed
 // to determine if the address is the zero pubkey hash address, in which case

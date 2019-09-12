@@ -6,39 +6,49 @@
     <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
     <meta name="description" content="pfcdata, an original PicFight block explorer powered by Go">
     <meta name="author" content="The Decred developers">
-    <!--  Custom favicon  -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/images/favicon/apple-touch-icon.png">
-    <link rel="icon" href="/images/favicon/favicon.ico">
-    <link rel="icon" type="image/png" href="/images/favicon/favicon-32x32.png" sizes="32x32">
-    <link rel="icon" type="image/png" href="/images/favicon/favicon-16x16.png" sizes="16x16">
-    <link rel="manifest" href="/images/favicon/manifest.json">
-    <link rel="mask-icon" href="/images/favicon/safari-pinned-tab.svg">
-    <link rel="shortcut icon" href="/images/favicon/favicon.ico">
+    <meta name="application-name"           content="PicFight - Autonomous Digital Currency">
     <meta name="apple-mobile-web-app-title" content="PicFight - Autonomous Digital Currency">
-    <meta name="application-name" content="PicFight - Autonomous Digital Currency">
-    <meta name="msapplication-TileColor" content="#2973ff">
-    <meta name="msapplication-TileImage" content="/images/favicon/mstile-144x144.png">
-    <meta name="msapplication-config" content="/images/favicon/browserconfig.xml">
+    <!--  Custom favicon  -->
+        <!-- Apple PWA -->
+        <link rel="apple-touch-icon" sizes="57x57"   href="/images/favicon/apple-touch-icon-57x57.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="60x60"   href="/images/favicon/apple-touch-icon-60x60.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="72x72"   href="/images/favicon/apple-touch-icon-72x72.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="76x76"   href="/images/favicon/apple-touch-icon-76x76.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="114x114" href="/images/favicon/apple-touch-icon-114x114.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="120x120" href="/images/favicon/apple-touch-icon-120x120.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="144x144" href="/images/favicon/apple-touch-icon-144x144.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="152x152" href="/images/favicon/apple-touch-icon-152x152.png?v=yHh3NA">
+        <link rel="apple-touch-icon" sizes="180x180" href="/images/favicon/apple-touch-icon-180x180.png?v=yHh3NA">
+
+        <!-- Browser -->
+        <link rel="icon" href="/images/favicon/favicon.ico?v=yHh3NA">
+        <link rel="icon" href="/images/favicon/favicon-32x32.png?v=yHh3NA" type="image/png" sizes="32x32">
+        <link rel="icon" href="/images/favicon/favicon-16x16.png?v=yHh3NA" type="image/png" sizes="16x16">
+
+        <!-- Android PWA -->
+        <link rel="manifest" href="/images/favicon/manifest.json?v=yHh3NA">
+
+        <!-- Safari -->
+        <link rel="mask-icon" href="/images/favicon/safari-pinned-tab.svg?v=yHh3NA" color="#091440">
+
+        <!-- Windows PWA -->
+        <meta name="msapplication-TileColor" content="#091440">
+        <meta name="msapplication-TileImage" content="/images/favicon/mstile-144x144.png?v=fi5jKKtbwv">
+        <meta name="msapplication-config" content="/images/favicon/browserconfig.xml?v=fi5jKKtbwv">
+    <!-- End custom favicon -->
+
     <meta name="turbolinks-cache-control" content="no-cache">
     <title>{{.}}</title>
-    <link href="/css/bootstrap.css" rel="stylesheet">
-    <link href="/css/main.css" rel="stylesheet">
-    <link href="/css/nexthome.css" rel="stylesheet">
-    <link href="/css/charts.css" rel="stylesheet">
-    <!-- <link rel="stylesheet/less" type="text/css" href="/css/dynamic.less"> -->
-    <script src="/js/turbolinks.js"></script>
-    <script src="/js/jquery.js"></script>
-    <script src="/js/lodash.min.js"></script>
-    <script src="/js/util.js"></script>
-    <script src="/js/messagesocket.js"></script>
-    <script src="/js/humanize.js"></script>
-    <script src="/js/stimulus.umd.js"></script>
-    <script src="/js/mousetrap.min.js"></script>
+    <link href="/dist/css/style.css" rel="stylesheet">
+    <script src="/js/vendor/turbolinks.min.js"></script>
 </head>
 {{end}}
 
 {{define "navbar"}}
-<header class="top-nav">
+<body class="{{ theme }}{{if .Cookies.DarkMode}} darkBG{{end}}">
+<header class="top-nav"
+        id="navBar"
+        data-blocktime="{{.BlockTimeUnix}}">
     <div class="container">
         <div class="d-flex align-items-center flex-wrap">
             <div class="d-flex align-items-center">
@@ -48,708 +58,305 @@
                     </a>
                 </div>
             </div>
-            <div class="col pl-2">
-                <form class="navbar-form" role="search" id="search-form" action="/search">
-                    <div class="input-group">
-                        <input
-                            tabindex="0"
-                            type="text"
-                            name="search"
-                            id="search"
-                            class="form-control top-search mousetrap"
-                            placeholder="Search for blocks, addresses or transactions"
-                        />
-                    </div>
+            <div class="col px-4 text-right">
+                <form
+                    class="search-form"
+                    role="search"
+                    id="search-form"
+                    action="/search"
+                    data-controller="search"
+                    data-action="submit->search#execute"
+                >
+                    <input
+                        tabindex="0"
+                        type="text"
+                        name="search"
+                        id="search"
+                        class="top-search mousetrap"
+                        placeholder="Search for blocks, addresses or transactions"
+                        spellcheck="false"
+                    />
+                    <button class="search-bttn"><span class="pfcicon-search"></span></button>
                 </form>
             </div>
-            <nav role="navigation" id="hamburger-menu" data-turbolinks-permanent>
+            <nav role="navigation" id="hamburger-menu" data-controller="menu" data-turbolinks-permanent>
                 <div id="menuToggle">
-                    <input type="checkbox" id="menuToggleCheckbox"/>
+                    <input type="checkbox" data-target="menu.toggle" data-action="change->menu#toggle"/>
                     <span class="patty"></span>
                     <span class="patty"></span>
                     <span class="patty short"></span>
                     <div id="menu">
-                        <a data-keynav-skip href="/" title="Home">Home</a>
-                        <a data-keynav-skip href="/blocks" title="PicFight blocks">Blocks</a>
-                        <a data-keynav-skip href="/mempool" title="PicFight mempool">Mempool</a>
-                        <a data-keynav-skip href="/ticketpool" title="PicFight ticket pool">Ticket Pool</a>
-                        <a data-keynav-skip class="jsonly" href="/charts" title="PicFight charts">Charts</a>
-                        <a data-keynav-skip href="/agendas" title="Agendas">Agendas</a>
-                        <a data-keynav-skip href="/parameters" title="Chain Parameters">Parameters</a>
-                        <a data-keynav-skip href="/decodetx" title="Decode or send a raw transaction">Decode/Broadcast Tx</a>
+                        <a class="menu-item" data-keynav-skip href="/" title="Home">Home</a>
+                        <a class="menu-item" data-keynav-skip href="/blocks" title="PicFight blocks">Blocks</a>
+                        <a class="menu-item" data-keynav-skip href="/mempool" title="PicFight mempool">Mempool</a>
+                        <a class="menu-item" data-keynav-skip href="/ticketpool" title="PicFight ticket pool">Ticket Pool</a>
+                        <a class="menu-item jsonly" data-keynav-skip href="/charts" title="PicFight charts">Charts</a>
+                        <a class="menu-item" data-keynav-skip href="/agendas" title="Agendas">Agendas</a>
+                        <a class="menu-item" data-keynav-skip href="/proposals" title="Proposals">Proposals</a>
+                        <a class="menu-item" data-keynav-skip href="/parameters" title="Chain Parameters">Parameters</a>
+                        <a class="menu-item" data-keynav-skip href="/address/{{.DevAddress}}?txntype=merged_debit" title="PicFight Treasury">Treasury</a>
+                        <a class="menu-item" data-keynav-skip href="/decodetx" title="Decode or send a raw transaction">Decode/Broadcast Tx</a>
                         {{if eq .NetName "Mainnet"}}
-                            <a data-keynav-skip href="http://testnet.pfcdata.org/" title="Home">Switch To Testnet</a>
+                            <a class="menu-item" data-keynav-skip href="{{.Links.Testnet}}" title="Home">Switch To Testnet</a>
                         {{else}}
-                            <a data-keynav-skip href="https://explorer.pfcdata.org/" title="Home">Switch To Mainnet</a>
+                            <a class="menu-item" data-keynav-skip href="{{.Links.Mainnet}}" title="Home">Switch To Mainnet</a>
                         {{end}}
-                        <a data-keynav-skip data-turbolinks="false" href="javascript:toggleSun()" class="jsonly"><span id="sun-icon" class="pfcicon-sun-fill no-underline pr-2"></span> Night Mode</a>
-                        <a data-keynav-skip data-turbolinks="false" href="#" class="jsonly" id="keynav-toggle">
+                        <span class="menu-item jsonly" data-keynav-skip data-action="click->menu#onSunClick"><span id="sun-icon" class="pfcicon-sun-fill no-underline pr-2"></span> Night Mode</span>
+                        <a class="menu-item" data-keynav-skip data-turbolinks="false" href="#" class="jsonly" id="keynav-toggle">
                             <span class="text">Enable Hot Keys</span><span class="keys-hint">(&nbsp;&nbsp;<span class="arrows"> &#8592;<br>&#8594;</span>&nbsp;&nbsp;enter&nbsp;&nbsp;\&nbsp;&nbsp;=&nbsp;&nbsp;)</span>
                         </a>
-                        <a data-keynav-skip href="https://github.com/picfight/pfcdata#json-rest-api" title="API Endpoints" target="_blank" rel="noopener noreferrer">JSON API Docs</a>
+                        <a class="menu-item" data-keynav-skip href="{{.Links.APIDocs}}" title="API Endpoints" target="_blank" rel="noopener noreferrer">JSON API Docs</a>
                     </div>
                 </div>
             </nav>
         </div>
     </div>
 </header>
-<div id="watermark">HODL<br>HODL<br>HODL</div>
-<script data-turbolinks-eval="false">
-    $.ajaxSetup({
-        cache: true
-    });
-    function setCookie(cname, cvalue, exMins) {
-        var d = new Date();
-        d.setTime(d.getTime() + (exMins*60*1000));
-        var expires = "expires="+d.toUTCString();
-        document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
-    }
-
-    var PFCThings = {}
-    PFCThings.ticketPoolSize = {{$.ChainParams.TicketPoolSize}}
-
-    var sunIcon = document.getElementById("sun-icon")
-    var darkBGCookieName = 'pfcdataDarkBG';
-    function darkEnabled() {
-        return document.cookie.includes(darkBGCookieName)
-    }
-    if (darkEnabled()) {
-        toggleToDarkClasses(document.body)
-    } else {
-        toggleToLightClasses(document.body)
-    }
-    function toggleToDarkClasses(body) {
-        $(sunIcon).removeClass('pfcicon-sun-fill')
-        $(sunIcon).addClass('pfcicon-sun-stroke')
-        $(body).addClass('darkBG')
-    }
-    function toggleToLightClasses(body) {
-        $(body).removeClass('darkBG');
-        $(sunIcon).removeClass('pfcicon-sun-stroke')
-        $(sunIcon).addClass('pfcicon-sun-fill')
-    }
-    function toggleSun() {
-        if (darkEnabled()) {
-            setCookie(darkBGCookieName, '', 0)
-            toggleToLightClasses(document.body)
-            $(document).trigger("nightMode", { nightMode: false });
-        } else {
-            setCookie(darkBGCookieName, 1, 525600)
-            toggleToDarkClasses(document.body)
-            $(document).trigger("nightMode", { nightMode: true })
-        }
-    }
-    document.addEventListener("turbolinks:before-render", function(event) {
-        if (darkEnabled()) {
-            toggleToDarkClasses(event.data.newBody)
-        } else {
-            toggleToLightClasses(event.data.newBody)
-        }
-    })
-    $(document).click( function(e) {
-        if ($(e.target).id == "menuToggleCheckbox") {
-            return
-        }
-        if ($(e.target).parents("#hamburger-menu").size() > 0) {
-            return
-        }
-        closeMenu(e)
-    })
-
-
-    function toggleMenu(e) {
-        $("#menuToggle input").prop('checked', !$("#menuToggle input").prop('checked'))
-    }
-    function closeMenu(e) {
-        $("#menuToggle input").prop('checked', false)
-    }
-    function updateConnectionStatus(msg, connected) {
-        var el = $('#connection');
-        el.removeClass('hidden')
-        if (connected) {
-            el.addClass('connected')
-            el.removeClass('disconnected')
-        } else {
-            el.removeClass('connected');
-            el.addClass('disconnected');
-        }
-        el.html(msg + '<div></div>')
-    }
-
-    function getSocketURI(loc) {
-        var protocol = (loc.protocol === 'https:') ? 'wss' : 'ws'
-        return protocol + "://" + loc.host + '/ws'
-    }
-
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    // `formatTxDate`: Format a string to match the format `(UTC) YYYY-MM-DD HH:MM:SS` used by explorer.TxPage and tx.tmpl
-    function formatTxDate(stamp, withTimezone) {
-        var d = new Date(stamp*1000);
-        var zone = withTimezone ? "("+d.toLocaleTimeString('en-us',{timeZoneName:'short'}).split(' ')[2]+") " : "";
-        return zone+String(d.getFullYear())+"-"+String(d.getMonth()+1).padStart(2, "0")+"-"+String(d.getDate()).padStart(2, "0")+" "
-            +String(d.getHours()).padStart(2, "0")+":"+String(d.getMinutes()).padStart(2, "0")+":"+String(d.getSeconds()).padStart(2, "0");
-    }
-
-    var ws; // websocket global
-    async function createWebSocket(loc) {
-        // wait a bit to prevent websocket churn from drive by page loads
-        $('#connection').removeClass('hidden');
-        var uri = getSocketURI(loc)
-        ws = new MessageSocket(uri);
-        await sleep(3000);
-        ws.connect()
-        ws.registerEvtHandler("open", function() {
-            console.log('Connected')
-            updateConnectionStatus('Connected', true);
-        });
-
-        ws.registerEvtHandler("close", function() {
-            console.log('Disconnected')
-            updateConnectionStatus('Disconnected', false);
-        });
-
-        ws.registerEvtHandler("error", function(evt) {
-            console.log("WebSocket error:", evt);
-            updateConnectionStatus('Disconnected', false);
-        });
-
-        ws.registerEvtHandler("ping", function(evt) {
-            console.debug("ping. users online: ", evt)
-        });
-        ws.registerEvtHandler("decodetxResp", function(evt) {
-            console.log("Got message: ", evt);
-            $("#decode_header").text("Decoded tx");
-            $("#decoded_tx").text(evt);
-        })
-        ws.registerEvtHandler("sendtxResp", function(evt) {
-            console.log("Got message: ", evt);
-            $("#decode_header").text("Sent tx");
-            $("#decoded_tx").text(evt);
-        })
-        var updateBlockData = function (event) {
-            console.log("Received newblock message", event);
-            var newBlock = JSON.parse(event);
-            var confirms = $('[data-confirmation-block-height]');
-            $.each(confirms, function(i, v) {
-                if (isNaN($(v).text())) {
-                    $(v).text("0");
-                }
-                var confirmations = newBlock.block.height - $(v).data('confirmation-block-height') + 1;
-                $(v).text("(" + confirmations + (confirmations > 1? " confirmations": " confirmation") + ")")
-            })
-
-            // block summary data
-            var b = newBlock.block;
-            desktopNotifyNewBlock(b);
-
-
-            advanceTicketProgress(b)
-            confirmAddrMempool(b)
-
-            var expTableRows = $('#explorertable tbody tr');
-            //var CurrentHeight = parseInt($('#explorertable tbody tr td').first().text());
-            if (expTableRows){
-                var indexVal = ""
-                if (window.location.pathname === "/blocks") {
-                    indexVal = '<td>' + b.windowIndex + '</td>'
-                }
-                expTableRows.last().remove()
-                var newRow = '<tr id="' + b.height + '">' +
-                    indexVal +
-                    '<td><a href="/block/' + b.height + '" class="fs18">' + b.height + '</a></td>' +
-                    '<td>' + b.tx + '</td>' +
-                    '<td>' + b.votes + '</td>' +
-                    '<td>' + b.tickets + '</td>' +
-                    '<td>' + b.revocations + '</td>' +
-                    '<td>' + humanize.bytes(b.size) + '</td>' +
-                    '<td data-target="main.age"  data-age=' + b.time + '>' + humanize.timeSince(b.time) + '</td>' +
-                    '<td>' + b.formatted_time + '</td>' +
-                '</tr>'
-                var newRowHtml = $.parseHTML(newRow)
-                $(newRowHtml).insertBefore(expTableRows.first())
-            }
-
-
-            var ex = newBlock.extra
-            if (window.location.pathname === "/nexthome"){
-                $("#coin-supply").html(humanize.decimalParts(ex.coin_supply/100000000, true, 0, false))
-                $("#bsubsidy-dev").html(humanize.decimalParts(ex.subsidy.dev/100000000, false, 8, false, 2))
-                $("#dev-fund").html(humanize.decimalParts(ex.dev_fund/100000000, true, 0, false))
-                $("#pool-value").html(humanize.decimalParts(ex.pool_info.value, true, 0, false))
-                $("#pool-info-percentage").html("("+parseFloat(ex.pool_info.percent).toFixed(2)+" % of total supply)")
-                $("#bsubsidy-pos").html(humanize.decimalParts((ex.subsidy.pos/500000000), false, 8, false, 2))
-                $("#ticket-reward").html("("+ humanize.fmtPercentage(ex.reward)+ " per ~29.07 days)")
-                $("#ticket-price").html(humanize.decimalParts(ex.sdiff, false, 8, false, 2))
-                $("#diff").html(humanize.decimalParts(ex.difficulty/1000000, true, 0, false))
-                $("#bsubsidy-pow").html(humanize.decimalParts(ex.subsidy.pow/100000000, false, 8, false, 2))
-                $("#hashrate").html(humanize.decimalParts(ex.hash_rate, false, 8, false, 2))
-                $("#hashrate-subdata").html("("+ humanize.fmtPercentage(ex.hash_rate_change)+ " in 24hr)")
-
-                handleBlockUpdate(newBlock.block)
-            }
-
-             if (window.location.pathname == "/"){
-                $("#difficulty").html(humanize.decimalParts(ex.difficulty, true, 8))
-                $("#bsubsidy_total").html(humanize.decimalParts(ex.subsidy.total/100000000, false, 8))
-                $("#bsubsidy_pow").html(humanize.decimalParts(ex.subsidy.pow/100000000, false, 8))
-                $("#bsubsidy_pos").html(humanize.decimalParts((ex.subsidy.pos/500000000), false, 8)) // 5 votes per block (usually)
-                $("#bsubsidy_dev").html(humanize.decimalParts(ex.subsidy.dev/100000000, false, 8))
-                $("#coin_supply").html(humanize.decimalParts(ex.coin_supply/100000000, true, 8))
-                $("#blocksdiff").html(humanize.decimalParts(ex.sdiff, false, 8))
-                $("#dev_fund").html(humanize.decimalParts(ex.dev_fund/100000000, true, 8))
-                $("#window_block_index").text(ex.window_idx)
-                $("#pos-window-progess-bar").css({ width: (ex.window_idx/ex.params.window_size)*100 + "%" })
-                $("#reward_block_index").text(ex.reward_idx)
-                $("#pow-window-progess-bar").css({ width: (ex.reward_idx/ex.params.reward_window_size)*100 + "%" })
-                $("#pool_size").text(ex.pool_info.size)
-                $("#pool_value").html(humanize.decimalParts(ex.pool_info.value, true, 8))
-                $("#ticket_reward").html(parseFloat(ex.reward).toFixed(2))
-                $("#target_percent").html(parseFloat(ex.pool_info.percent_target).toFixed(2))
-                $("#pool_size_percentage").html(parseFloat(ex.pool_info.percent).toFixed(2))
-            }
-        };
-        ws.registerEvtHandler("newblock", updateBlockData);
-
-        ws.registerEvtHandler("mempool", function(event){
-            if (window.location.pathname === "/nexthome") {
-                ws.send("getmempooltxs", "")
-            }
-            else {
-                var mempool = JSON.parse(event);
-                $("#mempool-total-sent").html(humanize.decimalParts(mempool.total, false, 2, false, 2))
-                $("#mempool-tx-count").text("sent in "+mempool.num_all+" transactions")
-                $("#mempool-votes").text(mempool.num_votes)
-                $("#mempool-tickets").text(mempool.num_tickets)
-            }
-        });
-
-        ws.registerEvtHandler("getmempooltxsResp", function(event) {
-            console.log("received mempooltx response", event);
-            if (window.location.pathname === "/nexthome") {
-                handleMempoolUpdate(event);
-            }
-        });
-    }
-
-    document.getElementById('search').onkeypress = function(e){
-        if (!e) e = window.event;
-        var keyCode = e.keyCode || e.which;
-        if (keyCode == '13'){
-            Turbolinks.visit("/search?search="+this.value);
-            return false;
-        }
-    }
-
-    // desktop notifications
-    function onShowNotification() {
-        console.log('block ntfn shown');
-    }
-    function onCloseNotification() {
-        console.log('block ntfn closed');
-    }
-    function onClickNotification() {
-        console.log('block ntfn clicked');
-    }
-    function onErrorNotification() {
-        console.error('Error showing notification. You may need to request permission.');
-    }
-    function onPermissionGranted() {
-        console.log('Permission has been granted by the user');
-    }
-    function onPermissionDenied() {
-        console.warn('Permission has been denied by the user');
-    }
-
-    function doNotification(block) {
-        var newBlockNtfn = new Notify('New PicFight Block Mined', {
-            body: 'Block mined at height ' + block.height,
-            tag: 'blockheight',
-            image: '/images/pfcdata144x128.png',
-            icon: '/images/pfcdata144x128.png',
-            notifyShow: onShowNotification,
-            notifyClose: onCloseNotification,
-            notifyClick: onClickNotification,
-            notifyError: onErrorNotification,
-            timeout: 10
-        });
-        newBlockNtfn.show();
-    }
-
-    function desktopNotifyNewBlock(block) {
-        if (!Notify.needsPermission) {
-            doNotification(block);
-        }
-    }
-
-    // Check for the txid in the given block
-    function txInBlock(txid, block) {
-      var txTypes = [block.Tx, block.Tickets, block.Revs, block.Votes]
-      for(txIdx in txTypes){
-          txs = txTypes[txIdx]
-          for(idx in txs){
-              if(txs[idx].TxID ==  txid){
-                  return true;
-              }
-          }
-      }
-      return false;
-    }
-
-    // Advance various progress bars on /tx.
-    function advanceTicketProgress(block){
-        // Check for confirmations on mempool transactions.
-        var needsConfirmation = $("[data-txid-mempool-display]")
-        if(needsConfirmation.length && needsConfirmation.text() == "mempool"){
-            var txid = needsConfirmation.data("txid-mempool-display");
-            if(txInBlock(txid, block)){
-              needsConfirmation.remove();
-              $("[data-confirmation-block-height]").data("confirmation-block-height", block.height).html("(1 confirmation)");
-              $("#txMempoolLink").html(block.height).attr("href", "/block/"+block.hash);
-              $("#txFmtTime").html(formatTxDate(block.time, true));
-              $("#txAge").html(humanize.timeSince(block.time)).before("(").after(" ago)").attr("data-age",block.time);
-              var progressBar = $("#txMaturityProgress")
-              var remainingBlocks = parseInt(progressBar.attr("aria-valuemax")) - 1
-              progressBar.attr('data-confirm-height', block.height)
-            }
-        }
-        // Advance the progress bars.
-        var ticketProgress = $("#txMaturityProgress");
-        if(!ticketProgress.length){
-            return;
-        }
-        var txBlockHeight = ticketProgress.data("confirm-height")
-        if(txBlockHeight == 0){
-          return;
-        }
-        var confirmations = block.height - txBlockHeight + 1;
-        var txType = ticketProgress.data("tx-type");
-        var complete = parseInt(ticketProgress.attr("aria-valuemax"));
-        if(confirmations == complete + 1){
-            ticketProgress.closest(".row").replaceWith(txType == "LiveTicket" ? "Expired" : "Mature");
-            return;
-        }
-        var ratio = confirmations/complete;
-        if(confirmations == complete){
-            ticketProgress.children("span").html(txType == "Ticket" ? "Mature. Eligible to vote on next block." :
-            txType == "LiveTicket" ? "Ticket has expired" : "Mature. Ready to spend.");
-            var status = $("#txPoolStatus");
-            if(status.length){
-                status.html("live / unspent");
-            }
-        }
-        else{
-            var blocksLeft = complete+1-confirmations;
-            var remainingTime = blocksLeft*PFCThings.targetBlockTime
-            if(txType == "LiveTicket"){
-                ticketProgress.children("span").html("block "+confirmations+" of "+complete+" ("+(remainingTime/86400.).toFixed(1)+" days remaining)");
-                // Chance of expiring is (1-P)^N where P := single-block probability of being picked, N := blocks remaining.
-                // This probability is using the network parameter rather than the calculated value. So far, the ticket pool size seems stable enough to do that.
-                var pctChance = Math.pow(1 - 1/PFCThings.ticketPoolSize, blocksLeft)*100;
-                $("#ticketExpiryChance").children("span").html(pctChance.toFixed(2)+"% chance of expiry");
-            }
-            else{
-                var typeStub = txType == "Ticket" ? "eligible to vote" : "spendable";
-                ticketProgress.children("span").html("Immature, "+typeStub+" in "+blocksLeft+" blocks ("+(remainingTime/3600.).toFixed(1)+" hours remaining)");
-            }
-            ticketProgress.attr("aria-valuenow", confirmations).css({"width":(ratio*100).toString()+"%"});
-        }
-    }
-
-    // Check the block for mempool transactions on the address page.
-    function confirmAddrMempool(block){
-      var mempoolRows = $("[data-addr-tx-pending]");
-      mempoolRows.each(function(idx, tr){
-        var row = $(tr)
-        var txid = row.data('addr-tx-pending')
-        if(txInBlock(txid, block)){
-          var confirms = row.children('.addr-tx-confirms');
-          confirms.attr('data-tx-block-height', block.height);
-          row.removeAttr('data-addr-tx-pending');
-          row.children('.addr-tx-time').html(formatTxDate(block.time, false));
-          row.children('.addr-tx-age').children('span').attr("data-age", block.time).html(humanize.timeSince(block.time));
-          confirms.html("1")
-        }
-      });
-      var confirmTds = $('[data-tx-block-height]');
-      confirmTds.each(function(idx, td){
-        confirms = $(td);
-        confirms.html(block.height - parseInt(confirms.data('tx-block-height')) + 1);
-      });
-      var pendingCounters = $('[data-tx-confirmations-pending]');
-      pendingCounters.each(function(i,c){
-        var counter = $(c);
-        var txid = counter.data('tx-confirmations-pending')
-        if(txInBlock(txid, block)){
-          counter.removeAttr('data-tx-confirmations-pending')
-          counter.attr('data-confirmation-block-height', block.height).html('(1 confirmation)')
-        }
-      });
-    }
-
-</script>
-
-<script>
-    if (!ws) {
-        createWebSocket(window.location)
-    }
-</script>
-
-<script src="/js/notify.min.js"></script>
 {{end}}
 
 {{define "footer"}}
 <footer class="navbar-fixed-bottom">
-    <div class="container d-flex">
-        <ul class="nav justify-content-center col">
-            <li class="nav-item">
-                <a
-                    class="nav-item no-wrap"
-                    href="https://github.com/picfight/pfcdata"
-                    title="pfcdata on GitHub"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >pfcdata v{{.Version}}</a>
-            </li>
-            <li class="nav-item">
-                <a
-                    class="nav-item nowrap"
-                    href="https://github.com/picfight/pfcdata/blob/master/LICENSE"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >© 2018 The Decred developers (ISC)</a>
-            </li>
-        </ul>
-        <ul class="nav justify-content-right align-items-center jsonly">
-            <li class="text-right connection-wrapper">
-                <span
-                    id="connection"
-                    class="nav-item align-items-center"
-                    data-turbolinks-permanent
-                    title="While connected, you will receive live page updates and, if enabled, desktop notifications (click to enable)."
-                    ><span>Connecting <span class="d-none d-md-inline-block">to WebSocket...</span></span><div></div>
-                </span>
-            </li>
-        </ul>
+    <div class="container d-flex justify-content-between align-items-center">
+        <span>
+            <span data-controller="time" data-target="time.blocktime" data-stamp="{{$.Tip.Time}}"></span> <span class="d-none d-sm-inline">since last block</span>
+        </span>
+        <span>
+            <a
+                class="text-nowrap d-none d-md-inline-block pr-3"
+                href="{{.Links.Github}}"
+                title="pfcdata on GitHub"
+                target="_blank"
+                rel="noopener noreferrer"
+            >pfcdata v{{.Version}}</a>
+            <a
+                class="text-nowrap"
+                href="{{.Links.License}}"
+                target="_blank"
+                rel="noopener noreferrer"
+            >© 2019 The Decred developers (ISC)</a>
+        </span>
+        <span
+            id="connection"
+            class="text-nowrap align-items-center clickable d-inline-block"
+            data-turbolinks-permanent
+            data-controller="connection"
+            data-target="connection.indicator"
+            data-action="click->connection#requestNotifyPermission"
+            title="While connected, you will receive live page updates and, if enabled, desktop notifications (click to enable)."
+            ><span class="d-none d-sm-inline" data-target="connection.status">Connecting <span class="d-none d-md-inline-block">to WebSocket...</span></span><div></div>
+        </span>
     </div>
+    <script
+        src="/dist/js/vendors~app.bundle.js"
+        data-turbolinks-eval="false"
+        data-turbolinks-suppress-warning
+    ></script>
+    <script
+        src="/dist/js/app.bundle.js"
+        data-turbolinks-eval="false"
+        data-turbolinks-suppress-warning
+    ></script>
 </footer>
-
-<script data-turbolinks-eval="false">
-    // Keyboard Navigation
-    var targets;
-    var targetsLength;
-    var currentIndex = 0;
-    var jumpToIndexOnLoad;
-    var keyNavCookieName = 'pfcdataKeyNav';
-
-    function keyNavEnabled() {
-        return document.cookie.includes(keyNavCookieName)
-    }
-
-    function clearTargets() {
-        $(".keynav-target").each((i,el) => {
-            $(el).removeClass("keynav-target").removeClass("pulsate")
-        })
-    }
-
-    function enableKeyNav() {
-        setCookie(keyNavCookieName, 1, 525600)
-        Mousetrap.unpause()
-        $("#keynav-toggle .text").text("Disable Hot Keys")
-        keyNav()
-    }
-
-    function disableKeyNav () {
-        setCookie(keyNavCookieName, '', 0)
-        clearTargets()
-        $("#keynav-toggle .text").text("Enable Hot Keys")
-        Mousetrap.pause()
-    }
-
-    function toggleKeyNav() {
-        if (keyNavEnabled()) {
-            disableKeyNav()
-        }  else {
-            enableKeyNav()
-        }
-    }
-
-    function updateKeyNavTargets() {
-        if ($("#menuToggle input").prop('checked')) {
-            targets = $('#hamburger-menu a');
-        } else {
-            targets = $.merge($("a:not([data-keynav-skip])"),($('.top-search')));
-        }
-        targetsLength = targets.length;
-        clearTargets()
-        $(targets[currentIndex]).addClass("keynav-target").focus().blur() // refocuses keyboard context
-        if (pulsate) {
-            $(targets[currentIndex]).addClass("pulsate")
-        }
-    }
-
-
-    function keyNav(event, pulsate, preserveIndex) {
-        if ($("#menuToggle input").prop('checked')) {
-            targets = $('#hamburger-menu a');
-            currentIndex = 0;
-        } else {
-            targets = $.merge($("a:not([data-keynav-skip])"),($('.top-search')));
-            if (jumpToIndexOnLoad > 0) {
-                currentIndex = jumpToIndexOnLoad;
-                jumpToIndexOnLoad = undefined;
-            } else if (!preserveIndex) {
-                var priorityLink = $("[data-keynav-priority]")[0]
-                var i = $.inArray(priorityLink, targets)
-                currentIndex = i > 0 ? i : 0;
-            }
-        }
-        targetsLength = targets.length;
-        clearTargets()
-        $(targets[currentIndex]).addClass("keynav-target").focus().blur() // refocuses keyboard context
-        if (pulsate) {
-            $(targets[currentIndex]).addClass("pulsate")
-        }
-    }
-
-    Mousetrap.bind(['left','['], function(e) {
-        clearTargets()
-        currentIndex--
-        if (currentIndex < 0) {
-            currentIndex = targetsLength-1
-        }
-        $(targets[currentIndex]).addClass("keynav-target")
-    });
-
-    Mousetrap.bind(['right',']'], function(e) {
-        clearTargets()
-        currentIndex++
-        if (currentIndex >= targetsLength) {
-            currentIndex = 0
-        }
-        $(targets[currentIndex]).addClass("keynav-target")
-    });
-
-    Mousetrap.bind('enter', function(e) {
-        if (targets.length < currentIndex) {
-            return
-        }
-        var currentTarget = $(targets[currentIndex])
-        if (currentTarget.is( "input")) {
-            currentTarget.focus()
-            e.stopPropagation()
-            e.preventDefault()
-            return
-        }
-        if (currentTarget[0].id == 'keynav-toggle') {
-            toggleKeyNav()
-            return
-        }
-        var location = currentTarget.attr('href');
-        if (location !== undefined) {
-            var preserveKeyNavIndex = currentTarget.data("preserveKeynavIndex")
-            if (preserveKeyNavIndex) {
-                jumpToIndexOnLoad = currentIndex
-            }
-            currentTarget.addClass("activated")
-            Turbolinks.visit(location)
-            return
-        }
-    });
-
-    Mousetrap.bind('\\', function(e) {
-        e.preventDefault();
-        var $topSearch = $(".top-search")
-        if ($topSearch.hasClass("keynav-target")) {
-            $topSearch.blur()
-            clearTargets()
-            keyNav(e, true, 0)
-        } else {
-            clearTargets()
-            $topSearch.addClass("keynav-target").focus()
-        }
-    });
-
-    Mousetrap.bind('`', function(e) {
-       toggleSun()
-    });
-
-    Mousetrap.bind('=', function(e) {
-        toggleMenu(e)
-        keyNav(e, true)
-    });
-
-    Mousetrap.bind('q', function(e) {
-        clearTargets()
-    });
-
-    $("#keynav-toggle .text").text(keyNavEnabled() ? "Disable Hot Keys":"Enable Hot Keys" )
-    document.addEventListener("turbolinks:load", function(e){
-        closeMenu(e)
-        if (keyNavEnabled()) {
-            $(".top-search").removeAttr("autofocus")
-            keyNav(e, true)
-        } else {
-            $(".top-search").focus()
-        }
-    })
-
-    $("#keynav-toggle").on("click", function(e) {
-        if (e.offsetX == 0) {
-            // prevent duplicate click handling when turbolinks re-attaches handlers
-            // TODO find a more semantic way to deal with this
-            return
-        }
-        toggleKeyNav()
-    })
-
-    $("#menuToggle input").change(function(e) {
-        var menuIsOpen = $(e.currentTarget).prop("checked")
-        if (keyNavEnabled()) {
-            keyNav(e, true)
-        }
-    });
-
-</script>
-<script>
-    $(".jsonly").removeClass('jsonly')
-    $('.scriptDataStar').on('click', function(){
-        $(this).next('.scriptData').slideToggle();
-    });
-    $('#connection').on('click', function(){
-        if (Notify.needsPermission) {
-            Notify.requestPermission(onPermissionGranted, onPermissionDenied);
-        }
-    })
-</script>
-<script data-turbolinks-eval="false">
-    const app = Stimulus.Application.start()
-</script>
-<script src="/js/controllers/main.js"  data-turbolinks-eval="false"></script>
-<script src="/js/controllers/mempool.js"  data-turbolinks-eval="false"></script>
-<script src="/js/controllers/agenda.js"  data-turbolinks-eval="false"></script>
-<script src="/js/controllers/charts.js" data-turbolinks-eval="false"></script>
-<script src="/js/controllers/address.js" data-turbolinks-eval="false"></script>
-<script src="/js/controllers/ticketpool.js" data-turbolinks-eval="false"></script>
-<script src="/js/controllers/status.js" data-turbolinks-eval="false"></script>
 {{end}}
 
 {{define "decimalParts"}}
+<div class="decimal-parts d-inline-block">
     {{if eq (len .) 4}}
-    <span class="int">{{ index . 0 }}.{{ index . 1 }}</span>
-    {{if gt (len (index . 2)) 0}}<span class="decimal lh15rem">{{ index . 2 }}</span>
-    <span class="decimal lh15rem trailing-zeroes">{{ index . 3 }}</span>{{end}}
+        <span class="int">{{ index . 0 }}.{{ index . 1 }}</span
+        >{{if gt (len (index . 2)) 0}}<span class="decimal">{{ index . 2 }}</span
+        ><span class="decimal trailing-zeroes">{{ index . 3 }}</span>{{end}}
     {{else}}
-    <span class="int">{{index . 0}}</span>
-    {{if gt (len (index . 1)) 0}}<span class="decimal lh15rem dot">.</span>
-    <span class="decimal lh15rem">{{index . 1 }}</span>
-    <span class="decimal lh15rem trailing-zeroes">{{index . 2}}</span>{{end}}
+        <span class="int">{{index . 0}}</span
+        >{{if gt (len (index . 1)) 0}}<span class="decimal dot">.</span
+        ><span class="decimal">{{index . 1 }}</span
+        ><span class="decimal trailing-zeroes">{{index . 2}}</span>{{end}}
     {{end}}
+    </div>
 {{end}}
 
 {{define "fmtPercentage"}}
-    {{if gt . 0.0}}<span style="color:green">+{{printf "%.2f" .}} %</span>
-    {{else}}<span style="color:red">{{printf "%.2f" .}} %</span>{{end}}
+    {{if gt . 0.0}}<span class="text-green">+{{printf "%.2f" .}} %</span>
+    {{else}}<span class="text-danger">{{printf "%.2f" .}} %</span>{{end}}
+{{end}}
+
+{{define "listViewRouting"}}
+    <div class="fs12 nowrap text-left" style="margin:auto auto auto 0px;">
+        <select
+          class="form-control-sm mb-2 mr-sm-2 mb-sm-0"
+          data-target="pagenavigation.listview"
+          data-action="change->pagenavigation#setListView"
+          >
+            <option {{if eq . "years"}}selected{{end}} value="years">Years</option>
+            <option {{if eq . "months"}}selected{{end}} value="months">Months</option>
+            <option {{if eq . "weeks"}}selected{{end}} value="weeks">Weeks</option>
+            <option {{if eq . "days"}}selected{{end}} value="days">Days</option>
+            <option {{if eq . "windows"}}selected{{end}} value="ticketpricewindows">Windows</option>
+            <option {{if eq . "blocks"}}selected{{end}} value="blocks">Blocks</option>
+        </select>
+    </div>
+{{end}}
+
+{{define "hashElide"}}
+  {{$hash := (index . 0)}}
+  {{$link := (index . 1)}}
+  {{if eq $link ""}}
+    <div
+  {{else}}
+    <a href="{{$link}}"
+  {{end}}
+    data-keynav-priority
+    class="elidedhash mono"
+    data-head="{{hashStart $hash}}"
+    data-tail="{{hashEnd $hash}}"
+    >{{$hash}}{{if eq $link ""}}</div>{{else}}</a>{{end}}
+{{end}}
+
+{{define "addressTable"}}
+  {{$TxnCount := .TxnCount}}
+  {{$txType := .TxnType}}
+  {{$isMerged := .IsMerged}}
+  {{if .Transactions}}
+  <table class="table table-mono-cells table-responsive-sm">
+      <thead>
+          <th class="d-none d-sm-table-cell">Tx Type</th>
+          <th class="text-left">Input/&#8203;Output ID</th>
+          {{if eq $txType "merged_debit"}}
+              <th class="text-right"><span class="d-sm-none position-relative" data-tooltip="merged input count">Cnt</span
+                ><span class="d-none d-sm-inline">Inputs</span>
+              </th>
+              <th class="text-right">Debit PFC</th>
+          {{else if eq $txType "merged_credit" }}
+              <th class="text-right"><span class="d-sm-none position-relative" data-tooltip="merged output count">Cnt</span
+                ><span class="d-none d-sm-inline">Outputs</span>
+              </th>
+              <th class="text-right">Credit PFC</th>
+          {{else if eq $txType "merged" }}
+              <th title="Count of address's inputs and outputs in the transaction." class="text-right"><span class="d-none d-sm-inline-block">I/O Count</span><span class="d-sm-none position-relative" data-tooltip="# of inputs and outputs">#</span></th>
+              <th class="text-right">Credit PFC</th>
+              <th class="text-right">Debit PFC</th>
+          {{else}}
+              <th class="text-right">Credit PFC</th>
+              <th class="text-right">Debit PFC</th>
+          {{end}}
+          <th class="d-none d-sm-table-cell text-right">Time</th>
+          <th class="text-right">Age</th>
+          <th class="text-right"><span class="d-sm-none position-relative" data-tooltip="Confirmations">Cons</span><span class="d-none d-sm-inline">Confirms</span></th>
+          <th class="d-none d-sm-table-cell text-right">Size</th>
+      </thead>
+      <tbody>
+          {{range $i, $v := .Transactions}}
+          <tr {{if eq .Confirmations 0}} data-target="address.pending" data-txid="{{.TxID}}" {{end}}>
+              {{with $v}}
+              <td class="d-none d-sm-table-cell">{{.TxType}}</td>
+              <td>{{template "hashElide" (hashlink .TxID .Link)}}</td>
+
+              {{if eq $txType "merged_debit"}}
+                <td class="text-right">{{.MergedTxnCount}}</td>
+                <td class="text-right fs15">
+                  {{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}
+                </td>
+
+              {{else if eq $txType "merged_credit"}}
+                <td class="text-right">{{.MergedTxnCount}}</td>
+                <td class="text-right fs15">
+                  {{template "decimalParts" (float64AsDecimalParts .ReceivedTotal 8 false)}}
+                </td>
+
+              {{else if eq $txType "merged"}}
+                <td class="text-right">{{.MergedTxnCount}}</td>
+                {{if .IsFunding}}
+                  <td class="text-right fs15">
+                    {{template "decimalParts" (float64AsDecimalParts .ReceivedTotal 8 false)}}
+                  </td>
+                  <td class="text-right">&mdash;</td>
+                {{else}}
+                  <td class="text-right">&mdash;</td>
+                  <td class="text-right fs15">
+                    {{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}
+                  </td>
+                {{end}}
+
+              {{else if or (eq $txType "credit") .IsFunding}}  <!-- .IsFunding = true && txType = "all" is a credit -->
+                <td class="text-right fs15">
+                  {{template "decimalParts" (float64AsDecimalParts .ReceivedTotal 8 false)}}
+                </td>
+                {{if ne .MatchedTx ""}}
+                    <td class="text-right"><a href="/tx/{{.MatchedTx}}/in/{{.MatchedTxIndex}}"
+                      data-txid="{{.MatchedTx}}"
+                      data-action="mouseover->address#hashOver mouseout->address#hashOut"
+                      >spent</a></td>
+                {{else}}
+                    <td class="text-right">unspent</td>
+                {{end}}
+
+              {{else}} <!-- either "credit", or "all" with .IsFunding = false -->
+                {{if eq .SentTotal 0.0}}
+                  <td class="text-right">sstxcommitment</td>
+                {{else if ne .MatchedTx ""}}
+                  <td class="text-right"><a
+                    href="/tx/{{.MatchedTx}}/out/{{.MatchedTxIndex}}"
+                    data-action="mouseover->address#hashOver mouseout->address#hashOut"
+                    >source</a></td>
+                {{else}}
+                  <td class="text-right">N/A</td>
+                {{end}}
+                <td class="text-right fs15">
+                  {{template "decimalParts" (float64AsDecimalParts .SentTotal 8 false)}}
+                </td>
+              {{end}}
+
+              <td class="addr-tx-time d-none d-sm-table-cell text-right">
+                  {{if eq .Confirmations 0}}
+                      Unconfirmed
+                  {{else}}
+                      {{.Time}}
+                  {{end}}
+              </td>
+              <td class="addr-tx-age text-right">
+              {{if eq (.Time.T.Unix) 0}}
+                  N/A
+              {{else}}
+                  <span data-controller="time" data-target="time.age" data-age="{{.Time.UNIX}}"></span>
+              {{end}}
+              </td>
+
+              <td class="addr-tx-confirms text-right"
+                  data-target="newblock.confirmations"
+                  data-confirmations="{{.Confirmations}}"
+                  data-confirmation-block-height="{{if eq .Confirmations 0}}-1{{else}}{{.BlockHeight}}{{end}}"
+                  data-yes="#"
+                  data-no="(unconfirmed)"
+              >{{.Confirmations}}</td>
+
+              <td class="text-right d-none d-sm-table-cell text-right">{{.FormattedSize}}</td>
+              {{end}}
+          </tr>
+          {{end}}
+      </tbody>
+  </table>
+  {{else}}
+  <table class="table table-mono-cells">
+      <tr>
+          <td>
+              No transactions found for this address.
+          </td>
+      </tr>
+  </table>
+  {{end}}
+{{end}}
+
+{{define "mempoolDump"}}
+  {{$likely := .LikelyMineable}}
+  data-id="{{.Ident}}"
+  data-total="{{$likely.Total}}"
+  data-size="{{$likely.Size}}"
+  data-count="{{$likely.Count}}"
+  data-reg-total="{{$likely.RegularTotal}}"
+  data-reg-count="{{.NumRegular}}"
+  data-vote-total="{{$likely.VoteTotal}}"
+  data-vote-count="{{.VotingInfo.TicketsVoted}}"
+  data-ticket-total="{{$likely.TicketTotal}}"
+  data-ticket-count="{{.NumTickets}}"
+  data-rev-total="{{$likely.RevokeTotal}}"
+  data-rev-count="{{.NumRevokes}}"
 {{end}}

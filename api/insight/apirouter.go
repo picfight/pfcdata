@@ -1,4 +1,4 @@
-// Copyright (c) 2018, The Decred developers
+// Copyright (c) 2018-2019, The Decred developers
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 //
@@ -12,7 +12,7 @@ import (
 	"github.com/didip/tollbooth_chi"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	m "github.com/picfight/pfcdata/v3/middleware"
+	m "github.com/picfight/pfcdata/middleware/v2"
 )
 
 // ApiMux contains the struct mux
@@ -25,33 +25,40 @@ const APIVersion = 0
 
 // NewInsightApiRouter returns a new HTTP path router, ApiMux, for the Insight
 // API, app.
-func NewInsightApiRouter(app *insightApiContext, useRealIP bool) ApiMux {
-	// Create a rate limiter struct.
-	limiter := tollbooth.NewLimiter(1, nil)
-
+func NewInsightApiRouter(app *InsightApi, useRealIP, compression bool) ApiMux {
 	// chi router
 	mux := chi.NewRouter()
 
-	mux.Use(tollbooth_chi.LimitHandler(limiter))
+	// Create a rate limiter struct.
+	limiter := tollbooth.NewLimiter(app.ReqPerSecLimit, nil)
 
 	if useRealIP {
 		mux.Use(middleware.RealIP)
+		// RealIP sets RemoteAddr
+		limiter.SetIPLookups([]string{"RemoteAddr"})
+	} else {
+		limiter.SetIPLookups([]string{"X-Forwarded-For", "X-Real-IP", "RemoteAddr"})
 	}
+
+	// Put the limiter after RealIP
+	mux.Use(tollbooth_chi.LimitHandler(limiter))
 
 	mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.Use(middleware.StripSlashes)
-	mux.Use(middleware.DefaultCompress)
+	if compression {
+		mux.Use(middleware.NewCompressor(3).Handler())
+	}
 
 	// Block endpoints
-	mux.With(app.BlockDateLimitQueryCtx).Get("/blocks", app.getBlockSummaryByTime)
-	mux.With(app.BlockIndexOrHashPathCtx).Get("/block/{idxorhash}", app.getBlockSummary)
-	mux.With(app.BlockIndexOrHashPathCtx).Get("/block-index/{idxorhash}", app.getBlockHash)
-	mux.With(app.BlockIndexOrHashPathCtx).Get("/rawblock/{idxorhash}", app.getRawBlock)
+	mux.With(BlockDateLimitQueryCtx).Get("/blocks", app.getBlockSummaryByTime)
+	mux.With(m.BlockIndexOrHashPathCtx).Get("/block/{idxorhash}", app.getBlockSummary)
+	mux.With(m.BlockIndexOrHashPathCtx).Get("/block-index/{idxorhash}", app.getBlockHash)
+	mux.With(m.BlockIndexOrHashPathCtx).Get("/rawblock/{idxorhash}", app.getRawBlock)
 
 	// Transaction endpoints
 	mux.With(middleware.AllowContentType("application/json"),
-		app.ValidatePostCtx, app.PostBroadcastTxCtx).Post("/tx/send", app.broadcastTransactionRaw)
+		app.ValidatePostCtx, m.PostBroadcastTxCtx).Post("/tx/send", app.broadcastTransactionRaw)
 	mux.With(m.TransactionHashCtx).Get("/tx/{txid}", app.getTransaction)
 	mux.With(m.TransactionHashCtx).Get("/rawtx/{txid}", app.getTransactionHex)
 	mux.With(m.TransactionsCtx).Get("/txs", app.getTransactions)
@@ -59,30 +66,30 @@ func NewInsightApiRouter(app *insightApiContext, useRealIP bool) ApiMux {
 	// Status and Utility
 	mux.With(app.StatusInfoCtx).Get("/status", app.getStatusInfo)
 	mux.Get("/sync", app.getSyncInfo)
-	mux.With(app.NbBlocksCtx).Get("/utils/estimatefee", app.getEstimateFee)
+	mux.With(NbBlocksCtx).Get("/utils/estimatefee", app.getEstimateFee)
 	mux.Get("/peer", app.GetPeerStatus)
 
 	// Addresses endpoints
 	mux.Route("/addrs", func(rd chi.Router) {
 		rd.Route("/{address}", func(ra chi.Router) {
-			ra.Use(m.AddressPathCtx, app.FromToPaginationCtx)
+			ra.Use(m.AddressPathCtx, FromToPaginationCtx)
 			ra.Get("/txs", app.getAddressesTxn)
 			ra.Get("/utxo", app.getAddressesTxnOutput)
 		})
 		// POST methods
 		rd.With(middleware.AllowContentType("application/json"),
-			app.ValidatePostCtx, app.PostAddrsTxsCtx).Post("/txs", app.getAddressesTxn)
+			app.ValidatePostCtx, PostAddrsTxsCtx).Post("/txs", app.getAddressesTxn)
 		rd.With(middleware.AllowContentType("application/json"),
-			app.ValidatePostCtx, app.PostAddrsUtxoCtx).Post("/utxo", app.getAddressesTxnOutput)
+			app.ValidatePostCtx, PostAddrsUtxoCtx).Post("/utxo", app.getAddressesTxnOutput)
 	})
 
 	// Address endpoints
 	mux.Route("/addr/{address}", func(rd chi.Router) {
 		rd.Use(m.AddressPathCtx)
-		rd.With(app.FromToPaginationCtx, app.NoTxListCtx).Get("/", app.getAddressInfo)
+		rd.With(FromToPaginationCtx, NoTxListCtx).Get("/", app.getAddressInfo)
 		rd.Get("/utxo", app.getAddressesTxnOutput)
 		rd.Route("/{command}", func(ra chi.Router) {
-			ra.With(app.AddressCommandCtx).Get("/", app.getAddressInfo)
+			ra.With(AddressCommandCtx).Get("/", app.getAddressInfo)
 		})
 	})
 

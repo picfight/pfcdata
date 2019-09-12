@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/decred/slog"
-	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcdata/v3/db/pfcpg"
-	"github.com/picfight/pfcdata/v3/rpcutils"
-	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/picfight/pfcd/rpcclient/v2"
+	"github.com/picfight/pfcdata/db/pfcpg/v2"
+	"github.com/picfight/pfcdata/rpcutils"
+	"github.com/picfight/pfcdata/stakedb"
 )
 
 var (
@@ -92,7 +92,7 @@ func mainCore() error {
 
 	// Connect to node RPC server
 	client, _, err := rpcutils.ConnectNodeRPC(cfg.PfcdServ, cfg.PfcdUser,
-		cfg.PfcdPass, cfg.PfcdCert, cfg.DisableDaemonTLS)
+		cfg.PfcdPass, cfg.PfcdCert, cfg.DisableDaemonTLS, false)
 	if err != nil {
 		log.Fatalf("Unable to connect to RPC server: %v", err)
 		return err
@@ -123,7 +123,8 @@ func mainCore() error {
 		DBName: cfg.DBName,
 	}
 	// Construct a ChainDB without a stakeDB to allow quick dropping of tables.
-	db, err := pfcpg.NewChainDB(&dbi, activeChain, nil, false)
+	mpChecker := rpcutils.NewMempoolAddressChecker(client, activeChain)
+	db, err := pfcpg.NewChainDB(&dbi, activeChain, nil, false, cfg.HidePGConfig, 0, mpChecker)
 	if db != nil {
 		defer db.Close()
 	}
@@ -164,8 +165,7 @@ func mainCore() error {
 	signal.Notify(c, os.Interrupt)
 
 	// Check current height of DB
-	bestHeight, err := db.HeightDB()
-	lastBlock := int64(bestHeight)
+	lastBlock, err := db.HeightDB()
 	if err != nil {
 		if err == sql.ErrNoRows {
 			lastBlock = -1
@@ -318,6 +318,12 @@ func mainCore() error {
 			return fmt.Errorf("GetBlock failed (%s): %v", blockHash, err)
 		}
 
+		// Grab the chainwork.
+		chainWork, err := rpcutils.GetChainWork(client, blockHash)
+		if err != nil {
+			return fmt.Errorf("GetChainWork failed (%s): %v", blockHash, err)
+		}
+
 		// stake db always has genesis, so do not connect it
 		var winners []string
 		if ib > 0 {
@@ -339,7 +345,7 @@ func mainCore() error {
 		isValid, isMainchain, updateExistingRecords := true, true, true
 		numVins, numVouts, _, err = db.StoreBlock(block.MsgBlock(), winners,
 			isValid, isMainchain, updateExistingRecords,
-			cfg.AddrSpendInfoOnline, !cfg.TicketSpendInfoBatch)
+			cfg.AddrSpendInfoOnline, !cfg.TicketSpendInfoBatch, chainWork)
 		if err != nil {
 			return fmt.Errorf("StoreBlock failed: %v", err)
 		}
