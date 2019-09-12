@@ -73,18 +73,4 @@ testrepo () {
   rm -rf $TMPDIR $TMPFILE
 }
 
-DOCKER=
-[[ "$1" == "docker" || "$1" == "podman" ]] && DOCKER=$1
-if [ ! "$DOCKER" ]; then
-    testrepo
-    exit
-fi
-
-DOCKER_IMAGE_TAG=pfcdata-golang-builder-$GOVERSION
-$DOCKER pull picfight/$DOCKER_IMAGE_TAG
-
-$DOCKER run --rm -it -v $(pwd):/src picfight/$DOCKER_IMAGE_TAG /bin/bash -c "\
-  rsync -ra --include-from=<(git --git-dir=/src/.git ls-files) \
-  --filter=':- .gitignore' \
-  /src/ /go/src/github.com/picfight/$REPO/ && \
-    env GOVERSION=$GOVERSION GO111MODULE=on bash run_tests.sh"
+testrepo
