@@ -87,5 +87,4 @@ $DOCKER run --rm -it -v $(pwd):/src picfight/$DOCKER_IMAGE_TAG /bin/bash -c "\
   rsync -ra --include-from=<(git --git-dir=/src/.git ls-files) \
   --filter=':- .gitignore' \
   /src/ /go/src/github.com/picfight/$REPO/ && \
-  cd github.com/picfight/$REPO/ && \
-  env GOVERSION=$GOVERSION GO111MODULE=on bash run_tests.sh"
+    env GOVERSION=$GOVERSION GO111MODULE=on bash run_tests.sh"
