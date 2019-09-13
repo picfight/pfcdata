@@ -183,7 +183,7 @@ type AddressTotals struct {
 	NumSpent     int64   `json:"num_stxos"`
 	NumUnspent   int64   `json:"num_utxos"`
 	CoinsSpent   float64 `json:"pfc_spent"`
-	CoinsUnspent float64 `json:"dcr_unspent"`
+	CoinsUnspent float64 `json:"pfc_unspent"`
 }
 
 // BlockDataWithTxType adds an array of TxRawWithTxType to
