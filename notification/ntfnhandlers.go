@@ -235,7 +235,7 @@ func signalReorg(d ReorgData) {
 	// Send reorg data to ChainDB's monitor.
 	d.WG.Add(1)
 	select {
-	case NtfnChans.ReorgChanDcrpgDB <- fullData:
+	case NtfnChans.ReorgChanPfcpgDB <- fullData:
 	default:
 		d.WG.Done()
 	}

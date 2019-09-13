@@ -38,8 +38,8 @@ var NtfnChans struct {
 	ReorgChanWiredDB                  chan *txhelpers.ReorgData
 	ConnectChanStakeDB                chan *chainhash.Hash
 	ReorgChanStakeDB                  chan *txhelpers.ReorgData
-	ConnectChanDcrpgDB                chan *chainhash.Hash
-	ReorgChanDcrpgDB                  chan *txhelpers.ReorgData
+	ConnectChanPfcpgDB                chan *chainhash.Hash
+	ReorgChanPfcpgDB                  chan *txhelpers.ReorgData
 	UpdateStatusNodeHeight            chan uint32
 	UpdateStatusDBHeight              chan uint32
 	SpendTxBlockChan, RecvTxBlockChan chan *txhelpers.BlockWatchedTx
@@ -64,13 +64,13 @@ func MakeNtfnChans(monitorMempool, postgresEnabled bool) {
 	// Stake DB channel for connecting new blocks - BLOCKING!
 	NtfnChans.ConnectChanStakeDB = make(chan *chainhash.Hash)
 
-	NtfnChans.ConnectChanDcrpgDB = make(chan *chainhash.Hash, blockConnChanBuffer)
+	NtfnChans.ConnectChanPfcpgDB = make(chan *chainhash.Hash, blockConnChanBuffer)
 
 	// Reorg data channels
 	NtfnChans.ReorgChanBlockData = make(chan *txhelpers.ReorgData)
 	NtfnChans.ReorgChanWiredDB = make(chan *txhelpers.ReorgData)
 	NtfnChans.ReorgChanStakeDB = make(chan *txhelpers.ReorgData)
-	NtfnChans.ReorgChanDcrpgDB = make(chan *txhelpers.ReorgData)
+	NtfnChans.ReorgChanPfcpgDB = make(chan *txhelpers.ReorgData)
 
 	// To update app status
 	NtfnChans.UpdateStatusNodeHeight = make(chan uint32, blockConnChanBuffer)
@@ -107,8 +107,8 @@ func CloseNtfnChans() {
 	if NtfnChans.ConnectChanStakeDB != nil {
 		close(NtfnChans.ConnectChanStakeDB)
 	}
-	if NtfnChans.ConnectChanDcrpgDB != nil {
-		close(NtfnChans.ConnectChanDcrpgDB)
+	if NtfnChans.ConnectChanPfcpgDB != nil {
+		close(NtfnChans.ConnectChanPfcpgDB)
 	}
 
 	if NtfnChans.ReorgChanBlockData != nil {
@@ -120,8 +120,8 @@ func CloseNtfnChans() {
 	if NtfnChans.ReorgChanStakeDB != nil {
 		close(NtfnChans.ReorgChanStakeDB)
 	}
-	if NtfnChans.ReorgChanDcrpgDB != nil {
-		close(NtfnChans.ReorgChanDcrpgDB)
+	if NtfnChans.ReorgChanPfcpgDB != nil {
+		close(NtfnChans.ReorgChanPfcpgDB)
 	}
 
 	if NtfnChans.UpdateStatusNodeHeight != nil {

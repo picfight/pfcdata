@@ -182,7 +182,7 @@ type AddressTotals struct {
 	BlockHeight  uint64  `json:"blockheight"`
 	NumSpent     int64   `json:"num_stxos"`
 	NumUnspent   int64   `json:"num_utxos"`
-	CoinsSpent   float64 `json:"dcr_spent"`
+	CoinsSpent   float64 `json:"pfc_spent"`
 	CoinsUnspent float64 `json:"dcr_unspent"`
 }
 

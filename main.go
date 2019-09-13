@@ -777,7 +777,7 @@ func _main(ctx context.Context) error {
 	if usePG {
 		// Blockchain monitor for the aux (PG) DB
 		auxDBChainMonitor = auxDB.NewChainMonitor(ctx, &wg,
-			notify.NtfnChans.ConnectChanDcrpgDB, notify.NtfnChans.ReorgChanDcrpgDB)
+			notify.NtfnChans.ConnectChanPfcpgDB, notify.NtfnChans.ReorgChanPfcpgDB)
 		if auxDBChainMonitor == nil {
 			return fmt.Errorf("Failed to enable pfcpg ChainMonitor. *ChainDB is nil.")
 		}

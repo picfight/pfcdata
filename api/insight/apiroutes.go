@@ -174,7 +174,7 @@ func (c *insightApiContext) getBlockSummary(w http.ResponseWriter, r *http.Reque
 	}
 
 	blockSummary := []*pfcjson.GetBlockVerboseResult{blockPfcd}
-	blockInsight, err := c.DcrToInsightBlock(blockSummary)
+	blockInsight, err := c.PfcToInsightBlock(blockSummary)
 	if err != nil {
 		apiLog.Errorf("Unable to process block (%s)", hash)
 		writeInsightError(w, "Unable to Process Block")
@@ -617,7 +617,7 @@ func (c *insightApiContext) getAddressesTxn(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Convert to Insight API struct
-	txsNew, err := c.DcrToInsightTxns(txsOld, noAsm, noScriptSig, noSpent)
+	txsNew, err := c.PfcToInsightTxns(txsOld, noAsm, noScriptSig, noSpent)
 	if err != nil {
 		apiLog.Error("Unable to process transactions")
 		writeInsightError(w, fmt.Sprintf("Unable to convert transactions (%s)", err))

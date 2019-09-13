@@ -18,7 +18,7 @@ import (
 	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
-var host = flag.String("host", "127.0.0.1:9709", "node RPC host:port")
+var host = flag.String("host", "127.0.0.1:9109", "node RPC host:port")
 var user = flag.String("user", "pfcd", "node RPC username")
 var pass = flag.String("pass", "bananas", "node RPC password")
 var cert = flag.String("cert", "pfcd.cert", "node RPC TLS certificate (when notls=false)")

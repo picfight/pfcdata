@@ -13,11 +13,11 @@ import (
 
 // TxConverter converts pfcd-tx to insight tx
 func (c *insightApiContext) TxConverter(txs []*pfcjson.TxRawResult) ([]apitypes.InsightTx, error) {
-	return c.DcrToInsightTxns(txs, false, false, false)
+	return c.PfcToInsightTxns(txs, false, false, false)
 }
 
-// DcrToInsightTxns takes struct with filter params
-func (c *insightApiContext) DcrToInsightTxns(txs []*pfcjson.TxRawResult,
+// PfcToInsightTxns takes struct with filter params
+func (c *insightApiContext) PfcToInsightTxns(txs []*pfcjson.TxRawResult,
 	noAsm, noScriptSig, noSpent bool) ([]apitypes.InsightTx, error) {
 	var newTxs []apitypes.InsightTx
 	for _, tx := range txs {
@@ -73,8 +73,8 @@ func (c *insightApiContext) DcrToInsightTxns(txs []*pfcjson.TxRawResult,
 					InsightVin.Addr = addresses[0]
 				}
 			}
-			dcramt, _ := pfcutil.NewAmount(InsightVin.Value)
-			InsightVin.ValueSat = int64(dcramt)
+			pfcamt, _ := pfcutil.NewAmount(InsightVin.Value)
+			InsightVin.ValueSat = int64(pfcamt)
 
 			vInSum += InsightVin.Value
 			txNew.Vins = append(txNew.Vins, InsightVin)
@@ -100,14 +100,14 @@ func (c *insightApiContext) DcrToInsightTxns(txs []*pfcjson.TxRawResult,
 			vOutSum += v.Value
 		}
 
-		dcramt, _ := pfcutil.NewAmount(vOutSum)
-		txNew.ValueOut = dcramt.ToCoin()
+		pfcamt, _ := pfcutil.NewAmount(vOutSum)
+		txNew.ValueOut = pfcamt.ToCoin()
 
-		dcramt, _ = pfcutil.NewAmount(vInSum)
-		txNew.ValueIn = dcramt.ToCoin()
+		pfcamt, _ = pfcutil.NewAmount(vInSum)
+		txNew.ValueIn = pfcamt.ToCoin()
 
-		dcramt, _ = pfcutil.NewAmount(txNew.ValueIn - txNew.ValueOut)
-		txNew.Fees = dcramt.ToCoin()
+		pfcamt, _ = pfcutil.NewAmount(txNew.ValueIn - txNew.ValueOut)
+		txNew.Fees = pfcamt.ToCoin()
 
 		// Return true if coinbase value is not empty, return 0 at some fields
 		if txNew.Vins != nil && txNew.Vins[0].CoinBase != "" {
@@ -135,8 +135,8 @@ func (c *insightApiContext) DcrToInsightTxns(txs []*pfcjson.TxRawResult,
 	return newTxs, nil
 }
 
-// DcrToInsightBlock converts a pfcjson.GetBlockVerboseResult to Insight block.
-func (c *insightApiContext) DcrToInsightBlock(inBlocks []*pfcjson.GetBlockVerboseResult) ([]*apitypes.InsightBlockResult, error) {
+// PfcToInsightBlock converts a pfcjson.GetBlockVerboseResult to Insight block.
+func (c *insightApiContext) PfcToInsightBlock(inBlocks []*pfcjson.GetBlockVerboseResult) ([]*apitypes.InsightBlockResult, error) {
 	RewardAtBlock := func(blocknum int64, voters uint16) float64 {
 		subsidyCache := blockchain.NewSubsidyCache(0, c.params)
 		work := blockchain.CalcBlockWorkSubsidy(subsidyCache, blocknum, voters, c.params)

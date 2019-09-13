@@ -70,7 +70,7 @@ type config struct {
 	// RPC client options
 	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name"`
 	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password"`
-	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9709, testnet: localhost:19709, simnet: localhost:19556)"`
+	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)"`
 	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file"`
 	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost"`
 }
