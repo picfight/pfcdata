@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	root := `D:\PICFIGHT\src\github.com\decred\dcrwallet`
+	root := `D:\PICFIGHT\src\github.com\decred\dcrdata`
 	ignored := ignoredFiles()
 	subfolders := fileops.ListFiles(root, fileops.FoldersOnly, fileops.DIRECT_CHILDREN)
 	fileops.EngageDeleteSafeLock(true)
@@ -22,7 +22,7 @@ func main() {
 			continue
 		}
 
-		output := filepath.Join(`D:\PICFIGHT\src\github.com\picfight\pfcwallet`, fileName)
+		output := filepath.Join(`D:\PICFIGHT\src\github.com\picfight\pfcdata`, fileName)
 
 		ignore := make(map[string]bool)
 		set := &coinknife.Settings{
@@ -49,10 +49,10 @@ func nameGenerator(data string) string {
 func fileGenerator(data string) string {
 	data = coinknife.Replace(data, "decred/dcrd", "picfight/pfcd")
 	data = coinknife.Replace(data, "decred/dcrwallet", "picfight/pfcwallet")
-	//data = coinknife.Replace(data, "github.com/decred/dcrd", "github.com/picfight/dcrd")
-	data = coinknife.Replace(data, "decred/dcrd", "picfight/pfcd")
+	data = coinknife.Replace(data, "decred/dcrdata", "picfight/pfcdata")
 	data = coinknife.Replace(data, "dcrd", "pfcd")
 	data = coinknife.Replace(data, "dcrwallet", "pfcwallet")
+	data = coinknife.Replace(data, "dcrdata", "pfcdata")
 	return data
 }
 
