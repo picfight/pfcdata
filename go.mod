@@ -1,3 +1,3 @@
-module github.com/picfight/pfcdata/v3
+module github.com/picfight/pfcdata
 
 go 1.12

@@ -4,7 +4,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
-    <meta name="description" content="pfcdata, an original PicFight block explorer powered by Go">
+    <meta name="description" content="pfcdata, an original Decred block explorer powered by Go">
     <meta name="author" content="The Decred developers">
     <!--  Custom favicon  -->
     <link rel="apple-touch-icon" sizes="180x180" href="/images/favicon/apple-touch-icon.png">
@@ -14,8 +14,8 @@
     <link rel="manifest" href="/images/favicon/manifest.json">
     <link rel="mask-icon" href="/images/favicon/safari-pinned-tab.svg">
     <link rel="shortcut icon" href="/images/favicon/favicon.ico">
-    <meta name="apple-mobile-web-app-title" content="PicFight - Autonomous Digital Currency">
-    <meta name="application-name" content="PicFight - Autonomous Digital Currency">
+    <meta name="apple-mobile-web-app-title" content="Decred - Autonomous Digital Currency">
+    <meta name="application-name" content="Decred - Autonomous Digital Currency">
     <meta name="msapplication-TileColor" content="#2973ff">
     <meta name="msapplication-TileImage" content="/images/favicon/mstile-144x144.png">
     <meta name="msapplication-config" content="/images/favicon/browserconfig.xml">
@@ -70,10 +70,10 @@
                     <span class="patty short"></span>
                     <div id="menu">
                         <a data-keynav-skip href="/" title="Home">Home</a>
-                        <a data-keynav-skip href="/blocks" title="PicFight blocks">Blocks</a>
-                        <a data-keynav-skip href="/mempool" title="PicFight mempool">Mempool</a>
-                        <a data-keynav-skip href="/ticketpool" title="PicFight ticket pool">Ticket Pool</a>
-                        <a data-keynav-skip class="jsonly" href="/charts" title="PicFight charts">Charts</a>
+                        <a data-keynav-skip href="/blocks" title="Decred blocks">Blocks</a>
+                        <a data-keynav-skip href="/mempool" title="Decred mempool">Mempool</a>
+                        <a data-keynav-skip href="/ticketpool" title="Decred ticket pool">Ticket Pool</a>
+                        <a data-keynav-skip class="jsonly" href="/charts" title="Decred charts">Charts</a>
                         <a data-keynav-skip href="/agendas" title="Agendas">Agendas</a>
                         <a data-keynav-skip href="/parameters" title="Chain Parameters">Parameters</a>
                         <a data-keynav-skip href="/decodetx" title="Decode or send a raw transaction">Decode/Broadcast Tx</a>
@@ -82,7 +82,7 @@
                         {{else}}
                             <a data-keynav-skip href="https://explorer.pfcdata.org/" title="Home">Switch To Mainnet</a>
                         {{end}}
-                        <a data-keynav-skip data-turbolinks="false" href="javascript:toggleSun()" class="jsonly"><span id="sun-icon" class="pfcicon-sun-fill no-underline pr-2"></span> Night Mode</a>
+                        <a data-keynav-skip data-turbolinks="false" href="javascript:toggleSun()" class="jsonly"><span id="sun-icon" class="dcricon-sun-fill no-underline pr-2"></span> Night Mode</a>
                         <a data-keynav-skip data-turbolinks="false" href="#" class="jsonly" id="keynav-toggle">
                             <span class="text">Enable Hot Keys</span><span class="keys-hint">(&nbsp;&nbsp;<span class="arrows"> &#8592;<br>&#8594;</span>&nbsp;&nbsp;enter&nbsp;&nbsp;\&nbsp;&nbsp;=&nbsp;&nbsp;)</span>
                         </a>
@@ -119,14 +119,14 @@
         toggleToLightClasses(document.body)
     }
     function toggleToDarkClasses(body) {
-        $(sunIcon).removeClass('pfcicon-sun-fill')
-        $(sunIcon).addClass('pfcicon-sun-stroke')
+        $(sunIcon).removeClass('dcricon-sun-fill')
+        $(sunIcon).addClass('dcricon-sun-stroke')
         $(body).addClass('darkBG')
     }
     function toggleToLightClasses(body) {
         $(body).removeClass('darkBG');
-        $(sunIcon).removeClass('pfcicon-sun-stroke')
-        $(sunIcon).addClass('pfcicon-sun-fill')
+        $(sunIcon).removeClass('dcricon-sun-stroke')
+        $(sunIcon).addClass('dcricon-sun-fill')
     }
     function toggleSun() {
         if (darkEnabled()) {
@@ -364,7 +364,7 @@
     }
 
     function doNotification(block) {
-        var newBlockNtfn = new Notify('New PicFight Block Mined', {
+        var newBlockNtfn = new Notify('New Decred Block Mined', {
             body: 'Block mined at height ' + block.height,
             tag: 'blockheight',
             image: '/images/pfcdata144x128.png',

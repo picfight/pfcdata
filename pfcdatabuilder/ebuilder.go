@@ -20,6 +20,7 @@ func main() {
 		FileContentProcessor:   fileGenerator,
 		IgnoredFiles:           ignoredFiles(),
 		InjectorsPath:          filepath.Join("", "code_injections"),
+		GoFmt:                  coinknife.GoFmt,
 	}
 
 	coinknife.Build(set)
@@ -115,7 +116,6 @@ func processableFiles(file string) bool {
 	if strings.HasSuffix(file, ".sum") {
 		return false
 	}
-
 
 	//------------------------------
 	if strings.HasSuffix(file, ".mod") {

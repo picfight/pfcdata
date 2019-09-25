@@ -1,14 +1,14 @@
 {{define "parameters"}}
 <!DOCTYPE html>
 <html lang="en">
-    {{ template "html-head" printf "PicFight Chain Parameters"}}
+    {{ template "html-head" printf "Decred Chain Parameters"}}
     <body class="{{ theme }}">
         {{template "navbar" . }}
         {{with .Cp}}
         <div class="container main">
             <div class="row justify-content-between">
                 <div class="col-md-7 col-sm-6 d-flex">
-                    <h4 class="mb-2">Parameters for PicFight {{$.ChainParams.Name}}
+                    <h4 class="mb-2">Parameters for Decred {{$.ChainParams.Name}}
                       <span class="fs12" >
                         from <a href="https://github.com/picfight/pfcd/blob/master/chaincfg/params.go">chaincfg/params.go</a>
                       </span>
@@ -173,7 +173,7 @@
                             <tr>
                                 <td class="mono text-left pr-2 nowrap p03rem0">TicketsPerBlock</td>
                                 <td class="mono">{{$.ChainParams.TicketsPerBlock}}</td>
-                                <td>Average number of tickets per block for PicFight PoS</td>
+                                <td>Average number of tickets per block for Decred PoS</td>
                             </tr>
                             <tr>
                                 <td class="mono text-left pr-2 nowrap p03rem0">TicketMaturity</td>
