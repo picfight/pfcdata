@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/api/insight"
@@ -216,7 +216,7 @@ func signalReorg(d ReorgData) {
 	}
 	d.WG.Wait()
 
-	// Send reorg data to pfcsqlite's monitor.
+	// Send reorg data to dcrsqlite's monitor.
 	d.WG.Add(1)
 	select {
 	case NtfnChans.ReorgChanWiredDB <- fullData:
@@ -235,7 +235,7 @@ func signalReorg(d ReorgData) {
 	// Send reorg data to ChainDB's monitor.
 	d.WG.Add(1)
 	select {
-	case NtfnChans.ReorgChanPfcpgDB <- fullData:
+	case NtfnChans.ReorgChanDcrpgDB <- fullData:
 	default:
 		d.WG.Done()
 	}
@@ -349,7 +349,7 @@ func MakeNodeNtfnHandlers() (*rpcclient.NotificationHandlers, *collectionQueue) 
 			if err != nil {
 				return
 			}
-			tx := pfcutil.NewTx(&rec.MsgTx)
+			tx := dcrutil.NewTx(&rec.MsgTx)
 			txHash := rec.Hash
 			select {
 			case NtfnChans.RelevantTxMempoolChan <- tx:
@@ -362,7 +362,7 @@ func MakeNodeNtfnHandlers() (*rpcclient.NotificationHandlers, *collectionQueue) 
 		// OnTxAcceptedVerbose is invoked same as OnTxAccepted but is used here
 		// for the mempool monitors to avoid an extra call to pfcd for
 		// the tx details
-		OnTxAcceptedVerbose: func(txDetails *pfcjson.TxRawResult) {
+		OnTxAcceptedVerbose: func(txDetails *dcrjson.TxRawResult) {
 
 			select {
 			case NtfnChans.ExpNewTxChan <- &explorer.NewMempoolTx{

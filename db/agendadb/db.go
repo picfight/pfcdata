@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/asdine/storm"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcd/rpcclient"
 )
 
@@ -100,7 +100,7 @@ func (db *AgendaDB) ListAgendas() error {
 	})
 }
 
-// AgendaTagged has the same fields as pfcjson.Agenda, but with the Id field
+// AgendaTagged has the same fields as dcrjson.Agenda, but with the Id field
 // marked as the primary key via the `storm:"id"` tag. Fields tagged for
 // indexing by the DB are: StartTime, ExpireTime, Status, and QuorumProgress.
 type AgendaTagged struct {
@@ -111,17 +111,17 @@ type AgendaTagged struct {
 	ExpireTime     uint64           `json:"expiretime" storm:"index"`
 	Status         string           `json:"status" storm:"index"`
 	QuorumProgress float64          `json:"quorumprogress" storm:"index"`
-	Choices        []pfcjson.Choice `json:"choices"`
+	Choices        []dcrjson.Choice `json:"choices"`
 	VoteVersion    uint32           `json:"voteversion"`
 }
 
-// ChoiceLabeled embeds pfcjson.Choice along with the AgendaID for the choice,
+// ChoiceLabeled embeds dcrjson.Choice along with the AgendaID for the choice,
 // and a string array suitable for use as a primary key. The AgendaID is tagged
 // as an index for quick lookups based on the agenda.
 type ChoiceLabeled struct {
 	AgendaChoice   [2]string `storm:"id"`
 	AgendaID       string    `json:"agendaid" storm:"index"`
-	pfcjson.Choice `storm:"inline"`
+	dcrjson.Choice `storm:"inline"`
 }
 
 // GetVoteAgendasForVersion is used in getting the agendas using the vote versions
@@ -193,7 +193,7 @@ func CheckForUpdates(client *rpcclient.Client) error {
 	}
 	// voteVersion is vote version as of when lnsupport and sdiffalgorithm votes
 	// casting was activated. More information can be found here
-	// https://docs.picfight.org/getting-started/user-guides/agenda-voting/#voting-archive
+	// https://docs.decred.org/getting-started/user-guides/agenda-voting/#voting-archive
 	// Also at the moment all agenda version information available in the rpc
 	// is from version 4.
 	var voteVersion int64 = 4

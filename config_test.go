@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 )
 
 var tempConfigFile *os.File
@@ -145,7 +145,7 @@ func TestDefaultConfigAPIListenWithEnv(t *testing.T) {
 }
 
 func TestDefaultConfigAppDataDir(t *testing.T) {
-	expected := pfcutil.AppDataDir("pfcdata", false)
+	expected := dcrutil.AppDataDir("pfcdata", false)
 	cfg, err := loadConfig()
 	if err != nil {
 		t.Fatalf("Failed to load pfcdata config: %v", err)

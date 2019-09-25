@@ -18,15 +18,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/rs/cors"
 )
 
@@ -48,14 +48,14 @@ type explorerDataSourceLite interface {
 	GetBlockHash(idx int64) (string, error)
 	GetExplorerTx(txid string) *TxInfo
 	GetExplorerAddress(address string, count, offset int64) (*AddressInfo, error)
-	DecodeRawTransaction(txhex string) (*pfcjson.TxRawResult, error)
+	DecodeRawTransaction(txhex string) (*dcrjson.TxRawResult, error)
 	SendRawTransaction(txhex string) (string, error)
 	GetHeight() int
 	GetChainParams() *chaincfg.Params
 	UnconfirmedTxnsForAddress(address string) (*txhelpers.AddressOutpoints, int64, error)
 	GetMempool() []MempoolTx
 	TxHeight(txid string) (height int64)
-	BlockSubsidy(height int64, voters uint16) *pfcjson.GetBlockSubsidyResult
+	BlockSubsidy(height int64, voters uint16) *dcrjson.GetBlockSubsidyResult
 	GetSqliteChartsData() (map[string]*dbtypes.ChartsData, error)
 	GetExplorerFullBlocks(start int, end int) []*BlockInfo
 	RetreiveDifficulty(timestamp int64) float64
@@ -469,11 +469,11 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 	// supply staked.
 	stakePerc := 45.0
 	if blockData.PoolInfo != nil {
-		stakePerc = blockData.PoolInfo.Value / pfcutil.Amount(blockData.ExtraInfo.CoinSupply).ToCoin()
+		stakePerc = blockData.PoolInfo.Value / dcrutil.Amount(blockData.ExtraInfo.CoinSupply).ToCoin()
 	}
 	// Simulate the annual staking rate
 	ASR, _ := exp.simulateASR(1000, false, stakePerc,
-		pfcutil.Amount(blockData.ExtraInfo.CoinSupply).ToCoin(),
+		dcrutil.Amount(blockData.ExtraInfo.CoinSupply).ToCoin(),
 		float64(newBlockData.Height),
 		blockData.CurrentStakeDiff.CurrentStakeDifficulty)
 
@@ -514,7 +514,7 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 		}
 	}
 
-	posSubsPerVote := pfcutil.Amount(blockData.ExtraInfo.NextBlockSubsidy.PoS).ToCoin() /
+	posSubsPerVote := dcrutil.Amount(blockData.ExtraInfo.NextBlockSubsidy.PoS).ToCoin() /
 		float64(exp.ChainParams.TicketsPerBlock)
 	p.HomeInfo.TicketReward = 100 * posSubsPerVote /
 		blockData.CurrentStakeDiff.CurrentStakeDifficulty
@@ -627,17 +627,17 @@ func (exp *explorerUI) simulateASR(StartingPFCBalance float64, IntegerTicketQty 
 	StakeRewardAtBlock := func(blocknum float64) float64 {
 		// Option 1:  RPC Call
 		Subsidy := exp.blockData.BlockSubsidy(int64(blocknum), 1)
-		return pfcutil.Amount(Subsidy.PoS).ToCoin()
+		return dcrutil.Amount(Subsidy.PoS).ToCoin()
 
 		// Option 2:  Calculation
 		// epoch := math.Floor(blocknum / float64(exp.ChainParams.SubsidyReductionInterval))
 		// RewardProportionPerVote := float64(exp.ChainParams.StakeRewardProportion) / (10 * float64(exp.ChainParams.TicketsPerBlock))
-		// return float64(RewardProportionPerVote) * pfcutil.Amount(exp.ChainParams.BaseSubsidy).ToCoin() *
+		// return float64(RewardProportionPerVote) * dcrutil.Amount(exp.ChainParams.BaseSubsidy).ToCoin() *
 		// 	math.Pow(float64(exp.ChainParams.MulSubsidy)/float64(exp.ChainParams.DivSubsidy), epoch)
 	}
 
 	MaxCoinSupplyAtBlock := func(blocknum float64) float64 {
-		// 4th order poly best fit curve to PicFight mainnet emissions plot.
+		// 4th order poly best fit curve to Decred mainnet emissions plot.
 		// Curve fit was done with 0 Y intercept and Pre-Mine added after.
 
 		return (-9E-19*math.Pow(blocknum, 4) +

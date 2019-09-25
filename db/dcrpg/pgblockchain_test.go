@@ -1,6 +1,6 @@
 // +build mainnettest
 
-package pfcpg
+package dcrpg
 
 import (
 	"fmt"

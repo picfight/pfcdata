@@ -39,6 +39,7 @@ func fileGenerator(data string) string {
 	data = coinknife.Replace(data, "dcrdata", "pfcdata")
 	data = coinknife.Replace(data, "DcrdataVersion", "PfcdataVersion")
 	data = coinknife.Replace(data, "DCR", "PFC")
+	data = coinknife.Replace(data, "unit of Decred", "unit of Picfight coin")
 	return data
 }
 

@@ -8,10 +8,10 @@ import (
 	"sort"
 	"time"
 
-	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	humanize "github.com/dustin/go-humanize"
 )
 
 // NumLatestMempoolTxns is the maximum number of mempool transactions that will

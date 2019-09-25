@@ -517,7 +517,7 @@ type AgendaVoteChoices struct {
 	Time    []uint64 `json:"time,omitempty"`
 }
 
-// Tx models a PicFight transaction. It is stored in a Block.
+// Tx models a Decred transaction. It is stored in a Block.
 type Tx struct {
 	//blockDbID  int64
 	BlockHash   string `json:"block_hash"`
@@ -547,7 +547,7 @@ type Tx struct {
 	IsMainchainBlock bool `json:"mainchain"`
 }
 
-// Block models a PicFight block.
+// Block models a Decred block.
 type Block struct {
 	Hash         string `json:"hash"`
 	Size         uint32 `json:"size"`

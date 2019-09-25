@@ -557,7 +557,7 @@ Methods that work with addresses.
 
 **URL:**  ```GET /addr/{address}/balance```
 
-**Description:** Retrieves address balance in atoms (the smallest unit of PicFight; 1 PFC = 100,000,000 atoms).
+**Description:** Retrieves address balance in atoms (the smallest unit of Picfight coin; 1 PFC = 100,000,000 atoms).
 
 **Parameters:**
 
@@ -581,7 +581,7 @@ Methods that work with addresses.
 
 **URL:**  ```GET /addr/{address}/totalSent```
 
-**Description:** Retrieves total amount sent from an address in atoms (the smallest unit of PicFight; 1 PFC = 100,000,000 atoms)
+**Description:** Retrieves total amount sent from an address in atoms (the smallest unit of Picfight coin; 1 PFC = 100,000,000 atoms)
 
 **Parameters:**
 
@@ -1150,7 +1150,7 @@ Methods that provide utilities or relay network status.
 
 **URL:**  ```GET /status```
 
-**Description:** Retrieves status of PicFight network. If `q` is set to a parameter from the table below, only that parameter is returned. If `q` is not specified, all status parameters are returned. 
+**Description:** Retrieves status of Decred network. If `q` is set to a parameter from the table below, only that parameter is returned. If `q` is not specified, all status parameters are returned. 
 
 
 | Parameter           | Type                   |  Description                   | 

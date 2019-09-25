@@ -508,10 +508,10 @@ body {
         margin-right: 1% !important;
         min-height: fit-content;
     }
-    .pfc-icon {
+    .dcr-icon {
         width: 100px;
     }
-    .pfc-icon-container {
+    .dcr-icon-container {
         width: 100px;
     }
 }
@@ -529,10 +529,10 @@ body {
         padding-left: 15px;
         padding-right: 15px;
     }
-    .pfc-icon {
+    .dcr-icon {
         width: 60px;
     }
-    .pfc-icon-container {
+    .dcr-icon-container {
         width: 60px;
     }
     .navbar-fixed-bottom {

@@ -235,7 +235,7 @@ const (
 	// The SelectAddressesGloballyInvalid and UpdateAddressesGloballyInvalid
 	// queries are used to patch a bug in new block handling that neglected to
 	// set valid_mainchain=false for the previous block when the new block's
-	// vote bits invalidate the previous block. This pertains to pfcpg 3.5.x.
+	// vote bits invalidate the previous block. This pertains to dcrpg 3.5.x.
 
 	// SelectAddressesGloballyInvalid selects the row ids of the addresses table
 	// corresponding to transactions that should have valid_mainchain set to

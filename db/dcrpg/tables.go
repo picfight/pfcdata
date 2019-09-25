@@ -2,7 +2,7 @@
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"database/sql"
@@ -11,7 +11,7 @@ import (
 	"strconv"
 
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
+	"github.com/picfight/pfcdata/v3/db/dcrpg/internal"
 )
 
 var createTableStatements = map[string]string{

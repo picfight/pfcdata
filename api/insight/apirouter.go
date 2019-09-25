@@ -8,11 +8,11 @@
 package insight
 
 import (
+	m "github.com/picfight/pfcdata/v3/middleware"
 	"github.com/didip/tollbooth"
 	"github.com/didip/tollbooth_chi"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	m "github.com/picfight/pfcdata/v3/middleware"
 )
 
 // ApiMux contains the struct mux

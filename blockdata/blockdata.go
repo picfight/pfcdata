@@ -10,8 +10,8 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
@@ -22,11 +22,11 @@ import (
 // BlockData contains all the data collected by a Collector and stored
 // by a BlockDataSaver. TODO: consider if pointers are desirable here.
 type BlockData struct {
-	Header           pfcjson.GetBlockHeaderVerboseResult
+	Header           dcrjson.GetBlockHeaderVerboseResult
 	Connections      int32
-	FeeInfo          pfcjson.FeeInfoBlock
-	CurrentStakeDiff pfcjson.GetStakeDifficultyResult
-	EstStakeDiff     pfcjson.EstimateStakeDiffResult
+	FeeInfo          dcrjson.FeeInfoBlock
+	CurrentStakeDiff dcrjson.GetStakeDifficultyResult
+	EstStakeDiff     dcrjson.EstimateStakeDiffResult
 	PoolInfo         *apitypes.TicketPoolInfo
 	ExtraInfo        apitypes.BlockExplorerExtraInfo
 	PriceWindowNum   int
@@ -139,7 +139,7 @@ func (t *Collector) CollectAPITypes(hash *chainhash.Hash) (*apitypes.BlockDataBa
 // the block data required by Collect() that is specific to the block with the
 // given hash.
 func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataBasic,
-	*pfcjson.FeeInfoBlock, *pfcjson.GetBlockHeaderVerboseResult,
+	*dcrjson.FeeInfoBlock, *dcrjson.GetBlockHeaderVerboseResult,
 	*apitypes.BlockExplorerExtraInfo, *wire.MsgBlock, error) {
 	// Retrieve block from pfcd.
 	msgBlock, err := t.pfcdChainSvr.GetBlock(hash)
@@ -147,7 +147,7 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 		return nil, nil, nil, nil, nil, err
 	}
 	height := msgBlock.Header.Height
-	block := pfcutil.NewBlock(msgBlock)
+	block := dcrutil.NewBlock(msgBlock)
 	txLen := len(block.Transactions())
 
 	// Coin supply and block subsidy. If either RPC fails, do not immediately
@@ -196,7 +196,7 @@ func (t *Collector) CollectBlockInfo(hash *chainhash.Hash) (*apitypes.BlockDataB
 	// Work/Stake difficulty
 	header := msgBlock.Header
 	diff := txhelpers.GetDifficultyRatio(header.Bits, t.netParams)
-	sdiff := pfcutil.Amount(header.SBits).ToCoin()
+	sdiff := dcrutil.Amount(header.SBits).ToCoin()
 
 	// Output
 	blockdata := &apitypes.BlockDataBasic{
@@ -247,8 +247,8 @@ func (t *Collector) CollectHash(hash *chainhash.Hash) (*BlockData, *wire.MsgBloc
 		Header:           *blockHeaderVerbose,
 		Connections:      int32(numConn),
 		FeeInfo:          *feeInfoBlock,
-		CurrentStakeDiff: pfcjson.GetStakeDifficultyResult{CurrentStakeDifficulty: blockDataBasic.StakeDiff},
-		EstStakeDiff:     pfcjson.EstimateStakeDiffResult{},
+		CurrentStakeDiff: dcrjson.GetStakeDifficultyResult{CurrentStakeDifficulty: blockDataBasic.StakeDiff},
+		EstStakeDiff:     dcrjson.EstimateStakeDiffResult{},
 		PoolInfo:         blockDataBasic.PoolInfo,
 		ExtraInfo:        *extra,
 		PriceWindowNum:   int(height / winSize),
@@ -301,7 +301,7 @@ func (t *Collector) Collect() (*BlockData, *wire.MsgBlock, error) {
 	estStakeDiff, err := t.pfcdChainSvr.EstimateStakeDiff(nil)
 	if err != nil {
 		log.Warn("estimatestakediff is broken: ", err)
-		estStakeDiff = &pfcjson.EstimateStakeDiffResult{}
+		estStakeDiff = &dcrjson.EstimateStakeDiffResult{}
 	}
 
 	// Info specific to the block hash

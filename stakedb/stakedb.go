@@ -13,17 +13,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/oleiade/lane"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/database"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/oleiade/lane"
 )
 
 // PoolInfoCache contains a map of block hashes to ticket pool info data at that
@@ -92,7 +92,7 @@ type StakeDatabase struct {
 	StakeDB         database.DB
 	BestNode        *stake.Node
 	blkMtx          sync.RWMutex
-	blockCache      map[int64]*pfcutil.Block
+	blockCache      map[int64]*dcrutil.Block
 	liveTicketMtx   sync.RWMutex
 	liveTicketCache map[chainhash.Hash]int64
 	poolValue       int64
@@ -137,7 +137,7 @@ func LoadAndRecover(client *rpcclient.Client, params *chaincfg.Params,
 	sDB := &StakeDatabase{
 		params:          params,
 		NodeClient:      client,
-		blockCache:      make(map[int64]*pfcutil.Block),
+		blockCache:      make(map[int64]*dcrutil.Block),
 		liveTicketCache: make(map[chainhash.Hash]int64, params.TicketPoolSize*(params.TicketsPerBlock+1)),
 		poolInfo:        NewPoolInfoCache(513),
 		PoolDB:          poolDB,
@@ -249,7 +249,7 @@ func NewStakeDatabase(client *rpcclient.Client, params *chaincfg.Params,
 	sDB := &StakeDatabase{
 		params:          params,
 		NodeClient:      client,
-		blockCache:      make(map[int64]*pfcutil.Block),
+		blockCache:      make(map[int64]*dcrutil.Block),
 		liveTicketCache: make(map[chainhash.Hash]int64, params.TicketPoolSize*(params.TicketsPerBlock+1)),
 		poolInfo:        NewPoolInfoCache(513),
 		PoolDB:          poolDB,
@@ -448,7 +448,7 @@ func (db *StakeDatabase) Height() uint32 {
 
 // BlockCached attempts to find the block at the specified height in the block
 // cache. The returned boolean indicates if it was found.
-func (db *StakeDatabase) BlockCached(ind int64) (*pfcutil.Block, bool) {
+func (db *StakeDatabase) BlockCached(ind int64) (*dcrutil.Block, bool) {
 	db.blkMtx.RLock()
 	defer db.blkMtx.RUnlock()
 	block, found := db.blockCache[ind]
@@ -458,7 +458,7 @@ func (db *StakeDatabase) BlockCached(ind int64) (*pfcutil.Block, bool) {
 // block first tries to find the block at the input height in cache, and if that
 // fails it will request it from the node RPC client. Don't use this casually
 // since reorganization may redefine a block at a given height.
-func (db *StakeDatabase) block(ind int64) (*pfcutil.Block, bool) {
+func (db *StakeDatabase) block(ind int64) (*dcrutil.Block, bool) {
 	block, ok := db.BlockCached(ind)
 	if !ok {
 		var err error
@@ -480,12 +480,12 @@ func (db *StakeDatabase) ForgetBlock(ind int64) {
 
 // ConnectBlockHash is a wrapper for ConnectBlock. For the input block hash, it
 // gets the block from the node RPC client and calls ConnectBlock.
-func (db *StakeDatabase) ConnectBlockHash(hash *chainhash.Hash) (*pfcutil.Block, error) {
+func (db *StakeDatabase) ConnectBlockHash(hash *chainhash.Hash) (*dcrutil.Block, error) {
 	msgBlock, err := db.NodeClient.GetBlock(hash)
 	if err != nil {
 		return nil, err
 	}
-	block := pfcutil.NewBlock(msgBlock)
+	block := dcrutil.NewBlock(msgBlock)
 	return block, db.ConnectBlock(block)
 }
 
@@ -493,7 +493,7 @@ func (db *StakeDatabase) ConnectBlockHash(hash *chainhash.Hash) (*pfcutil.Block,
 // the best stake node. This exported function gets any revoked and spend
 // tickets from the input block, and any maturing tickets from the past block in
 // which those tickets would be found, and passes them to connectBlock.
-func (db *StakeDatabase) ConnectBlock(block *pfcutil.Block) error {
+func (db *StakeDatabase) ConnectBlock(block *dcrutil.Block) error {
 	height := block.Height()
 	maturingHeight := height - int64(db.params.TicketMaturity)
 
@@ -570,7 +570,7 @@ func (db *StakeDatabase) ConnectBlock(block *pfcutil.Block) error {
 	return db.PoolDB.Append(poolDiff, bestNodeHeight+1)
 }
 
-func (db *StakeDatabase) connectBlock(block *pfcutil.Block, spent []chainhash.Hash,
+func (db *StakeDatabase) connectBlock(block *dcrutil.Block, spent []chainhash.Hash,
 	revoked []chainhash.Hash, maturing []chainhash.Hash) error {
 	hB, err := block.BlockHeaderBytes()
 	if err != nil {
@@ -863,7 +863,7 @@ func (db *StakeDatabase) PoolInfoBest() *apitypes.TicketPoolInfo {
 
 func (db *StakeDatabase) makePoolInfo(poolValue, poolSize int64,
 	winningTickets []chainhash.Hash, height uint32) *apitypes.TicketPoolInfo {
-	poolCoin := pfcutil.Amount(poolValue).ToCoin()
+	poolCoin := dcrutil.Amount(poolValue).ToCoin()
 	valAvg := 0.0
 	if poolSize > 0 {
 		valAvg = poolCoin / float64(poolSize)
@@ -904,7 +904,7 @@ func (db *StakeDatabase) calcPoolInfo(liveTickets, winningTickets []chainhash.Ha
 	}
 	db.liveTicketMtx.Unlock()
 
-	poolCoin := pfcutil.Amount(poolValue).ToCoin()
+	poolCoin := dcrutil.Amount(poolValue).ToCoin()
 	valAvg := 0.0
 	if len(liveTickets) > 0 {
 		valAvg = poolCoin / float64(poolSize)
@@ -1007,10 +1007,10 @@ func (db *StakeDatabase) DBPrevBlockHeader() (*wire.BlockHeader, error) {
 	return db.NodeClient.GetBlockHeader(&parentHeader.PrevBlock)
 }
 
-// DBTipBlock gets the pfcutil.Block for the current best block in the stake
+// DBTipBlock gets the dcrutil.Block for the current best block in the stake
 // database. It used DBState to get the best block hash, and the node RPC client
 // to get the block itself.
-func (db *StakeDatabase) DBTipBlock() (*pfcutil.Block, error) {
+func (db *StakeDatabase) DBTipBlock() (*dcrutil.Block, error) {
 	_, hash, err := db.DBState()
 	if err != nil {
 		return nil, err
@@ -1019,10 +1019,10 @@ func (db *StakeDatabase) DBTipBlock() (*pfcutil.Block, error) {
 	return db.getBlock(hash)
 }
 
-// DBPrevBlock gets the pfcutil.Block for the previous best block in the stake
+// DBPrevBlock gets the dcrutil.Block for the previous best block in the stake
 // database. It used DBState to get the best block hash, and the node RPC client
 // to get the block itself.
-func (db *StakeDatabase) DBPrevBlock() (*pfcutil.Block, error) {
+func (db *StakeDatabase) DBPrevBlock() (*dcrutil.Block, error) {
 	_, hash, err := db.DBState()
 	if err != nil {
 		return nil, err
@@ -1037,7 +1037,7 @@ func (db *StakeDatabase) DBPrevBlock() (*pfcutil.Block, error) {
 }
 
 // dbPrevBlock is the non-thread-safe version of DBPrevBlock.
-func (db *StakeDatabase) dbPrevBlock() (*pfcutil.Block, error) {
+func (db *StakeDatabase) dbPrevBlock() (*dcrutil.Block, error) {
 	_, hash, err := db.dbState()
 	if err != nil {
 		return nil, err
@@ -1051,10 +1051,10 @@ func (db *StakeDatabase) dbPrevBlock() (*pfcutil.Block, error) {
 	return db.getBlock(&parentHeader.PrevBlock)
 }
 
-func (db *StakeDatabase) getBlock(hash *chainhash.Hash) (*pfcutil.Block, error) {
+func (db *StakeDatabase) getBlock(hash *chainhash.Hash) (*dcrutil.Block, error) {
 	msgBlock, err := db.NodeClient.GetBlock(hash)
 	if err == nil {
-		return pfcutil.NewBlock(msgBlock), nil
+		return dcrutil.NewBlock(msgBlock), nil
 	}
 	return nil, err
 }

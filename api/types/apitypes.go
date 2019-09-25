@@ -4,11 +4,11 @@
 package types
 
 import (
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
-// much of the time, pfcdata will be using the types in pfcjson, but others are
+// much of the time, pfcdata will be using the types in dcrjson, but others are
 // defined here
 
 // BlockTransactions models an array of stake and regular transactions for a
@@ -39,7 +39,7 @@ type TxShort struct {
 	Version  int32         `json:"version"`
 	Locktime uint32        `json:"locktime"`
 	Expiry   uint32        `json:"expiry"`
-	Vin      []pfcjson.Vin `json:"vin"`
+	Vin      []dcrjson.Vin `json:"vin"`
 	Vout     []Vout        `json:"vout"`
 }
 
@@ -49,7 +49,7 @@ type TrimmedTx struct {
 	Version  int32         `json:"version"`
 	Locktime uint32        `json:"locktime"`
 	Expiry   uint32        `json:"expiry"`
-	Vin      []pfcjson.Vin `json:"vin"`
+	Vin      []dcrjson.Vin `json:"vin"`
 	Vout     []Vout        `json:"vout"`
 }
 
@@ -116,14 +116,14 @@ type ScriptPubKey struct {
 	CommitAmt *float64 `json:"commitamt,omitempty"`
 }
 
-// TxOut defines a picfight transaction output.
+// TxOut defines a decred transaction output.
 type TxOut struct {
 	Value               float64      `json:"value"`
 	Version             uint16       `json:"version"`
 	ScriptPubKeyDecoded ScriptPubKey `json:"scriptPubKey"`
 }
 
-// TxIn defines a picfight transaction input.
+// TxIn defines a decred transaction input.
 type TxIn struct {
 	// Non-witness
 	PreviousOutPoint OutPoint `json:"prevout"`
@@ -156,7 +156,7 @@ type AddressTxRaw struct {
 	TxID          string               `json:"txid"`
 	Version       int32                `json:"version"`
 	Locktime      uint32               `json:"locktime"`
-	Vin           []pfcjson.VinPrevOut `json:"vin"`
+	Vin           []dcrjson.VinPrevOut `json:"vin"`
 	Vout          []Vout               `json:"vout"`
 	Confirmations int64                `json:"confirmations"`
 	BlockHash     string               `json:"blockhash"`
@@ -182,28 +182,28 @@ type AddressTotals struct {
 	BlockHeight  uint64  `json:"blockheight"`
 	NumSpent     int64   `json:"num_stxos"`
 	NumUnspent   int64   `json:"num_utxos"`
-	CoinsSpent   float64 `json:"pfc_spent"`
-	CoinsUnspent float64 `json:"pfc_unspent"`
+	CoinsSpent   float64 `json:"dcr_spent"`
+	CoinsUnspent float64 `json:"dcr_unspent"`
 }
 
 // BlockDataWithTxType adds an array of TxRawWithTxType to
-// pfcjson.GetBlockVerboseResult to include the stake transaction type
+// dcrjson.GetBlockVerboseResult to include the stake transaction type
 type BlockDataWithTxType struct {
-	*pfcjson.GetBlockVerboseResult
+	*dcrjson.GetBlockVerboseResult
 	Votes   []TxRawWithVoteInfo
-	Tickets []pfcjson.TxRawResult
-	Revs    []pfcjson.TxRawResult
+	Tickets []dcrjson.TxRawResult
+	Revs    []dcrjson.TxRawResult
 }
 
-// TxRawWithVoteInfo adds the vote info to pfcjson.TxRawResult
+// TxRawWithVoteInfo adds the vote info to dcrjson.TxRawResult
 type TxRawWithVoteInfo struct {
-	pfcjson.TxRawResult
+	dcrjson.TxRawResult
 	VoteInfo VoteInfo
 }
 
-// TxRawWithTxType adds the stake transaction type to pfcjson.TxRawResult
+// TxRawWithTxType adds the stake transaction type to dcrjson.TxRawResult
 type TxRawWithTxType struct {
-	pfcjson.TxRawResult
+	dcrjson.TxRawResult
 	TxType string
 }
 
@@ -236,7 +236,7 @@ type VinPrevOut struct {
 	Sequence    uint32     `json:"sequence"`
 }
 
-// end copy-paste from pfcjson
+// end copy-paste from dcrjson
 
 // Status indicates the state of the server, including the API version and the
 // software version.
@@ -315,7 +315,7 @@ type BlockExplorerExtraInfo struct {
 	TxLen            int                            `json:"tx"`
 	FormattedTime    string                         `json:"formatted_time"`
 	CoinSupply       int64                          `json:"coin_supply"`
-	NextBlockSubsidy *pfcjson.GetBlockSubsidyResult `json:"next_block_subsidy"`
+	NextBlockSubsidy *dcrjson.GetBlockSubsidyResult `json:"next_block_subsidy"`
 }
 
 // BlockTransactionCounts contains the regular and stake transaction counts for
@@ -341,15 +341,15 @@ type BlockSubsidies struct {
 
 // StakeDiff represents data about the evaluated stake difficulty and estimates
 type StakeDiff struct {
-	pfcjson.GetStakeDifficultyResult
-	Estimates        pfcjson.EstimateStakeDiffResult `json:"estimates"`
+	dcrjson.GetStakeDifficultyResult
+	Estimates        dcrjson.EstimateStakeDiffResult `json:"estimates"`
 	IdxBlockInWindow int                             `json:"window_block_index"`
 	PriceWindowNum   int                             `json:"window_number"`
 }
 
 // StakeInfoExtended models data about the fee, pool and stake difficulty
 type StakeInfoExtended struct {
-	Feeinfo          pfcjson.FeeInfoBlock `json:"feeinfo"`
+	Feeinfo          dcrjson.FeeInfoBlock `json:"feeinfo"`
 	StakeDiff        float64              `json:"stakediff"`
 	PriceWindowNum   int                  `json:"window_number"`
 	IdxBlockInWindow int                  `json:"window_block_index"`
@@ -367,7 +367,7 @@ func NewStakeInfoExtended() *StakeInfoExtended {
 // StakeInfoExtendedEstimates is similar to StakeInfoExtended but includes stake
 // difficulty estimates with the stake difficulty
 type StakeInfoExtendedEstimates struct {
-	Feeinfo          pfcjson.FeeInfoBlock `json:"feeinfo"`
+	Feeinfo          dcrjson.FeeInfoBlock `json:"feeinfo"`
 	StakeDiff        StakeDiff            `json:"stakediff"`
 	PriceWindowNum   int                  `json:"window_number"`
 	IdxBlockInWindow int                  `json:"window_block_index"`
@@ -379,7 +379,7 @@ type StakeInfoExtendedEstimates struct {
 type MempoolTicketFeeInfo struct {
 	Height uint32 `json:"height"`
 	Time   int64  `json:"time"`
-	pfcjson.FeeInfoMempool
+	dcrjson.FeeInfoMempool
 	LowestMineable float64 `json:"lowest_mineable"`
 }
 

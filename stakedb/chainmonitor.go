@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
@@ -136,7 +136,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 	var tipHash *chainhash.Hash
 	for i := range newChain {
 		hash := &newChain[i]
-		var block *pfcutil.Block
+		var block *dcrutil.Block
 		if block, err = p.db.ConnectBlockHash(hash); err != nil {
 			mainTip = int64(p.db.Height())
 			currentBlockHdr, _ := p.db.DBTipBlockHeader()

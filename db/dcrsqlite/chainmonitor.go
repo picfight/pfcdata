@@ -2,7 +2,7 @@
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
-package pfcsqlite
+package dcrsqlite
 
 import (
 	"context"

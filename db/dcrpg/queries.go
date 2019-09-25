@@ -2,7 +2,7 @@
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"bytes"
@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
-	humanize "github.com/dustin/go-humanize"
-	"github.com/lib/pq"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
+	"github.com/picfight/pfcdata/v3/db/dcrpg/internal"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	humanize "github.com/dustin/go-humanize"
+	"github.com/lib/pq"
 )
 
 // outputCountType defines the modes of the output count chart data.
@@ -245,8 +245,8 @@ func InsertTickets(db *sql.DB, dbTxns []*dbtypes.Tx, txDbIDs []uint64, checked, 
 			isMultisig = scriptSubClass == txscript.MultiSigTy
 		}
 
-		price := pfcutil.Amount(tx.Vouts[0].Value).ToCoin()
-		fee := pfcutil.Amount(tx.Fees).ToCoin()
+		price := dcrutil.Amount(tx.Vouts[0].Value).ToCoin()
+		fee := dcrutil.Amount(tx.Fees).ToCoin()
 		isSplit := tx.NumVin > 1
 
 		var id uint64
@@ -364,8 +364,8 @@ func InsertVotes(db *sql.DB, dbTxns []*dbtypes.Tx, _ /*txDbIDs*/ []uint64, fTx *
 			return nil, nil, nil, nil, nil, err
 		}
 
-		voteReward := pfcutil.Amount(msgTx.TxIn[0].ValueIn).ToCoin()
-		stakeSubmissionAmount := pfcutil.Amount(msgTx.TxIn[1].ValueIn).ToCoin()
+		voteReward := dcrutil.Amount(msgTx.TxIn[0].ValueIn).ToCoin()
+		stakeSubmissionAmount := dcrutil.Amount(msgTx.TxIn[1].ValueIn).ToCoin()
 		stakeSubmissionTxHash := msgTx.TxIn[1].PreviousOutPoint.Hash.String()
 		spentTicketHashes = append(spentTicketHashes, stakeSubmissionTxHash)
 
@@ -723,7 +723,7 @@ func retrieveTicketsByDate(db *sql.DB, maturityBlock, groupBy int64) (*dbtypes.P
 		// Returns the average value of a ticket depending on the grouping mode used
 		price = price * 100000000
 		total = float64(live + immature)
-		tickets.Price = append(tickets.Price, pfcutil.Amount(price/total).ToCoin())
+		tickets.Price = append(tickets.Price, dcrutil.Amount(price/total).ToCoin())
 	}
 
 	return tickets, nil
@@ -1142,7 +1142,7 @@ func RetrieveAddressUTXOs(db *sql.DB, address string, currentBlockHeight int64) 
 			log.Error(err)
 		}
 		txnOutput.ScriptPubKey = hex.EncodeToString(pkScript)
-		txnOutput.Amount = pfcutil.Amount(atoms).ToCoin()
+		txnOutput.Amount = dcrutil.Amount(atoms).ToCoin()
 		txnOutput.Satoshis = atoms
 		txnOutput.Height = blockHeight
 		txnOutput.Confirmations = currentBlockHeight - blockHeight + 1
@@ -1377,13 +1377,13 @@ func retrieveTxHistoryByAmountFlow(db *sql.DB, addr string,
 		}
 
 		items.Time = append(items.Time, blockTime)
-		items.Received = append(items.Received, pfcutil.Amount(received).ToCoin())
-		items.Sent = append(items.Sent, pfcutil.Amount(sent).ToCoin())
+		items.Received = append(items.Received, dcrutil.Amount(received).ToCoin())
+		items.Sent = append(items.Sent, dcrutil.Amount(sent).ToCoin())
 		// Net represents the difference between the received and sent amount for a
 		// given block. If the difference is positive then the value is unspent amount
 		// otherwise if the value is zero then all amount is spent and if the net amount
 		// is negative then for the given block more amount was sent than received.
-		items.Net = append(items.Net, pfcutil.Amount(received-sent).ToCoin())
+		items.Net = append(items.Net, dcrutil.Amount(received-sent).ToCoin())
 	}
 	return items, nil
 }
@@ -1417,7 +1417,7 @@ func retrieveTxHistoryByUnspentAmount(db *sql.DB, addr string,
 
 		// Return commmulative amount data for the unspent chart type
 		totalAmount += amount
-		items.Amount = append(items.Amount, pfcutil.Amount(totalAmount).ToCoin())
+		items.Amount = append(items.Amount, dcrutil.Amount(totalAmount).ToCoin())
 	}
 	return items, nil
 }
@@ -2063,7 +2063,7 @@ func retrieveCoinSupply(db *sql.DB) (*dbtypes.ChartsData, error) {
 		if value < 0 {
 			value = 0
 		}
-		sum += pfcutil.Amount(value).ToCoin()
+		sum += dcrutil.Amount(value).ToCoin()
 		items.Time = append(items.Time, uint64(timestamp))
 		items.ValueF = append(items.ValueF, sum)
 	}
@@ -2662,7 +2662,7 @@ func RetrieveTicketsPriceByHeight(db *sql.DB, val int64) (*dbtypes.ChartsData, e
 		}
 
 		items.Time = append(items.Time, timestamp)
-		priceCoin := pfcutil.Amount(price).ToCoin()
+		priceCoin := dcrutil.Amount(price).ToCoin()
 		items.ValueF = append(items.ValueF, priceCoin)
 		items.Difficulty = append(items.Difficulty, difficulty)
 	}

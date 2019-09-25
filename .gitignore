@@ -44,4 +44,3 @@ package-lock.json
 public/dist/
 public/js/dist/
 public/**/*.gz
-\.idea/

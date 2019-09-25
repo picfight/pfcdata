@@ -6,18 +6,18 @@ package insight
 
 import (
 	"github.com/picfight/pfcd/blockchain"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
 // TxConverter converts pfcd-tx to insight tx
-func (c *insightApiContext) TxConverter(txs []*pfcjson.TxRawResult) ([]apitypes.InsightTx, error) {
-	return c.PfcToInsightTxns(txs, false, false, false)
+func (c *insightApiContext) TxConverter(txs []*dcrjson.TxRawResult) ([]apitypes.InsightTx, error) {
+	return c.DcrToInsightTxns(txs, false, false, false)
 }
 
-// PfcToInsightTxns takes struct with filter params
-func (c *insightApiContext) PfcToInsightTxns(txs []*pfcjson.TxRawResult,
+// DcrToInsightTxns takes struct with filter params
+func (c *insightApiContext) DcrToInsightTxns(txs []*dcrjson.TxRawResult,
 	noAsm, noScriptSig, noSpent bool) ([]apitypes.InsightTx, error) {
 	var newTxs []apitypes.InsightTx
 	for _, tx := range txs {
@@ -67,14 +67,14 @@ func (c *insightApiContext) PfcToInsightTxns(txs []*pfcjson.TxRawResult,
 					// Update Vin due to PFCD AMOUNTIN - START
 					// NOTE THIS IS ONLY USEFUL FOR INPUT AMOUNTS THAT ARE NOT ALSO FROM MEMPOOL
 					if tx.Confirmations == 0 {
-						InsightVin.Value = pfcutil.Amount(value).ToCoin()
+						InsightVin.Value = dcrutil.Amount(value).ToCoin()
 					}
 					// Update Vin due to PFCD AMOUNTIN - END
 					InsightVin.Addr = addresses[0]
 				}
 			}
-			pfcamt, _ := pfcutil.NewAmount(InsightVin.Value)
-			InsightVin.ValueSat = int64(pfcamt)
+			dcramt, _ := dcrutil.NewAmount(InsightVin.Value)
+			InsightVin.ValueSat = int64(dcramt)
 
 			vInSum += InsightVin.Value
 			txNew.Vins = append(txNew.Vins, InsightVin)
@@ -100,14 +100,14 @@ func (c *insightApiContext) PfcToInsightTxns(txs []*pfcjson.TxRawResult,
 			vOutSum += v.Value
 		}
 
-		pfcamt, _ := pfcutil.NewAmount(vOutSum)
-		txNew.ValueOut = pfcamt.ToCoin()
+		dcramt, _ := dcrutil.NewAmount(vOutSum)
+		txNew.ValueOut = dcramt.ToCoin()
 
-		pfcamt, _ = pfcutil.NewAmount(vInSum)
-		txNew.ValueIn = pfcamt.ToCoin()
+		dcramt, _ = dcrutil.NewAmount(vInSum)
+		txNew.ValueIn = dcramt.ToCoin()
 
-		pfcamt, _ = pfcutil.NewAmount(txNew.ValueIn - txNew.ValueOut)
-		txNew.Fees = pfcamt.ToCoin()
+		dcramt, _ = dcrutil.NewAmount(txNew.ValueIn - txNew.ValueOut)
+		txNew.Fees = dcramt.ToCoin()
 
 		// Return true if coinbase value is not empty, return 0 at some fields
 		if txNew.Vins != nil && txNew.Vins[0].CoinBase != "" {
@@ -135,14 +135,14 @@ func (c *insightApiContext) PfcToInsightTxns(txs []*pfcjson.TxRawResult,
 	return newTxs, nil
 }
 
-// PfcToInsightBlock converts a pfcjson.GetBlockVerboseResult to Insight block.
-func (c *insightApiContext) PfcToInsightBlock(inBlocks []*pfcjson.GetBlockVerboseResult) ([]*apitypes.InsightBlockResult, error) {
+// DcrToInsightBlock converts a dcrjson.GetBlockVerboseResult to Insight block.
+func (c *insightApiContext) DcrToInsightBlock(inBlocks []*dcrjson.GetBlockVerboseResult) ([]*apitypes.InsightBlockResult, error) {
 	RewardAtBlock := func(blocknum int64, voters uint16) float64 {
 		subsidyCache := blockchain.NewSubsidyCache(0, c.params)
 		work := blockchain.CalcBlockWorkSubsidy(subsidyCache, blocknum, voters, c.params)
 		stake := blockchain.CalcStakeVoteSubsidy(subsidyCache, blocknum, c.params) * int64(voters)
 		tax := blockchain.CalcBlockTaxSubsidy(subsidyCache, blocknum, voters, c.params)
-		return pfcutil.Amount(work + stake + tax).ToCoin()
+		return dcrutil.Amount(work + stake + tax).ToCoin()
 	}
 
 	outBlocks := make([]*apitypes.InsightBlockResult, 0, len(inBlocks))

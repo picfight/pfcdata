@@ -2,7 +2,7 @@
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"bytes"
@@ -17,20 +17,20 @@ import (
 	"time"
 
 	"github.com/chappjc/trylock"
-	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
+	"github.com/picfight/pfcdata/v3/db/dcrpg/internal"
 	"github.com/picfight/pfcdata/v3/explorer"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
+	humanize "github.com/dustin/go-humanize"
 )
 
 var (
@@ -389,7 +389,7 @@ type DBInfo struct {
 }
 
 // NewChainDBWithCancel constructs a cancellation-capable ChainDB for the given
-// connection and PicFight network parameters. By default, duplicate row checks on
+// connection and Decred network parameters. By default, duplicate row checks on
 // insertion are enabled.
 func NewChainDBWithCancel(ctx context.Context, dbi *DBInfo, params *chaincfg.Params,
 	stakeDB *stakedb.StakeDatabase, devPrefetch bool) (*ChainDB, error) {
@@ -402,7 +402,7 @@ func NewChainDBWithCancel(ctx context.Context, dbi *DBInfo, params *chaincfg.Par
 	return chainDB, nil
 }
 
-// NewChainDB constructs a ChainDB for the given connection and PicFight network
+// NewChainDB constructs a ChainDB for the given connection and Decred network
 // parameters. By default, duplicate row checks on insertion are enabled.
 func NewChainDB(dbi *DBInfo, params *chaincfg.Params, stakeDB *stakedb.StakeDatabase,
 	devPrefetch bool) (*ChainDB, error) {
@@ -1145,8 +1145,8 @@ func (pgb *ChainDB) AddressHistory(address string, N, offset int64,
 	}
 
 	log.Infof("%s: %d spent totalling %f PFC, %d unspent totalling %f PFC",
-		address, balanceInfo.NumSpent, pfcutil.Amount(balanceInfo.TotalSpent).ToCoin(),
-		balanceInfo.NumUnspent, pfcutil.Amount(balanceInfo.TotalUnspent).ToCoin())
+		address, balanceInfo.NumSpent, dcrutil.Amount(balanceInfo.TotalSpent).ToCoin(),
+		balanceInfo.NumUnspent, dcrutil.Amount(balanceInfo.TotalUnspent).ToCoin())
 	log.Infof("Caching address receive count for address %s: "+
 		"count = %d at block %d.", address,
 		balanceInfo.NumSpent+balanceInfo.NumUnspent, bestBlock)
@@ -1175,7 +1175,7 @@ func (pgb *ChainDB) FillAddressTransactions(addrInfo *explorer.AddressInfo) erro
 		}
 		txn.Size = dbTx.Size
 		txn.FormattedSize = humanize.Bytes(uint64(dbTx.Size))
-		txn.Total = pfcutil.Amount(dbTx.Sent).ToCoin()
+		txn.Total = dcrutil.Amount(dbTx.Sent).ToCoin()
 		txn.Time = dbTx.BlockTime
 		if dbTx.BlockTime > 0 {
 			txn.Confirmations = pgb.Height() - uint64(dbTx.BlockHeight) + 1
@@ -1247,14 +1247,14 @@ func (pgb *ChainDB) AddressTotals(address string) (*apitypes.AddressTotals, erro
 		BlockHash:    bestHash,
 		NumSpent:     ab.NumSpent,
 		NumUnspent:   ab.NumUnspent,
-		CoinsSpent:   pfcutil.Amount(ab.TotalSpent).ToCoin(),
-		CoinsUnspent: pfcutil.Amount(ab.TotalUnspent).ToCoin(),
+		CoinsSpent:   dcrutil.Amount(ab.TotalSpent).ToCoin(),
+		CoinsUnspent: dcrutil.Amount(ab.TotalUnspent).ToCoin(),
 	}, nil
 }
 
 func (pgb *ChainDB) addressInfo(addr string, count, skip int64,
 	txnType dbtypes.AddrTxnType) (*explorer.AddressInfo, *explorer.AddressBalance, error) {
-	address, err := pfcutil.DecodeAddress(addr)
+	address, err := dcrutil.DecodeAddress(addr)
 	if err != nil {
 		log.Infof("Invalid address %s: %v", addr, err)
 		return nil, nil, err

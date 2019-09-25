@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 )
 
@@ -17,8 +17,8 @@ type BlockGetter interface {
 	NodeHeight() (int64, error)
 	BestBlockHeight() int64
 	BestBlockHash() (chainhash.Hash, int64, error)
-	BestBlock() (*pfcutil.Block, error)
-	Block(chainhash.Hash) (*pfcutil.Block, error)
+	BestBlock() (*dcrutil.Block, error)
+	Block(chainhash.Hash) (*dcrutil.Block, error)
 	WaitForHeight(int64) chan chainhash.Hash
 	WaitForHash(chainhash.Hash) chan int64
 }
@@ -28,9 +28,9 @@ type BlockGetter interface {
 // with the retrieved block.
 type MasterBlockGetter interface {
 	BlockGetter
-	UpdateToBestBlock() (*pfcutil.Block, error)
-	UpdateToNextBlock() (*pfcutil.Block, error)
-	UpdateToBlock(height int64) (*pfcutil.Block, error)
+	UpdateToBestBlock() (*dcrutil.Block, error)
+	UpdateToNextBlock() (*dcrutil.Block, error)
+	UpdateToBlock(height int64) (*dcrutil.Block, error)
 }
 
 // BlockGate is an implementation of MasterBlockGetter with cache
@@ -40,7 +40,7 @@ type BlockGate struct {
 	height        int64
 	fetchToHeight int64
 	hashAtHeight  map[int64]chainhash.Hash
-	blockWithHash map[chainhash.Hash]*pfcutil.Block
+	blockWithHash map[chainhash.Hash]*dcrutil.Block
 	heightWaiters map[int64][]chan chainhash.Hash
 	hashWaiters   map[chainhash.Hash][]chan int64
 	expireQueue   heightHashQueue
@@ -85,7 +85,7 @@ func NewBlockGate(client *rpcclient.Client, capacity int) *BlockGate {
 		height:        -1,
 		fetchToHeight: -1,
 		hashAtHeight:  make(map[int64]chainhash.Hash),
-		blockWithHash: make(map[chainhash.Hash]*pfcutil.Block),
+		blockWithHash: make(map[chainhash.Hash]*dcrutil.Block),
 		heightWaiters: make(map[int64][]chan chainhash.Hash),
 		hashWaiters:   make(map[chainhash.Hash][]chan int64),
 		expireQueue: heightHashQueue{
@@ -129,7 +129,7 @@ func (g *BlockGate) BestBlockHash() (chainhash.Hash, int64, error) {
 }
 
 // BestBlock gets the best block in cache.
-func (g *BlockGate) BestBlock() (*pfcutil.Block, error) {
+func (g *BlockGate) BestBlock() (*dcrutil.Block, error) {
 	g.RLock()
 	defer g.RUnlock()
 	var err error
@@ -145,7 +145,7 @@ func (g *BlockGate) BestBlock() (*pfcutil.Block, error) {
 }
 
 // Block attempts to get the block with the specified hash from cache.
-func (g *BlockGate) Block(hash chainhash.Hash) (*pfcutil.Block, error) {
+func (g *BlockGate) Block(hash chainhash.Hash) (*dcrutil.Block, error) {
 	g.RLock()
 	defer g.RUnlock()
 	var err error
@@ -157,7 +157,7 @@ func (g *BlockGate) Block(hash chainhash.Hash) (*pfcutil.Block, error) {
 }
 
 // UpdateToBestBlock gets the best block via RPC and updates the cache.
-func (g *BlockGate) UpdateToBestBlock() (*pfcutil.Block, error) {
+func (g *BlockGate) UpdateToBestBlock() (*dcrutil.Block, error) {
 	_, height, err := g.client.GetBestBlock()
 	if err != nil {
 		return nil, fmt.Errorf("GetBestBlockHash failed: %v", err)
@@ -168,7 +168,7 @@ func (g *BlockGate) UpdateToBestBlock() (*pfcutil.Block, error) {
 
 // UpdateToNextBlock gets the next block following the best in cache via RPC and
 // updates the cache.
-func (g *BlockGate) UpdateToNextBlock() (*pfcutil.Block, error) {
+func (g *BlockGate) UpdateToNextBlock() (*dcrutil.Block, error) {
 	g.Lock()
 	height := g.height + 1
 	g.Unlock()
@@ -177,13 +177,13 @@ func (g *BlockGate) UpdateToNextBlock() (*pfcutil.Block, error) {
 
 // UpdateToBlock gets the block at the specified height on the main chain from
 // pfcd and stores it in cache.
-func (g *BlockGate) UpdateToBlock(height int64) (*pfcutil.Block, error) {
+func (g *BlockGate) UpdateToBlock(height int64) (*dcrutil.Block, error) {
 	g.Lock()
 	defer g.Unlock()
 	return g.updateToBlock(height)
 }
 
-func (g *BlockGate) updateToBlock(height int64) (*pfcutil.Block, error) {
+func (g *BlockGate) updateToBlock(height int64) (*dcrutil.Block, error) {
 	block, hash, err := GetBlock(height, g.client)
 	if err != nil {
 		return nil, fmt.Errorf("GetBlock (%d) failed: %v", height, err)

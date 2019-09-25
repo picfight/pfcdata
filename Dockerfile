@@ -4,16 +4,16 @@ ENV GOPATH=/home/decred/go
 ENV PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$GOPATH/bin
 ENV PFCSRC_PATH=$GOPATH/src/github.com/picfight/pfcdata/
 ENV GO111MODULE=on
-RUN adduser -s /bin/bash -D -h /home/decred picfight && chown -R picfight:decred /home/decred
+RUN adduser -s /bin/bash -D -h /home/decred decred && chown -R decred:decred /home/decred
 WORKDIR $PFCSRC_PATH
-RUN chown -R picfight:decred $GOPATH 
+RUN chown -R decred:decred $GOPATH 
 # since we might be rebulding often we need to cache this module layer
 # otherwise docker will detect changes everytime and re-download everything again
 COPY go.* $PFCSRC_PATH
 RUN go mod download 
 COPY . $PFCSRC_PATH
-RUN chown -R picfight:decred $GOPATH 
-USER picfight
+RUN chown -R decred:decred $GOPATH 
+USER decred
 RUN go build
 CMD /bin/bash
 

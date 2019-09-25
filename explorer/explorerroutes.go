@@ -17,15 +17,15 @@ import (
 	"strings"
 	"time"
 
-	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcdata/v3/db/agendadb"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	humanize "github.com/dustin/go-humanize"
 )
 
 // Status page strings
@@ -39,7 +39,7 @@ const (
 // number of blocks displayed on /nexthome
 const homePageBlocksMaxCount = 30
 
-// netName returns the name used when referring to a picfight network.
+// netName returns the name used when referring to a decred network.
 func netName(chainParams *chaincfg.Params) string {
 	if strings.HasPrefix(strings.ToLower(chainParams.Name), "testnet") {
 		return "Testnet"
@@ -612,14 +612,14 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 		// the list. Regardless of order, the transaction web page will link to
 		// all occurrences of the transaction.
 		dbTx0 := dbTxs[0]
-		fees := pfcutil.Amount(dbTx0.Fees)
+		fees := dcrutil.Amount(dbTx0.Fees)
 		tx = &TxInfo{
 			TxBasic: &TxBasic{
 				TxID:          hash,
 				FormattedSize: humanize.Bytes(uint64(dbTx0.Size)),
-				Total:         pfcutil.Amount(dbTx0.Sent).ToCoin(),
+				Total:         dcrutil.Amount(dbTx0.Sent).ToCoin(),
 				Fee:           fees,
-				FeeRate:       pfcutil.Amount((1000 * int64(fees)) / int64(dbTx0.Size)),
+				FeeRate:       dcrutil.Amount((1000 * int64(fees)) / int64(dbTx0.Size)),
 				// VoteInfo TODO - check votes table
 				Coinbase: dbTx0.BlockIndex == 0,
 			},
@@ -663,7 +663,7 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 				log.Warnf("SpendingTransaction failed for outpoint %s:%d: %v",
 					hash, vouts[iv].TxIndex, err)
 			}
-			amount := pfcutil.Amount(int64(vouts[iv].Value)).ToCoin()
+			amount := dcrutil.Amount(int64(vouts[iv].Value)).ToCoin()
 			tx.Vout = append(tx.Vout, Vout{
 				Addresses:       vouts[iv].ScriptPubKeyData.Addresses,
 				Amount:          amount,
@@ -705,7 +705,7 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 			asm, _ := txscript.DisasmString(vins[iv].ScriptHex)
 
 			txIndex := vins[iv].TxIndex
-			amount := pfcutil.Amount(vins[iv].ValueIn).ToCoin()
+			amount := dcrutil.Amount(vins[iv].ValueIn).ToCoin()
 			var coinbase, stakebase string
 			if txIndex == 0 {
 				if tx.Coinbase {
@@ -715,7 +715,7 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			tx.Vin = append(tx.Vin, Vin{
-				Vin: &pfcjson.Vin{
+				Vin: &dcrjson.Vin{
 					Coinbase:    coinbase,
 					Stakebase:   stakebase,
 					Txid:        hash,
@@ -725,7 +725,7 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 					AmountIn:    amount,
 					BlockHeight: uint32(tx.BlockHeight),
 					BlockIndex:  tx.BlockIndex,
-					ScriptSig: &pfcjson.ScriptSig{
+					ScriptSig: &dcrjson.ScriptSig{
 						Asm: asm,
 						Hex: hex.EncodeToString(vins[iv].ScriptHex),
 					},
@@ -1178,7 +1178,7 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 					Time:          fundingTx.MemPoolTime,
 					FormattedSize: humanize.Bytes(uint64(fundingTx.Tx.SerializeSize())),
 					Total:         txhelpers.TotalOutFromMsgTx(fundingTx.Tx).ToCoin(),
-					ReceivedTotal: pfcutil.Amount(fundingTx.Tx.TxOut[f.Index].Value).ToCoin(),
+					ReceivedTotal: dcrutil.Amount(fundingTx.Tx.TxOut[f.Index].Value).ToCoin(),
 				}
 				addrData.Transactions = append(addrData.Transactions, addrTx)
 			}
@@ -1233,7 +1233,7 @@ func (exp *explorerUI) AddressPage(w http.ResponseWriter, r *http.Request) {
 					Time:           spendingTx.MemPoolTime,
 					FormattedSize:  humanize.Bytes(uint64(spendingTx.Tx.SerializeSize())),
 					Total:          txhelpers.TotalOutFromMsgTx(spendingTx.Tx).ToCoin(),
-					SentTotal:      pfcutil.Amount(valuein).ToCoin(),
+					SentTotal:      dcrutil.Amount(valuein).ToCoin(),
 					MatchedTx:      strprevhash,
 					MatchedTxIndex: previndex,
 				}

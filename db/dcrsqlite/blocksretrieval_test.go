@@ -1,11 +1,11 @@
-package pfcsqlite
+package dcrsqlite
 
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/testutil"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestEmptyDBRetrieveAllPoolValAndSize(t *testing.T) {

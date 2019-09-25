@@ -2,7 +2,7 @@
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
-package pfcsqlite
+package dcrsqlite
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/explorer"
@@ -205,7 +205,7 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 		}
 
 		// Either fetch the block or wait for a signal that it is ready
-		var block *pfcutil.Block
+		var block *dcrutil.Block
 		var blockhash chainhash.Hash
 		if master || i < fetchToHeight {
 			// Not coordinating with blockGetter for this block
@@ -302,7 +302,7 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 			Size:       header.Size,
 			Hash:       blockhash.String(),
 			Difficulty: diffRatio,
-			StakeDiff:  pfcutil.Amount(header.SBits).ToCoin(),
+			StakeDiff:  dcrutil.Amount(header.SBits).ToCoin(),
 			Time:       header.Timestamp.Unix(),
 			PoolInfo:   tpi,
 		}
@@ -390,7 +390,7 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 	return height, nil
 }
 
-func (db *wiredDB) getBlock(ind int64) (*pfcutil.Block, *chainhash.Hash, error) {
+func (db *wiredDB) getBlock(ind int64) (*dcrutil.Block, *chainhash.Hash, error) {
 	blockhash, err := db.client.GetBlockHash(ind)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetBlockHash(%d) failed: %v", ind, err)
@@ -401,7 +401,7 @@ func (db *wiredDB) getBlock(ind int64) (*pfcutil.Block, *chainhash.Hash, error) 
 		return nil, blockhash,
 			fmt.Errorf("GetBlock failed (%s): %v", blockhash, err)
 	}
-	block := pfcutil.NewBlock(msgBlock)
+	block := dcrutil.NewBlock(msgBlock)
 
 	return block, blockhash, nil
 }

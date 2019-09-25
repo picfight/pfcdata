@@ -11,8 +11,8 @@ import (
 	"github.com/googollee/go-socket.io"
 
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/txhelpers"
@@ -62,7 +62,7 @@ type WebSocketTx struct {
 // NewTx models data from the notification handler
 type NewTx struct {
 	Hex   string
-	Vouts []pfcjson.Vout
+	Vouts []dcrjson.Vout
 }
 
 // NewSocketServer constructs a new SocketServer, registering handlers for the
@@ -111,7 +111,7 @@ func NewSocketServer(newTxChan chan *NewTx, params *chaincfg.Params) (*SocketSer
 			if len(room) > 64 || !isAlphaNumeric(room) {
 				return
 			}
-			if addr, err := pfcutil.DecodeAddress(room); err == nil {
+			if addr, err := dcrutil.DecodeAddress(room); err == nil {
 				if addr.IsForNet(params) {
 					so.Join(room)
 					apiLog.Debugf("socket.io client joining room: %s", room)

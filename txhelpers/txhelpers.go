@@ -24,8 +24,8 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 )
@@ -56,21 +56,21 @@ type ReorgData struct {
 // required by functions that would otherwise require a rpcclient.Client just
 // for GetRawTransaction.
 type RawTransactionGetter interface {
-	GetRawTransaction(txHash *chainhash.Hash) (*pfcutil.Tx, error)
+	GetRawTransaction(txHash *chainhash.Hash) (*dcrutil.Tx, error)
 }
 
 // VerboseTransactionGetter is an interface satisfied by rpcclient.Client, and
 // required by functions that would otherwise require a rpcclient.Client just
 // for GetRawTransactionVerbose.
 type VerboseTransactionGetter interface {
-	GetRawTransactionVerbose(txHash *chainhash.Hash) (*pfcjson.TxRawResult, error)
+	GetRawTransactionVerbose(txHash *chainhash.Hash) (*dcrjson.TxRawResult, error)
 }
 
 // BlockWatchedTx contains, for a certain block, the transactions for certain
 // watched addresses
 type BlockWatchedTx struct {
 	BlockHeight   int64
-	TxsForAddress map[string][]*pfcutil.Tx
+	TxsForAddress map[string][]*dcrutil.Tx
 }
 
 // TxAction is what is happening to the transaction (mined or inserted into
@@ -94,9 +94,9 @@ func HashInSlice(h chainhash.Hash, list []chainhash.Hash) bool {
 	return false
 }
 
-// TxhashInSlice searches a slice of *pfcutil.Tx for a transaction with the hash
+// TxhashInSlice searches a slice of *dcrutil.Tx for a transaction with the hash
 // txHash. If found, it returns the corresponding *Tx, otherwise nil.
-func TxhashInSlice(txs []*pfcutil.Tx, txHash *chainhash.Hash) *pfcutil.Tx {
+func TxhashInSlice(txs []*dcrutil.Tx, txHash *chainhash.Hash) *dcrutil.Tx {
 	if len(txs) < 1 {
 		return nil
 	}
@@ -111,7 +111,7 @@ func TxhashInSlice(txs []*pfcutil.Tx, txHash *chainhash.Hash) *pfcutil.Tx {
 }
 
 // IncludesStakeTx checks if a block contains a stake transaction hash
-func IncludesStakeTx(txHash *chainhash.Hash, block *pfcutil.Block) (int, int8) {
+func IncludesStakeTx(txHash *chainhash.Hash, block *dcrutil.Block) (int, int8) {
 	blockTxs := block.STransactions()
 
 	if tx := TxhashInSlice(blockTxs, txHash); tx != nil {
@@ -121,7 +121,7 @@ func IncludesStakeTx(txHash *chainhash.Hash, block *pfcutil.Block) (int, int8) {
 }
 
 // IncludesTx checks if a block contains a transaction hash
-func IncludesTx(txHash *chainhash.Hash, block *pfcutil.Block) (int, int8) {
+func IncludesTx(txHash *chainhash.Hash, block *dcrutil.Block) (int, int8) {
 	blockTxs := block.Transactions()
 
 	if tx := TxhashInSlice(blockTxs, txHash); tx != nil {
@@ -303,11 +303,11 @@ func TxConsumesOutpointWithAddress(msgTx *wire.MsgTx, addr string,
 // The RPC client is used to get the PreviousOutPoint for each TxIn of each
 // transaction in the block, from which the address is obtained from the
 // PkScript of that output. chaincfg Params is required to decode the script.
-func BlockConsumesOutpointWithAddresses(block *pfcutil.Block, addrs map[string]TxAction,
-	c RawTransactionGetter, params *chaincfg.Params) map[string][]*pfcutil.Tx {
-	addrMap := make(map[string][]*pfcutil.Tx)
+func BlockConsumesOutpointWithAddresses(block *dcrutil.Block, addrs map[string]TxAction,
+	c RawTransactionGetter, params *chaincfg.Params) map[string][]*dcrutil.Tx {
+	addrMap := make(map[string][]*dcrutil.Tx)
 
-	checkForOutpointAddr := func(blockTxs []*pfcutil.Tx) {
+	checkForOutpointAddr := func(blockTxs []*dcrutil.Tx) {
 		for _, tx := range blockTxs {
 			for _, txIn := range tx.MsgTx().TxIn {
 				prevOut := &txIn.PreviousOutPoint
@@ -336,7 +336,7 @@ func BlockConsumesOutpointWithAddresses(block *pfcutil.Block, addrs map[string]T
 						addrstr := txAddr.EncodeAddress()
 						if _, ok := addrs[addrstr]; ok {
 							if addrMap[addrstr] == nil {
-								addrMap[addrstr] = make([]*pfcutil.Tx, 0)
+								addrMap[addrstr] = make([]*dcrutil.Tx, 0)
 							}
 							addrMap[addrstr] = append(addrMap[addrstr], prevTx)
 						}
@@ -380,13 +380,13 @@ func TxPaysToAddress(msgTx *wire.MsgTx, addr string,
 }
 
 // BlockReceivesToAddresses checks a block for transactions paying to the
-// specified addresses, and creates a map of addresses to a slice of pfcutil.Tx
+// specified addresses, and creates a map of addresses to a slice of dcrutil.Tx
 // involving the address.
-func BlockReceivesToAddresses(block *pfcutil.Block, addrs map[string]TxAction,
-	params *chaincfg.Params) map[string][]*pfcutil.Tx {
-	addrMap := make(map[string][]*pfcutil.Tx)
+func BlockReceivesToAddresses(block *dcrutil.Block, addrs map[string]TxAction,
+	params *chaincfg.Params) map[string][]*dcrutil.Tx {
+	addrMap := make(map[string][]*dcrutil.Tx)
 
-	checkForAddrOut := func(blockTxs []*pfcutil.Tx) {
+	checkForAddrOut := func(blockTxs []*dcrutil.Tx) {
 		for _, tx := range blockTxs {
 			// Check the addresses associated with the PkScript of each TxOut
 			for _, txOut := range tx.MsgTx().TxOut {
@@ -402,7 +402,7 @@ func BlockReceivesToAddresses(block *pfcutil.Block, addrs map[string]TxAction,
 					addrstr := txAddr.EncodeAddress()
 					if _, ok := addrs[addrstr]; ok {
 						if _, gotSlice := addrMap[addrstr]; !gotSlice {
-							addrMap[addrstr] = make([]*pfcutil.Tx, 0) // nil
+							addrMap[addrstr] = make([]*dcrutil.Tx, 0) // nil
 						}
 						addrMap[addrstr] = append(addrMap[addrstr], tx)
 					}
@@ -419,7 +419,7 @@ func BlockReceivesToAddresses(block *pfcutil.Block, addrs map[string]TxAction,
 
 // OutPointAddresses gets the addresses paid to by a transaction output.
 func OutPointAddresses(outPoint *wire.OutPoint, c RawTransactionGetter,
-	params *chaincfg.Params) ([]string, pfcutil.Amount, error) {
+	params *chaincfg.Params) ([]string, dcrutil.Amount, error) {
 	// The addresses are encoded in the pkScript, so we need to get the
 	// raw transaction, and the TxOut that contains the pkScript.
 	prevTx, err := c.GetRawTransaction(&outPoint.Hash)
@@ -440,7 +440,7 @@ func OutPointAddresses(outPoint *wire.OutPoint, c RawTransactionGetter,
 	if err != nil {
 		return nil, 0, fmt.Errorf("ExtractPkScriptAddrs: %v", err.Error())
 	}
-	value := pfcutil.Amount(txOut.Value)
+	value := dcrutil.Amount(txOut.Value)
 	addresses := make([]string, 0, len(txAddrs))
 	for _, txAddr := range txAddrs {
 		addr := txAddr.EncodeAddress()
@@ -464,12 +464,12 @@ func OutPointAddressesFromString(txid string, index uint32, tree int8,
 }
 
 // MedianAmount gets the median Amount from a slice of Amounts
-func MedianAmount(s []pfcutil.Amount) pfcutil.Amount {
+func MedianAmount(s []dcrutil.Amount) dcrutil.Amount {
 	if len(s) == 0 {
 		return 0
 	}
 
-	sort.Sort(pfcutil.AmountSorter(s))
+	sort.Sort(dcrutil.AmountSorter(s))
 
 	middle := len(s) / 2
 
@@ -520,7 +520,7 @@ func GetDifficultyRatio(bits uint32, params *chaincfg.Params) float64 {
 }
 
 // SSTXInBlock gets a slice containing all of the SSTX mined in a block
-func SSTXInBlock(block *pfcutil.Block) []*pfcutil.Tx {
+func SSTXInBlock(block *dcrutil.Block) []*dcrutil.Tx {
 	_, txns := TicketTxnsInBlock(block)
 	return txns
 }
@@ -539,13 +539,13 @@ func SSGenVoteBlockValid(msgTx *wire.MsgTx) (BlockValidation, uint16, error) {
 	blockValid := BlockValidation{
 		Hash:     blockHash,
 		Height:   int64(blockHeight),
-		Validity: pfcutil.IsFlagSet16(ssGenVoteBits, pfcutil.BlockValid),
+		Validity: dcrutil.IsFlagSet16(ssGenVoteBits, dcrutil.BlockValid),
 	}
 	return blockValid, ssGenVoteBits, nil
 }
 
 // VoteBitsInBlock returns a list of vote bits for the votes in a block
-func VoteBitsInBlock(block *pfcutil.Block) []stake.VoteVersionTuple {
+func VoteBitsInBlock(block *dcrutil.Block) []stake.VoteVersionTuple {
 	var voteBits []stake.VoteVersionTuple
 	for _, stx := range block.MsgBlock().STransactions {
 		if !stake.IsSSGen(stx) {
@@ -665,8 +665,8 @@ func SSGenVoteChoices(tx *wire.MsgTx, params *chaincfg.Params) (BlockValidation,
 
 // FeeInfoBlock computes ticket fee statistics for the tickets included in the
 // specified block.
-func FeeInfoBlock(block *pfcutil.Block) *pfcjson.FeeInfoBlock {
-	feeInfo := new(pfcjson.FeeInfoBlock)
+func FeeInfoBlock(block *dcrutil.Block) *dcrjson.FeeInfoBlock {
+	feeInfo := new(dcrjson.FeeInfoBlock)
 	_, sstxMsgTxns := TicketsInBlock(block)
 
 	feeInfo.Height = uint32(block.Height())
@@ -684,7 +684,7 @@ func FeeInfoBlock(block *pfcutil.Block) *pfcjson.FeeInfoBlock {
 		for iv := range msgTx.TxOut {
 			amtOut += msgTx.TxOut[iv].Value
 		}
-		fee := pfcutil.Amount(amtIn - amtOut).ToCoin()
+		fee := dcrutil.Amount(amtIn - amtOut).ToCoin()
 		if fee < minFee {
 			minFee = fee
 		}
@@ -718,8 +718,8 @@ func FeeInfoBlock(block *pfcutil.Block) *pfcjson.FeeInfoBlock {
 
 // FeeRateInfoBlock computes ticket fee rate statistics for the tickets included
 // in the specified block.
-func FeeRateInfoBlock(block *pfcutil.Block) *pfcjson.FeeInfoBlock {
-	feeInfo := new(pfcjson.FeeInfoBlock)
+func FeeRateInfoBlock(block *dcrutil.Block) *dcrjson.FeeInfoBlock {
+	feeInfo := new(dcrjson.FeeInfoBlock)
 	_, sstxMsgTxns := TicketsInBlock(block)
 
 	feeInfo.Height = uint32(block.Height())
@@ -736,7 +736,7 @@ func FeeRateInfoBlock(block *pfcutil.Block) *pfcjson.FeeInfoBlock {
 		for iv := range msgTx.TxOut {
 			amtOut += msgTx.TxOut[iv].Value
 		}
-		fee := pfcutil.Amount(1000*(amtIn-amtOut)).ToCoin() / float64(msgTx.SerializeSize())
+		fee := dcrutil.Amount(1000*(amtIn-amtOut)).ToCoin() / float64(msgTx.SerializeSize())
 		if fee < minFee {
 			minFee = fee
 		}
@@ -856,7 +856,7 @@ func TxTree(msgTx *wire.MsgTx) int8 {
 }
 
 // TxFee computes and returns the fee for a given tx
-func TxFee(msgTx *wire.MsgTx) pfcutil.Amount {
+func TxFee(msgTx *wire.MsgTx) dcrutil.Amount {
 	var amtIn int64
 	for iv := range msgTx.TxIn {
 		amtIn += msgTx.TxIn[iv].ValueIn
@@ -865,11 +865,11 @@ func TxFee(msgTx *wire.MsgTx) pfcutil.Amount {
 	for iv := range msgTx.TxOut {
 		amtOut += msgTx.TxOut[iv].Value
 	}
-	return pfcutil.Amount(amtIn - amtOut)
+	return dcrutil.Amount(amtIn - amtOut)
 }
 
 // TxFeeRate computes and returns the fee rate in PFC/KB for a given tx
-func TxFeeRate(msgTx *wire.MsgTx) (pfcutil.Amount, pfcutil.Amount) {
+func TxFeeRate(msgTx *wire.MsgTx) (dcrutil.Amount, dcrutil.Amount) {
 	var amtIn int64
 	for iv := range msgTx.TxIn {
 		amtIn += msgTx.TxIn[iv].ValueIn
@@ -878,23 +878,23 @@ func TxFeeRate(msgTx *wire.MsgTx) (pfcutil.Amount, pfcutil.Amount) {
 	for iv := range msgTx.TxOut {
 		amtOut += msgTx.TxOut[iv].Value
 	}
-	return pfcutil.Amount(amtIn - amtOut), pfcutil.Amount(1000 * (amtIn - amtOut) / int64(msgTx.SerializeSize()))
+	return dcrutil.Amount(amtIn - amtOut), dcrutil.Amount(1000 * (amtIn - amtOut) / int64(msgTx.SerializeSize()))
 }
 
 // TotalOutFromMsgTx computes the total value out of a MsgTx
-func TotalOutFromMsgTx(msgTx *wire.MsgTx) pfcutil.Amount {
+func TotalOutFromMsgTx(msgTx *wire.MsgTx) dcrutil.Amount {
 	var amtOut int64
 	for _, v := range msgTx.TxOut {
 		amtOut += v.Value
 	}
-	return pfcutil.Amount(amtOut)
+	return dcrutil.Amount(amtOut)
 }
 
-// TotalVout computes the total value of a slice of pfcjson.Vout
-func TotalVout(vouts []pfcjson.Vout) pfcutil.Amount {
-	var total pfcutil.Amount
+// TotalVout computes the total value of a slice of dcrjson.Vout
+func TotalVout(vouts []dcrjson.Vout) dcrutil.Amount {
+	var total dcrutil.Amount
 	for _, v := range vouts {
-		a, err := pfcutil.NewAmount(v.Value)
+		a, err := dcrutil.NewAmount(v.Value)
 		if err != nil {
 			continue
 		}
@@ -915,7 +915,7 @@ func GenesisTxHash(params *chaincfg.Params) chainhash.Hash {
 func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) bool {
 	zeroed := [20]byte{}
 	// expecting DsQxuVRvS4eaJ42dhQEsCXauMWjvopWgrVg address for mainnet
-	address, err := pfcutil.NewAddressPubKeyHash(zeroed[:], params, 0)
+	address, err := dcrutil.NewAddressPubKeyHash(zeroed[:], params, 0)
 	if err != nil {
 		return false
 	}
@@ -925,7 +925,7 @@ func IsZeroHashP2PHKAddress(checkAddressString string, params *chaincfg.Params) 
 
 // ValidateNetworkAddress checks if the given address is valid on the given
 // network.
-func ValidateNetworkAddress(address pfcutil.Address, p *chaincfg.Params) bool {
+func ValidateNetworkAddress(address dcrutil.Address, p *chaincfg.Params) bool {
 	return address.IsForNet(p)
 }
 
@@ -952,11 +952,11 @@ const (
 )
 
 // AddressValidation performs several validation checks on the given address
-// string. Initially, decoding as a PicFight address is attempted. If it fails to
+// string. Initially, decoding as a Decred address is attempted. If it fails to
 // decode, btcutil is used to try decoding it as a Bitcoin address. If both
 // decoding fails, AddressErrorDecodeFailed is returned with AddressTypeUnknown.
 // If the address is a Bitcoin address, AddressErrorBitcoin is returned with
-// AddressTypeBitcoin. If the address decoded successfully as a PicFight address,
+// AddressTypeBitcoin. If the address decoded successfully as a Decred address,
 // it is checked against the specified network. If it is the wrong network,
 // AddressErrorWrongNet is returned with AddressTypeUnknown. If the address is
 // the correct network, the address type is obtained. A final check is performed
@@ -964,19 +964,19 @@ const (
 // AddressErrorZeroAddress is returned with the determined address type. If it
 // is another address, AddressErrorNoError is returned with the determined
 // address type.
-func AddressValidation(address string, params *chaincfg.Params) (pfcutil.Address, AddressType, AddressError) {
+func AddressValidation(address string, params *chaincfg.Params) (dcrutil.Address, AddressType, AddressError) {
 	// Decode and validate the address.
-	addr, err := pfcutil.DecodeAddress(address)
+	addr, err := dcrutil.DecodeAddress(address)
 	if err != nil {
 		return nil, AddressTypeUnknown, AddressErrorDecodeFailed
 	}
 
-	// Detect when an address belonging to a different PicFight network.
+	// Detect when an address belonging to a different Decred network.
 	if !ValidateNetworkAddress(addr, params) {
 		return addr, AddressTypeUnknown, AddressErrorWrongNet
 	}
 
-	// Determine address type for this valid PicFight address. Ignore the error
+	// Determine address type for this valid Decred address. Ignore the error
 	// since DecodeAddress succeeded.
 	_, netID, _ := base58.CheckDecode(address)
 

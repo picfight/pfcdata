@@ -1,4 +1,4 @@
-package pfcsqlite
+package dcrsqlite
 
 import (
 	"path/filepath"

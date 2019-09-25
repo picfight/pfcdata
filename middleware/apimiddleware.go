@@ -14,11 +14,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/picfight/pfcd/chaincfg/chainhash"
+	"github.com/picfight/pfcd/dcrjson"
+	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/docgen"
-	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
 type contextKey int
@@ -55,7 +55,7 @@ type DataSource interface {
 	GetBlockHash(idx int64) (string, error)
 }
 
-type StakeVersionsLatest func() (*pfcjson.StakeVersions, error)
+type StakeVersionsLatest func() (*dcrjson.StakeVersions, error)
 
 // GetBlockStepCtx retrieves the ctxBlockStep data from the request context. If
 // not set, the return value is -1.

@@ -2,7 +2,7 @@
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"context"

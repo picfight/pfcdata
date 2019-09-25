@@ -1,14 +1,14 @@
 // Copyright (c) 2018, The Decred developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"database/sql"
 	"strings"
 
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
+	"github.com/picfight/pfcdata/v3/db/dcrpg/internal"
 )
 
 // indexingInfo defines a minimalistic structure used to append new indexes

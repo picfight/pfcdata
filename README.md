@@ -6,7 +6,7 @@
 [![ISC License](https://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
 
 The pfcdata repository is a collection of Go packages and apps for
-[PicFight](https://www.picfight.org/) data collection, storage, and presentation.
+[Decred](https://www.decred.org/) data collection, storage, and presentation.
 
 - [pfcdata](#pfcdata)
   - [Repository Overview](#repository-overview)
@@ -68,8 +68,8 @@ The pfcdata repository is a collection of Go packages and apps for
 ├── db
 │   ├── agendadb        Package agendadb is a basic PoS voting agenda database.
 │   ├── dbtypes         Package dbtypes with common data types.
-│   ├── pfcpg           Package pfcpg providing PostgreSQL backend.
-│   └── pfcsqlite       Package pfcsqlite providing SQLite backend.
+│   ├── dcrpg           Package dcrpg providing PostgreSQL backend.
+│   └── dcrsqlite       Package dcrsqlite providing SQLite backend.
 ├── dev                 Shell scripts for maintenance and deployment.
 ├── explorer            Package explorer, powering the block explorer.
 ├── mempool             Package mempool for monitoring mempool for transactions,
@@ -323,8 +323,8 @@ GRANT ALL PRIVILEGES ON DATABASE pfcdata to pfcdata;
    By default, `datadir` is in `{appdata}/data`:
 
    - Linux: `~/.pfcdata/data`
-   - Mac: `~/Library/Application Support/Pfcdata/data`
-   - Windows: `C:\Users\<your-username>\AppData\Local\Pfcdata\data` (`%localappdata%\Pfcdata\data`)
+   - Mac: `~/Library/Application Support/Dcrdata/data`
+   - Windows: `C:\Users\<your-username>\AppData\Local\Dcrdata\data` (`%localappdata%\Dcrdata\data`)
 
 3. With pfcd synchronized to the network's best block, start pfcdata to begin
    the initial block data import.
@@ -337,7 +337,7 @@ If you intend to run pfcdata in "full" mode (i.e. with the `--pg` switch), which
 uses a PostgreSQL database backend, it is crucial that you configure your
 PostgreSQL server for your hardware and the pfcdata workload.
 
-Read [postgresql-tuning.conf](./db/pfcpg/postgresql-tuning.conf) carefully for
+Read [postgresql-tuning.conf](./db/dcrpg/postgresql-tuning.conf) carefully for
 details on how to make the necessary changes to your system. A helpful online
 tool for determining good settings for your system is called
 [PGTune](https://pgtune.leopard.in.ua/). **DO NOT** simply use this file in place
@@ -448,7 +448,7 @@ with the `rebuilddb2` command line tool:
   upgrade path, the tables and their indexes may be dropped with `rebuilddb2 -D`.
 
 Note that pfcdata requires that
-[pfcd](https://docs.picfight.org/getting-started/user-guides/pfcd-setup/) is
+[pfcd](https://docs.decred.org/getting-started/user-guides/pfcd-setup/) is
 running with some optional indexes enabled. By default, these indexes are not
 turned on when pfcd is installed. To enable them, set the following in
 pfcd.conf:
@@ -570,7 +570,7 @@ for additional PostgreSQL configuration settings.
 
 ## APIs
 
-The pfcdata block explorer is exposed by two APIs: a PicFight implementation of the [Insight API](https://github.com/bitpay/insight-api) (EXPERIMENTAL), and its own JSON HTTP API. The Insight API uses the path prefix `/insight/api`. The pfcdata API uses the path prefix `/api`.
+The pfcdata block explorer is exposed by two APIs: a Decred implementation of the [Insight API](https://github.com/bitpay/insight-api) (EXPERIMENTAL), and its own JSON HTTP API. The Insight API uses the path prefix `/insight/api`. The pfcdata API uses the path prefix `/api`.
 
 ### Insight API (EXPERIMENTAL)
 
@@ -589,38 +589,38 @@ The pfcdata API is a REST API accessible via HTTP. To call the pfcdata API, use 
 | -------------------- | ---------------------- | ------------------------------------- |
 | Summary              | `/block/best`          | `types.BlockDataBasic`                |
 | Stake info           | `/block/best/pos`      | `types.StakeInfoExtended`             |
-| Header               | `/block/best/header`   | `pfcjson.GetBlockHeaderVerboseResult` |
+| Header               | `/block/best/header`   | `dcrjson.GetBlockHeaderVerboseResult` |
 | Hash                 | `/block/best/hash`     | `string`                              |
 | Height               | `/block/best/height`   | `int`                                 |
 | Size                 | `/block/best/size`     | `int32`                               |
 | Subsidy              | `/block/best/subsidy`  | `types.BlockSubsidies`                |
 | Transactions         | `/block/best/tx`       | `types.BlockTransactions`             |
 | Transactions Count   | `/block/best/tx/count` | `types.BlockTransactionCounts`        |
-| Verbose block result | `/block/best/verbose`  | `pfcjson.GetBlockVerboseResult`       |
+| Verbose block result | `/block/best/verbose`  | `dcrjson.GetBlockVerboseResult`       |
 
 | Block X (block index) | Path                  | Type                                  |
 | --------------------- | --------------------- | ------------------------------------- |
 | Summary               | `/block/X`            | `types.BlockDataBasic`                |
 | Stake info            | `/block/X/pos`        | `types.StakeInfoExtended`             |
-| Header                | `/block/X/header`     | `pfcjson.GetBlockHeaderVerboseResult` |
+| Header                | `/block/X/header`     | `dcrjson.GetBlockHeaderVerboseResult` |
 | Hash                  | `/block/X/hash`       | `string`                              |
 | Size                  | `/block/X/size`       | `int32`                               |
 | Subsidy               | `/block/best/subsidy` | `types.BlockSubsidies`                |
 | Transactions          | `/block/X/tx`         | `types.BlockTransactions`             |
 | Transactions Count    | `/block/X/tx/count`   | `types.BlockTransactionCounts`        |
-| Verbose block result  | `/block/X/verbose`    | `pfcjson.GetBlockVerboseResult`       |
+| Verbose block result  | `/block/X/verbose`    | `dcrjson.GetBlockVerboseResult`       |
 
 | Block H (block hash) | Path                     | Type                                  |
 | -------------------- | ------------------------ | ------------------------------------- |
 | Summary              | `/block/hash/H`          | `types.BlockDataBasic`                |
 | Stake info           | `/block/hash/H/pos`      | `types.StakeInfoExtended`             |
-| Header               | `/block/hash/H/header`   | `pfcjson.GetBlockHeaderVerboseResult` |
+| Header               | `/block/hash/H/header`   | `dcrjson.GetBlockHeaderVerboseResult` |
 | Height               | `/block/hash/H/height`   | `int`                                 |
 | Size                 | `/block/hash/H/size`     | `int32`                               |
 | Subsidy              | `/block/best/subsidy`    | `types.BlockSubsidies`                |
 | Transactions         | `/block/hash/H/tx`       | `types.BlockTransactions`             |
 | Transactions count   | `/block/hash/H/tx/count` | `types.BlockTransactionCounts`        |
-| Verbose block result | `/block/hash/H/verbose`  | `pfcjson.GetBlockVerboseResult`       |
+| Verbose block result | `/block/hash/H/verbose`  | `dcrjson.GetBlockVerboseResult`       |
 
 | Block range (X < Y)                     | Path                      | Type                     |
 | --------------------------------------- | ------------------------- | ------------------------ |
@@ -661,8 +661,8 @@ The pfcdata API is a REST API accessible via HTTP. To call the pfcdata API, use 
 | Current sdiff and estimates            | `/stake/diff`           | `types.StakeDiff`                  |
 | Sdiff for block `X`                    | `/stake/diff/b/X`       | `[]float64`                        |
 | Sdiff for block range `[X,Y] (X <= Y)` | `/stake/diff/r/X/Y`     | `[]float64`                        |
-| Current sdiff separately               | `/stake/diff/current`   | `pfcjson.GetStakeDifficultyResult` |
-| Estimates separately                   | `/stake/diff/estimates` | `pfcjson.EstimateStakeDiffResult`  |
+| Current sdiff separately               | `/stake/diff/current`   | `dcrjson.GetStakeDifficultyResult` |
+| Estimates separately                   | `/stake/diff/estimates` | `dcrjson.EstimateStakeDiffResult`  |
 
 | Ticket Pool                                                                                    | Path                                                  | Type                        |
 | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------- |
@@ -685,7 +685,7 @@ parsing more efficient for the client.
 
 | Vote and Agenda Info              | Path               | Type                        |
 | --------------------------------- | ------------------ | --------------------------- |
-| The current agenda and its status | `/stake/vote/info` | `pfcjson.GetVoteInfoResult` |
+| The current agenda and its status | `/stake/vote/info` | `dcrjson.GetVoteInfoResult` |
 
 | Mempool                                           | Path                      | Type                            |
 | ------------------------------------------------- | ------------------------- | ------------------------------- |
@@ -725,9 +725,9 @@ of the pfcdata daemon, but may be called alone with rebuilddb.
 
 ### rebuilddb2
 
-`rebuilddb2` is a CLI app used for maintenance of pfcdata's `pfcpg` database
+`rebuilddb2` is a CLI app used for maintenance of pfcdata's `dcrpg` database
 (a.k.a. DB v2) that uses PostgreSQL to store a nearly complete record of the
-PicFight blockchain data. This functionality is included in the startup of the
+Decred blockchain data. This functionality is included in the startup of the
 pfcdata daemon, but may be called alone with rebuilddb. See the
 [README.md](./cmd/rebuilddb2/README.md) for `rebuilddb2` for important usage
 information.
@@ -746,7 +746,7 @@ API. This facilitates authoring of robust Go clients of the API.
 
 `package dbtypes` defines the data types used by the DB backends to model the
 block, transaction, and related blockchain data structures. Functions for
-converting from standard PicFight data types (e.g. `wire.MsgBlock`) are also
+converting from standard Decred data types (e.g. `wire.MsgBlock`) are also
 provided.
 
 `package rpcutils` includes helper functions for interacting with a
@@ -762,11 +762,11 @@ handles connecting new blocks and chain reorganization in response to notificati
 from pfcd.
 
 `package txhelpers` includes helper functions for working with the common types
-`pfcutil.Tx`, `pfcutil.Block`, `chainhash.Hash`, and others.
+`dcrutil.Tx`, `dcrutil.Block`, `chainhash.Hash`, and others.
 
 ## Internal-use Packages
 
-Packages `blockdata` and `pfcsqlite` are currently designed only for internal
+Packages `blockdata` and `dcrsqlite` are currently designed only for internal
 use internal use by other pfcdata packages, but they may be of general value in
 the future.
 
@@ -780,15 +780,15 @@ the future.
 - The `BlockDataSaver` interface required by `chainMonitor` for storage of
   collected data.
 
-`pfcpg` defines:
+`dcrpg` defines:
 
-- The `ChainDB` type, which is the primary exported type from `pfcpg`, providing
+- The `ChainDB` type, which is the primary exported type from `dcrpg`, providing
   an interface for a PostgreSQL database.
 - A large set of lower-level functions to perform a range of queries given a
   `*sql.DB` instance and various parameters.
 - The internal package contains the raw SQL statements.
 
-`pfcsqlite` defines:
+`dcrsqlite` defines:
 
 - A `sql.DB` wrapper type (`DB`) with the necessary SQLite queries for
   storage and retrieval of block and stake data.
@@ -831,7 +831,7 @@ shown above.**
 Note that all pfcdata.org community and team members are expected to adhere to
 the code of conduct, described in the CODE_OF_CONDUCT file.
 
-Also, [come chat with us on Slack](https://slack.picfight.org/)!
+Also, [come chat with us on Slack](https://slack.decred.org/)!
 
 ## License
 

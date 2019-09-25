@@ -1,7 +1,7 @@
 // Copyright (c) 2018, The Decred developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/db/pfcpg/internal"
+	"github.com/picfight/pfcdata/v3/db/dcrpg/internal"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/txhelpers"
 )

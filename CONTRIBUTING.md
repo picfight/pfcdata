@@ -87,7 +87,7 @@ git commit # type a good commit message
 
 6. Bring master up-to-date and rebase
 
-Since the PicFight repo may have changes that you do not have locally, you'll want to pull in any changes and rebase.
+Since the Decred repo may have changes that you do not have locally, you'll want to pull in any changes and rebase.
 Read [this](https://www.atlassian.com/git/tutorials/rewriting-history/git-rebase) if you need a primer on rebasing.
 
 ```sh

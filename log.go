@@ -9,20 +9,20 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/decred/slog"
-	"github.com/jrick/logrotate/rotator"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/v3/api"
 	"github.com/picfight/pfcdata/v3/api/insight"
 	"github.com/picfight/pfcdata/v3/blockdata"
-	"github.com/picfight/pfcdata/v3/db/pfcpg"
-	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
+	"github.com/picfight/pfcdata/v3/db/dcrpg"
+	"github.com/picfight/pfcdata/v3/db/dcrsqlite"
 	"github.com/picfight/pfcdata/v3/explorer"
 	"github.com/picfight/pfcdata/v3/mempool"
 	"github.com/picfight/pfcdata/v3/middleware"
 	notify "github.com/picfight/pfcdata/v3/notification"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/decred/slog"
+	"github.com/jrick/logrotate/rotator"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -68,8 +68,8 @@ var (
 
 // Initialize package-global logger variables.
 func init() {
-	pfcsqlite.UseLogger(sqliteLog)
-	pfcpg.UseLogger(postgresqlLog)
+	dcrsqlite.UseLogger(sqliteLog)
+	dcrpg.UseLogger(postgresqlLog)
 	stakedb.UseLogger(stakedbLog)
 	blockdata.UseLogger(BlockdataLog)
 	rpcclient.UseLogger(clientLog)

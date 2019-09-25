@@ -2,7 +2,7 @@
 // Copyright (c) 2017, Jonathan Chappelow
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
 	"context"
@@ -53,7 +53,7 @@ func (p *ChainMonitor) switchToSideChain(reorgData *txhelpers.ReorgData) (int32,
 
 	// Time this process.
 	defer func(start time.Time) {
-		log.Infof("pfcpg: switchToSideChain completed in %v", time.Since(start))
+		log.Infof("dcrpg: switchToSideChain completed in %v", time.Since(start))
 	}(time.Now())
 
 	newChain := reorgData.NewChain

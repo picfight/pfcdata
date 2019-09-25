@@ -13,8 +13,8 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
@@ -102,11 +102,11 @@ func ConnectNodeRPC(host, user, pass, cert string, disableTLS bool,
 	return pfcdClient, nodeVer, nil
 }
 
-// BuildBlockHeaderVerbose creates a *pfcjson.GetBlockHeaderVerboseResult from
+// BuildBlockHeaderVerbose creates a *dcrjson.GetBlockHeaderVerboseResult from
 // an input *wire.BlockHeader and current best block height, which is used to
 // compute confirmations.  The next block hash may optionally be provided.
 func BuildBlockHeaderVerbose(header *wire.BlockHeader, params *chaincfg.Params,
-	currentHeight int64, nextHash ...string) *pfcjson.GetBlockHeaderVerboseResult {
+	currentHeight int64, nextHash ...string) *dcrjson.GetBlockHeaderVerboseResult {
 	if header == nil {
 		return nil
 	}
@@ -118,7 +118,7 @@ func BuildBlockHeaderVerbose(header *wire.BlockHeader, params *chaincfg.Params,
 		next = nextHash[0]
 	}
 
-	blockHeaderResult := pfcjson.GetBlockHeaderVerboseResult{
+	blockHeaderResult := dcrjson.GetBlockHeaderVerboseResult{
 		Hash:          header.BlockHash().String(),
 		Confirmations: currentHeight - int64(header.Height),
 		Version:       header.Version,
@@ -132,7 +132,7 @@ func BuildBlockHeaderVerbose(header *wire.BlockHeader, params *chaincfg.Params,
 		Revocations:   header.Revocations,
 		PoolSize:      header.PoolSize,
 		Bits:          strconv.FormatInt(int64(header.Bits), 16),
-		SBits:         pfcutil.Amount(header.SBits).ToCoin(),
+		SBits:         dcrutil.Amount(header.SBits).ToCoin(),
 		Height:        header.Height,
 		Size:          header.Size,
 		Time:          header.Timestamp.Unix(),
@@ -144,9 +144,9 @@ func BuildBlockHeaderVerbose(header *wire.BlockHeader, params *chaincfg.Params,
 	return &blockHeaderResult
 }
 
-// GetBlockHeaderVerbose creates a *pfcjson.GetBlockHeaderVerboseResult for the
+// GetBlockHeaderVerbose creates a *dcrjson.GetBlockHeaderVerboseResult for the
 // block at height idx via an RPC connection to a chain server.
-func GetBlockHeaderVerbose(client *rpcclient.Client, idx int64) *pfcjson.GetBlockHeaderVerboseResult {
+func GetBlockHeaderVerbose(client *rpcclient.Client, idx int64) *dcrjson.GetBlockHeaderVerboseResult {
 	blockhash, err := client.GetBlockHash(idx)
 	if err != nil {
 		log.Errorf("GetBlockHash(%d) failed: %v", idx, err)
@@ -162,9 +162,9 @@ func GetBlockHeaderVerbose(client *rpcclient.Client, idx int64) *pfcjson.GetBloc
 	return blockHeaderVerbose
 }
 
-// GetBlockHeaderVerboseByString creates a *pfcjson.GetBlockHeaderVerboseResult
+// GetBlockHeaderVerboseByString creates a *dcrjson.GetBlockHeaderVerboseResult
 // for the block specified by hash via an RPC connection to a chain server.
-func GetBlockHeaderVerboseByString(client *rpcclient.Client, hash string) *pfcjson.GetBlockHeaderVerboseResult {
+func GetBlockHeaderVerboseByString(client *rpcclient.Client, hash string) *dcrjson.GetBlockHeaderVerboseResult {
 	blockhash, err := chainhash.NewHashFromStr(hash)
 	if err != nil {
 		log.Errorf("Invalid block hash %s: %v", blockhash, err)
@@ -180,9 +180,9 @@ func GetBlockHeaderVerboseByString(client *rpcclient.Client, hash string) *pfcjs
 	return blockHeaderVerbose
 }
 
-// GetBlockVerbose creates a *pfcjson.GetBlockVerboseResult for the block index
+// GetBlockVerbose creates a *dcrjson.GetBlockVerboseResult for the block index
 // specified by idx via an RPC connection to a chain server.
-func GetBlockVerbose(client *rpcclient.Client, idx int64, verboseTx bool) *pfcjson.GetBlockVerboseResult {
+func GetBlockVerbose(client *rpcclient.Client, idx int64, verboseTx bool) *dcrjson.GetBlockVerboseResult {
 	blockhash, err := client.GetBlockHash(idx)
 	if err != nil {
 		log.Errorf("GetBlockHash(%d) failed: %v", idx, err)
@@ -198,9 +198,9 @@ func GetBlockVerbose(client *rpcclient.Client, idx int64, verboseTx bool) *pfcjs
 	return blockVerbose
 }
 
-// GetBlockVerboseByHash creates a *pfcjson.GetBlockVerboseResult for the
+// GetBlockVerboseByHash creates a *dcrjson.GetBlockVerboseResult for the
 // specified block hash via an RPC connection to a chain server.
-func GetBlockVerboseByHash(client *rpcclient.Client, hash string, verboseTx bool) *pfcjson.GetBlockVerboseResult {
+func GetBlockVerboseByHash(client *rpcclient.Client, hash string, verboseTx bool) *dcrjson.GetBlockVerboseResult {
 	blockhash, err := chainhash.NewHashFromStr(hash)
 	if err != nil {
 		log.Errorf("Invalid block hash %s", hash)
@@ -228,7 +228,7 @@ func GetStakeDiffEstimates(client *rpcclient.Client) *apitypes.StakeDiff {
 		return nil
 	}
 	stakeDiffEstimates := apitypes.StakeDiff{
-		GetStakeDifficultyResult: pfcjson.GetStakeDifficultyResult{
+		GetStakeDifficultyResult: dcrjson.GetStakeDifficultyResult{
 			CurrentStakeDifficulty: stakeDiff.CurrentStakeDifficulty,
 			NextStakeDifficulty:    stakeDiff.NextStakeDifficulty,
 		},
@@ -238,7 +238,7 @@ func GetStakeDiffEstimates(client *rpcclient.Client) *apitypes.StakeDiff {
 }
 
 // GetBlock gets a block at the given height from a chain server.
-func GetBlock(ind int64, client *rpcclient.Client) (*pfcutil.Block, *chainhash.Hash, error) {
+func GetBlock(ind int64, client *rpcclient.Client) (*dcrutil.Block, *chainhash.Hash, error) {
 	blockhash, err := client.GetBlockHash(ind)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetBlockHash(%d) failed: %v", ind, err)
@@ -249,18 +249,18 @@ func GetBlock(ind int64, client *rpcclient.Client) (*pfcutil.Block, *chainhash.H
 		return nil, blockhash,
 			fmt.Errorf("GetBlock failed (%s): %v", blockhash, err)
 	}
-	block := pfcutil.NewBlock(msgBlock)
+	block := dcrutil.NewBlock(msgBlock)
 
 	return block, blockhash, nil
 }
 
 // GetBlockByHash gets the block with the given hash from a chain server.
-func GetBlockByHash(blockhash *chainhash.Hash, client *rpcclient.Client) (*pfcutil.Block, error) {
+func GetBlockByHash(blockhash *chainhash.Hash, client *rpcclient.Client) (*dcrutil.Block, error) {
 	msgBlock, err := client.GetBlock(blockhash)
 	if err != nil {
 		return nil, fmt.Errorf("GetBlock failed (%s): %v", blockhash, err)
 	}
-	block := pfcutil.NewBlock(msgBlock)
+	block := dcrutil.NewBlock(msgBlock)
 
 	return block, nil
 }
@@ -268,7 +268,7 @@ func GetBlockByHash(blockhash *chainhash.Hash, client *rpcclient.Client) (*pfcut
 // SideChains gets a slice of known side chain tips. This corresponds to the
 // results of the getchaintips node RPC where the block tip "status" is either
 // "valid-headers" or "valid-fork".
-func SideChains(client *rpcclient.Client) ([]pfcjson.GetChainTipsResult, error) {
+func SideChains(client *rpcclient.Client) ([]dcrjson.GetChainTipsResult, error) {
 	tips, err := client.GetChainTips()
 	if err != nil {
 		return nil, err
@@ -277,7 +277,7 @@ func SideChains(client *rpcclient.Client) ([]pfcjson.GetChainTipsResult, error) 
 	return sideChainTips(tips), nil
 }
 
-func sideChainTips(allTips []pfcjson.GetChainTipsResult) (sideTips []pfcjson.GetChainTipsResult) {
+func sideChainTips(allTips []dcrjson.GetChainTipsResult) (sideTips []dcrjson.GetChainTipsResult) {
 	for i := range allTips {
 		switch allTips[i].Status {
 		case "valid-headers", "valid-fork":
@@ -335,7 +335,7 @@ func reverseStringSlice(s []string) {
 }
 
 // GetTransactionVerboseByID get a transaction by transaction id
-func GetTransactionVerboseByID(client *rpcclient.Client, txid string) (*pfcjson.TxRawResult, error) {
+func GetTransactionVerboseByID(client *rpcclient.Client, txid string) (*dcrjson.TxRawResult, error) {
 	txhash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
 		log.Errorf("Invalid transaction hash %s", txid)
@@ -352,8 +352,8 @@ func GetTransactionVerboseByID(client *rpcclient.Client, txid string) (*pfcjson.
 
 // SearchRawTransaction fetch transactions the belong to an
 // address
-func SearchRawTransaction(client *rpcclient.Client, count int, address string) ([]*pfcjson.SearchRawTransactionsResult, error) {
-	addr, err := pfcutil.DecodeAddress(address)
+func SearchRawTransaction(client *rpcclient.Client, count int, address string) ([]*dcrjson.SearchRawTransactionsResult, error) {
+	addr, err := dcrutil.DecodeAddress(address)
 	if err != nil {
 		log.Infof("Invalid address %s: %v", address, err)
 		return nil, err

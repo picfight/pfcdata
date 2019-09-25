@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
+	humanize "github.com/dustin/go-humanize"
 )
 
 type pageTemplate struct {
@@ -206,10 +206,10 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 		},
 		"float64AsDecimalParts": float64Formatting,
 		"amountAsDecimalParts": func(v int64, useCommas bool) []string {
-			return float64Formatting(pfcutil.Amount(v).ToCoin(), 8, useCommas)
+			return float64Formatting(dcrutil.Amount(v).ToCoin(), 8, useCommas)
 		},
 		"toFloat64Amount": func(intAmount int64) float64 {
-			return pfcutil.Amount(intAmount).ToCoin()
+			return dcrutil.Amount(intAmount).ToCoin()
 		},
 		"remaining": func(idx int, max, t int64) string {
 			x := (max - int64(idx)) * t

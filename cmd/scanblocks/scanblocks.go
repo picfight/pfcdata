@@ -8,14 +8,14 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/decred/slog"
 	"github.com/picfight/pfcd/blockchain"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/decred/slog"
 )
 
 var host = flag.String("host", "127.0.0.1:9109", "node RPC host:port")
@@ -59,7 +59,7 @@ func mainCore() int {
 	}
 
 	blockSummaries := make([]apitypes.BlockDataBasic, height+1)
-	blocks := make(map[int64]*pfcutil.Block)
+	blocks := make(map[int64]*dcrutil.Block)
 
 	for i := int64(0); i < height+1; i++ {
 		blockhash, err := client.GetBlockHash(i)
@@ -73,7 +73,7 @@ func mainCore() int {
 			log.Errorf("GetBlock failed (%s): %v", blockhash, err)
 			return 4
 		}
-		blocks[i] = pfcutil.NewBlock(msgBlock)
+		blocks[i] = dcrutil.NewBlock(msgBlock)
 
 		// info, err := client.GetInfo()
 		// if err != nil {
@@ -93,7 +93,7 @@ func mainCore() int {
 			Size:       header.Size,
 			Hash:       blockhash.String(),
 			Difficulty: diffRatio,
-			StakeDiff:  pfcutil.Amount(header.SBits).ToCoin(),
+			StakeDiff:  dcrutil.Amount(header.SBits).ToCoin(),
 			Time:       header.Timestamp.Unix(),
 			PoolInfo: &apitypes.TicketPoolInfo{
 				Size: header.PoolSize,
@@ -114,7 +114,7 @@ func mainCore() int {
 
 	log.Info("Extracting pool values...")
 	for i := range blockSummaries {
-		blockSummaries[i].PoolInfo.Value = pfcutil.Amount(poolValues[i]).ToCoin()
+		blockSummaries[i].PoolInfo.Value = dcrutil.Amount(poolValues[i]).ToCoin()
 		if blockSummaries[i].PoolInfo.Size > 0 {
 			blockSummaries[i].PoolInfo.ValAvg = blockSummaries[i].PoolInfo.Value / float64(blockSummaries[i].PoolInfo.Size)
 		} else {

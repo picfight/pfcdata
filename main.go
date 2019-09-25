@@ -21,8 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi"
-	"github.com/google/gops/agent"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/v3/api"
@@ -30,8 +28,8 @@ import (
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/db/agendadb"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/picfight/pfcdata/v3/db/pfcpg"
-	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
+	"github.com/picfight/pfcdata/v3/db/dcrpg"
+	"github.com/picfight/pfcdata/v3/db/dcrsqlite"
 	"github.com/picfight/pfcdata/v3/explorer"
 	"github.com/picfight/pfcdata/v3/mempool"
 	m "github.com/picfight/pfcdata/v3/middleware"
@@ -40,6 +38,8 @@ import (
 	"github.com/picfight/pfcdata/v3/semver"
 	"github.com/picfight/pfcdata/v3/txhelpers"
 	"github.com/picfight/pfcdata/v3/version"
+	"github.com/go-chi/chi"
+	"github.com/google/gops/agent"
 )
 
 func main() {
@@ -143,8 +143,8 @@ func _main(ctx context.Context) error {
 
 	// Sqlite output
 	dbPath := filepath.Join(cfg.DataDir, cfg.DBFileName)
-	dbInfo := pfcsqlite.DBInfo{FileName: dbPath}
-	baseDB, cleanupDB, err := pfcsqlite.InitWiredDB(&dbInfo,
+	dbInfo := dcrsqlite.DBInfo{FileName: dbPath}
+	baseDB, cleanupDB, err := dcrsqlite.InitWiredDB(&dbInfo,
 		notify.NtfnChans.UpdateStatusDBHeight, pfcdClient, activeChain, cfg.DataDir, !usePG)
 	defer cleanupDB()
 	if err != nil {
@@ -154,7 +154,7 @@ func _main(ctx context.Context) error {
 	defer baseDB.Close()
 
 	// Auxiliary DB (currently PostgreSQL)
-	var auxDB *pfcpg.ChainDBRPC
+	var auxDB *dcrpg.ChainDBRPC
 	var newPGIndexes, updateAllAddresses, updateAllVotes bool
 	if usePG {
 		pgHost, pgPort := cfg.PGHost, ""
@@ -164,14 +164,14 @@ func _main(ctx context.Context) error {
 				return fmt.Errorf("SplitHostPort failed: %v", err)
 			}
 		}
-		dbi := pfcpg.DBInfo{
+		dbi := dcrpg.DBInfo{
 			Host:   pgHost,
 			Port:   pgPort,
 			User:   cfg.PGUser,
 			Pass:   cfg.PGPass,
 			DBName: cfg.PGDBName,
 		}
-		chainDB, err := pfcpg.NewChainDBWithCancel(ctx, &dbi, activeChain, baseDB.GetStakeDB(), !cfg.NoDevPrefetch)
+		chainDB, err := dcrpg.NewChainDBWithCancel(ctx, &dbi, activeChain, baseDB.GetStakeDB(), !cfg.NoDevPrefetch)
 		if chainDB != nil {
 			defer chainDB.Close()
 		}
@@ -179,7 +179,7 @@ func _main(ctx context.Context) error {
 			return err
 		}
 
-		auxDB, err = pfcpg.NewChainDBRPC(chainDB, pfcdClient)
+		auxDB, err = dcrpg.NewChainDBRPC(chainDB, pfcdClient)
 		if err != nil {
 			return err
 		}
@@ -570,7 +570,7 @@ func _main(ctx context.Context) error {
 		// making available blocks to the baseDB. In return, baseDB maintains a
 		// StakeDatabase at the best block's height. For a detailed description
 		// on how the DBs' synchronization is coordinated, see the documents in
-		// db/pfcpg/sync.go.
+		// db/dcrpg/sync.go.
 		go auxDB.SyncChainDBAsync(ctx, pgSyncRes, smartClient,
 			updateAddys, updateVotes, newPGInds, latestBlockHash, barLoad)
 
@@ -639,7 +639,7 @@ func _main(ctx context.Context) error {
 		nSideChains := len(sideChainBlocksToStore)
 
 		// Importing side chain blocks involves only the aux (postgres) DBs
-		// since pfcsqlite does not track side chain blocks, and stakedb only
+		// since dcrsqlite does not track side chain blocks, and stakedb only
 		// supports mainchain. TODO: Get stakedb to work with side chain blocks
 		// to get ticket pool info.
 
@@ -708,7 +708,7 @@ func _main(ctx context.Context) error {
 				// unique indexes.
 				updateExistingRecords := false
 
-				// Store data in the aux (pfcpg) DB.
+				// Store data in the aux (dcrpg) DB.
 				_, _, _, err = auxDB.StoreBlock(msgBlock, blockData.WinningTickets,
 					isValid, isMainchain, updateExistingRecords, true, true)
 				if err != nil {
@@ -721,7 +721,7 @@ func _main(ctx context.Context) error {
 			}
 		}
 		auxDB.InBatchSync = false
-		log.Infof("Successfully added %d blocks from %d side chains into pfcpg DB.",
+		log.Infof("Successfully added %d blocks from %d side chains into dcrpg DB.",
 			sideChainBlocksStored, sideChainsStored)
 
 		// That may have taken a while, check again for new blocks from network.
@@ -758,7 +758,7 @@ func _main(ctx context.Context) error {
 
 	// Blockchain monitor for the collector
 	addrMap := make(map[string]txhelpers.TxAction) // for support of watched addresses
-	// On reorg, only update web UI since pfcsqlite's own reorg handler will
+	// On reorg, only update web UI since dcrsqlite's own reorg handler will
 	// deal with patching up the block info database.
 	reorgBlockDataSavers := []blockdata.BlockDataSaver{explore}
 	wsChainMonitor := blockdata.NewChainMonitor(ctx, collector, blockDataSavers,
@@ -773,13 +773,13 @@ func _main(ctx context.Context) error {
 	wiredDBChainMonitor := baseDB.NewChainMonitor(ctx, collector, &wg,
 		notify.NtfnChans.ConnectChanWiredDB, notify.NtfnChans.ReorgChanWiredDB)
 
-	var auxDBChainMonitor *pfcpg.ChainMonitor
+	var auxDBChainMonitor *dcrpg.ChainMonitor
 	if usePG {
 		// Blockchain monitor for the aux (PG) DB
 		auxDBChainMonitor = auxDB.NewChainMonitor(ctx, &wg,
-			notify.NtfnChans.ConnectChanPfcpgDB, notify.NtfnChans.ReorgChanPfcpgDB)
+			notify.NtfnChans.ConnectChanDcrpgDB, notify.NtfnChans.ReorgChanDcrpgDB)
 		if auxDBChainMonitor == nil {
-			return fmt.Errorf("Failed to enable pfcpg ChainMonitor. *ChainDB is nil.")
+			return fmt.Errorf("Failed to enable dcrpg ChainMonitor. *ChainDB is nil.")
 		}
 	}
 
@@ -830,7 +830,7 @@ func _main(ctx context.Context) error {
 	wg.Add(2)
 	go wsChainMonitor.BlockConnectedHandler()
 	// The blockdata reorg handler disables collection during reorg, leaving
-	// pfcsqlite to do the switch, except for the last block which gets
+	// dcrsqlite to do the switch, except for the last block which gets
 	// collected and stored via reorgBlockDataSavers (for the explorer UI).
 	go wsChainMonitor.ReorgHandler()
 
@@ -839,12 +839,12 @@ func _main(ctx context.Context) error {
 	go sdbChainMonitor.BlockConnectedHandler()
 	go sdbChainMonitor.ReorgHandler()
 
-	// pfcsqlite does not handle new blocks except during reorg.
+	// dcrsqlite does not handle new blocks except during reorg.
 	wg.Add(1)
 	go wiredDBChainMonitor.ReorgHandler()
 
 	if usePG {
-		// pfcpg also does not handle new blocks except during reorg.
+		// dcrpg also does not handle new blocks except during reorg.
 		wg.Add(1)
 		go auxDBChainMonitor.ReorgHandler()
 	}
@@ -906,7 +906,7 @@ func waitForSync(ctx context.Context, base chan dbtypes.SyncResult, aux chan dbt
 	baseDBHeight := baseRes.Height
 	log.Infof("SQLite sync ended at height %d", baseDBHeight)
 	if baseRes.Error != nil {
-		log.Errorf("pfcsqlite.SyncDBAsync failed at height %d: %v.", baseDBHeight, baseRes.Error)
+		log.Errorf("dcrsqlite.SyncDBAsync failed at height %d: %v.", baseDBHeight, baseRes.Error)
 		requestShutdown()
 		auxRes := <-aux
 		return baseDBHeight, auxRes.Height, baseRes.Error
@@ -924,7 +924,7 @@ func waitForSync(ctx context.Context, base chan dbtypes.SyncResult, aux chan dbt
 	}
 
 	if baseRes.Error != nil {
-		log.Errorf("pfcsqlite.SyncDBAsync failed at height %d.", baseDBHeight)
+		log.Errorf("dcrsqlite.SyncDBAsync failed at height %d.", baseDBHeight)
 		requestShutdown()
 		return baseDBHeight, auxDBHeight, baseRes.Error
 	}
@@ -934,13 +934,13 @@ func waitForSync(ctx context.Context, base chan dbtypes.SyncResult, aux chan dbt
 		if auxRes.Error != nil {
 			requestShutdown()
 			if baseRes.Error != nil {
-				log.Error("pfcsqlite.SyncDBAsync AND pfcpg.SyncChainDBAsync "+
+				log.Error("dcrsqlite.SyncDBAsync AND dcrpg.SyncChainDBAsync "+
 					"failed at heights %d and %d, respectively.",
 					baseDBHeight, auxDBHeight)
 				errCombined := fmt.Sprintln(baseRes.Error, ", ", auxRes.Error)
 				return baseDBHeight, auxDBHeight, errors.New(errCombined)
 			}
-			log.Errorf("pfcpg.SyncChainDBAsync failed at height %d.", auxDBHeight)
+			log.Errorf("dcrpg.SyncChainDBAsync failed at height %d.", auxDBHeight)
 			return baseDBHeight, auxDBHeight, auxRes.Error
 		}
 
@@ -955,8 +955,8 @@ func waitForSync(ctx context.Context, base chan dbtypes.SyncResult, aux chan dbt
 }
 
 func connectNodeRPC(cfg *config, ntfnHandlers *rpcclient.NotificationHandlers) (*rpcclient.Client, semver.Semver, error) {
-	return rpcutils.ConnectNodeRPC(cfg.PfcdServ, cfg.PfcdUser, cfg.PfcdPass,
-		cfg.PfcdCert, cfg.DisableDaemonTLS, ntfnHandlers)
+	return rpcutils.ConnectNodeRPC(cfg.DcrdServ, cfg.DcrdUser, cfg.DcrdPass,
+		cfg.DcrdCert, cfg.DisableDaemonTLS, ntfnHandlers)
 }
 
 func listenAndServeProto(listen, proto string, mux http.Handler) error {

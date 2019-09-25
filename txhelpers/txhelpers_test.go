@@ -11,18 +11,18 @@ import (
 
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/v3/semver"
 	"github.com/picfight/pfcdata/v3/testutil"
 )
 
 type TxGetter struct {
-	txLookup map[chainhash.Hash]*pfcutil.Tx
+	txLookup map[chainhash.Hash]*dcrutil.Tx
 }
 
-func (t TxGetter) GetRawTransaction(txHash *chainhash.Hash) (*pfcutil.Tx, error) {
+func (t TxGetter) GetRawTransaction(txHash *chainhash.Hash) (*dcrutil.Tx, error) {
 	tx, ok := t.txLookup[*txHash]
 	var err error
 	if !ok {
@@ -31,7 +31,7 @@ func (t TxGetter) GetRawTransaction(txHash *chainhash.Hash) (*pfcutil.Tx, error)
 	return tx, err
 }
 
-func LoadTestBlockAndSSTX(t *testing.T) (*pfcutil.Block, []*pfcutil.Tx) {
+func LoadTestBlockAndSSTX(t *testing.T) (*dcrutil.Block, []*dcrutil.Tx) {
 	// Load block data
 	blockTestFileName := "block138883.bin"
 	blockTestFile, err := os.Open(blockTestFileName)
@@ -39,7 +39,7 @@ func LoadTestBlockAndSSTX(t *testing.T) (*pfcutil.Block, []*pfcutil.Tx) {
 		t.Fatalf("Unable to open file %s: %v", blockTestFileName, err)
 	}
 	defer blockTestFile.Close()
-	block, err := pfcutil.NewBlockFromReader(blockTestFile)
+	block, err := dcrutil.NewBlockFromReader(blockTestFile)
 	if err != nil {
 		t.Fatalf("Unable to load test block data.")
 	}
@@ -58,14 +58,14 @@ func LoadTestBlockAndSSTX(t *testing.T) (*pfcutil.Block, []*pfcutil.Tx) {
 		t.Fatalf("Unable to read file %s: %v", blockTestSSTXFileName, err)
 	}
 
-	allTxRead := make([]*pfcutil.Tx, numSSTX)
+	allTxRead := make([]*dcrutil.Tx, numSSTX)
 	for i := range allTxRead {
 		var txSize int64
 		if err = binary.Read(txFile, binary.LittleEndian, &txSize); err != nil {
 			t.Fatalf("Unable to read file %s: %v", blockTestSSTXFileName, err)
 		}
 
-		allTxRead[i], err = pfcutil.NewTxFromReader(txFile)
+		allTxRead[i], err = dcrutil.NewTxFromReader(txFile)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func TestFeeRateInfoBlock(t *testing.T) {
 	fib := FeeRateInfoBlock(block)
 	t.Log(*fib)
 
-	fibExpected := pfcjson.FeeInfoBlock{
+	fibExpected := dcrjson.FeeInfoBlock{
 		Height: 138883,
 		Number: 20,
 		Min:    0.5786178114478114,
@@ -115,7 +115,7 @@ func TestFeeInfoBlock(t *testing.T) {
 	fib := FeeInfoBlock(block)
 	t.Log(*fib)
 
-	fibExpected := pfcjson.FeeInfoBlock{
+	fibExpected := dcrjson.FeeInfoBlock{
 		Height: 138883,
 		Number: 20,
 		Min:    0.17184949,
@@ -132,7 +132,7 @@ func TestFeeInfoBlock(t *testing.T) {
 
 // Utilities for creating test data:
 
-func TxToWriter(tx *pfcutil.Tx, w io.Writer) error {
+func TxToWriter(tx *dcrutil.Tx, w io.Writer) error {
 	msgTx := tx.MsgTx()
 	binary.Write(w, binary.LittleEndian, int64(msgTx.SerializeSize()))
 	msgTx.Serialize(w)

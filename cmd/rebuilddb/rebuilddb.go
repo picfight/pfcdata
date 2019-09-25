@@ -7,11 +7,11 @@ import (
 	"os/signal"
 	"runtime/pprof"
 
-	"github.com/decred/slog"
 	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcdata/v3/db/pfcsqlite"
+	"github.com/picfight/pfcdata/v3/db/dcrsqlite"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/decred/slog"
 )
 
 var (
@@ -31,7 +31,7 @@ func init() {
 	rpcclientLogger = backendLog.Logger("RPC")
 	rpcclient.UseLogger(rpcclientLogger)
 	sqliteLogger = backendLog.Logger("DSQL")
-	pfcsqlite.UseLogger(rpcclientLogger)
+	dcrsqlite.UseLogger(rpcclientLogger)
 	stakedbLogger = backendLog.Logger("SKDB")
 	stakedb.UseLogger(stakedbLogger)
 }
@@ -55,8 +55,8 @@ func mainCore() int {
 	}
 
 	// Connect to node RPC server
-	client, _, err := rpcutils.ConnectNodeRPC(cfg.PfcdServ, cfg.PfcdUser,
-		cfg.PfcdPass, cfg.PfcdCert, cfg.DisableDaemonTLS)
+	client, _, err := rpcutils.ConnectNodeRPC(cfg.DcrdServ, cfg.DcrdUser,
+		cfg.DcrdPass, cfg.DcrdCert, cfg.DisableDaemonTLS)
 	if err != nil {
 		log.Fatalf("Unable to connect to RPC server: %v", err)
 		return 1
@@ -76,9 +76,9 @@ func mainCore() int {
 	}
 
 	// Sqlite output
-	dbInfo := pfcsqlite.DBInfo{FileName: cfg.DBFileName}
-	//sqliteDB, err := pfcsqlite.InitDB(&dbInfo)
-	sqliteDB, cleanupDB, err := pfcsqlite.InitWiredDB(&dbInfo, nil, client,
+	dbInfo := dcrsqlite.DBInfo{FileName: cfg.DBFileName}
+	//sqliteDB, err := dcrsqlite.InitDB(&dbInfo)
+	sqliteDB, cleanupDB, err := dcrsqlite.InitWiredDB(&dbInfo, nil, client,
 		activeChain, "rebuild_data", true)
 	defer cleanupDB()
 	if err != nil {

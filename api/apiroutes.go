@@ -18,7 +18,7 @@ import (
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcd/rpcclient"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
@@ -38,23 +38,23 @@ type DataSourceLite interface {
 	GetBlockHash(idx int64) (string, error)
 	GetBlockHeight(hash string) (int64, error)
 	//Get(idx int) *blockdata.BlockData
-	GetHeader(idx int) *pfcjson.GetBlockHeaderVerboseResult
-	GetBlockVerbose(idx int, verboseTx bool) *pfcjson.GetBlockVerboseResult
-	GetBlockVerboseByHash(hash string, verboseTx bool) *pfcjson.GetBlockVerboseResult
+	GetHeader(idx int) *dcrjson.GetBlockHeaderVerboseResult
+	GetBlockVerbose(idx int, verboseTx bool) *dcrjson.GetBlockVerboseResult
+	GetBlockVerboseByHash(hash string, verboseTx bool) *dcrjson.GetBlockVerboseResult
 	GetRawTransaction(txid string) *apitypes.Tx
 	GetTransactionHex(txid string) string
 	GetTrimmedTransaction(txid string) *apitypes.TrimmedTx
 	GetRawTransactionWithPrevOutAddresses(txid string) (*apitypes.Tx, [][]string)
 	GetVoteInfo(txid string) (*apitypes.VoteInfo, error)
-	GetVoteVersionInfo(ver uint32) (*pfcjson.GetVoteInfoResult, error)
-	GetStakeVersions(txHash string, count int32) (*pfcjson.GetStakeVersionsResult, error)
-	GetStakeVersionsLatest() (*pfcjson.StakeVersions, error)
+	GetVoteVersionInfo(ver uint32) (*dcrjson.GetVoteInfoResult, error)
+	GetStakeVersions(txHash string, count int32) (*dcrjson.GetStakeVersionsResult, error)
+	GetStakeVersionsLatest() (*dcrjson.StakeVersions, error)
 	GetAllTxIn(txid string) []*apitypes.TxIn
 	GetAllTxOut(txid string) []*apitypes.TxOut
 	GetTransactionsForBlock(idx int64) *apitypes.BlockTransactions
 	GetTransactionsForBlockByHash(hash string) *apitypes.BlockTransactions
-	GetFeeInfo(idx int) *pfcjson.FeeInfoBlock
-	//GetStakeDiffEstimate(idx int) *pfcjson.EstimateStakeDiffResult
+	GetFeeInfo(idx int) *dcrjson.FeeInfoBlock
+	//GetStakeDiffEstimate(idx int) *dcrjson.EstimateStakeDiffResult
 	GetStakeInfoExtended(idx int) *apitypes.StakeInfoExtended
 	//needs db update: GetStakeInfoExtendedByHash(hash string) *apitypes.StakeInfoExtended
 	GetStakeDiffEstimates() *apitypes.StakeDiff
@@ -762,7 +762,7 @@ func (c *appContext) getStakeDiffCurrent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	stakeDiffCurrent := pfcjson.GetStakeDifficultyResult{
+	stakeDiffCurrent := dcrjson.GetStakeDifficultyResult{
 		CurrentStakeDifficulty: stakeDiff.CurrentStakeDifficulty,
 		NextStakeDifficulty:    stakeDiff.NextStakeDifficulty,
 	}

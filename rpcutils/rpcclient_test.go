@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/dcrjson"
 )
 
 func TestSideChainTips(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSideChainTips(t *testing.T) {
 		}
 	]`
 
-	allTips := []pfcjson.GetChainTipsResult{
+	allTips := []dcrjson.GetChainTipsResult{
 		{
 			Height:    35890,
 			Hash:      "000000000332ad2682f681a2199e481f03b06998e29e2e72cafa54a156fc1159",
@@ -50,7 +50,7 @@ func TestSideChainTips(t *testing.T) {
 		},
 	}
 
-	sideTips := []pfcjson.GetChainTipsResult{
+	sideTips := []dcrjson.GetChainTipsResult{
 		{
 			Height:    22058,
 			Hash:      "00000000017c501c7d78af471e3ae60ea9a5696e9f840af6f1f2b8fa05b35030",

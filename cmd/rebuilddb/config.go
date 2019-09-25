@@ -9,7 +9,7 @@ import (
 
 	flags "github.com/btcsuite/go-flags"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcdata/v3/netparams"
 )
 
@@ -25,8 +25,8 @@ var activeNet = &netparams.MainNetParams
 var activeChain = &chaincfg.MainNetParams
 
 var (
-	pfcdHomeDir = pfcutil.AppDataDir("pfcd", false)
-	//rebuilddbHomeDir            = pfcutil.AppDataDir("rebuilddb", false)
+	pfcdHomeDir = dcrutil.AppDataDir("pfcd", false)
+	//rebuilddbHomeDir            = dcrutil.AppDataDir("rebuilddb", false)
 	defaultDaemonRPCCertFile = filepath.Join(pfcdHomeDir, "rpc.cert")
 	defaultConfigFile        = filepath.Join(curDir, defaultConfigFilename)
 	defaultLogDir            = filepath.Join(curDir, defaultLogDirname)
@@ -58,10 +58,10 @@ type config struct {
 	DBTable    string `long:"dbtable" description:"DB table name"`
 
 	// RPC client options
-	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name"`
-	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password"`
-	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)"`
-	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file"`
+	DcrdUser         string `long:"pfcduser" description:"Daemon RPC user name"`
+	DcrdPass         string `long:"pfcdpass" description:"Daemon RPC password"`
+	DcrdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)"`
+	DcrdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file"`
 	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost"`
 
 	// TODO
@@ -80,7 +80,7 @@ var (
 		DBUser:     defaultDBUser,
 		DBPass:     defaultDBPass,
 		DBTable:    defaultDBTableName,
-		PfcdCert:   defaultDaemonRPCCertFile,
+		DcrdCert:   defaultDaemonRPCCertFile,
 	}
 )
 
@@ -199,8 +199,8 @@ func loadConfig() (*config, error) {
 
 	// Set the host names and ports to the default if the
 	// user does not specify them.
-	if cfg.PfcdServ == "" {
-		cfg.PfcdServ = defaultHost + ":" + activeNet.JSONRPCClientPort
+	if cfg.DcrdServ == "" {
+		cfg.DcrdServ = defaultHost + ":" + activeNet.JSONRPCClientPort
 	}
 
 	// Append the network type to the log directory so it is "namespaced"
@@ -235,7 +235,7 @@ func loadConfig() (*config, error) {
 // const (
 //     defaultDBTableName = "pfcdata"
 //     defaultDBUserName = "pfcdata"
-//     defaultDBPass = "pfcpassword"
+//     defaultDBPass = "dcrpassword"
 //     defaultDBFileName = "pfcdata.sqlt.dat"
 //     defaultDBHostPort = "127.0.0.1:3660"
 // )

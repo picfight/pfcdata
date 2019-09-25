@@ -4,8 +4,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/lib/pq"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
+	"github.com/lib/pq"
 )
 
 const (

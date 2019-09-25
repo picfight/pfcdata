@@ -16,13 +16,13 @@ import (
 
 	flags "github.com/btcsuite/go-flags"
 	"github.com/caarlos0/env"
-	"github.com/decred/slog"
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/netparams"
 	"github.com/picfight/pfcdata/v3/version"
+	"github.com/decred/slog"
 )
 
 const (
@@ -37,11 +37,11 @@ var activeNet = &netparams.MainNetParams
 var activeChain = &chaincfg.MainNetParams
 
 var (
-	defaultHomeDir           = pfcutil.AppDataDir("pfcdata", false)
+	defaultHomeDir           = dcrutil.AppDataDir("pfcdata", false)
 	defaultConfigFile        = filepath.Join(defaultHomeDir, defaultConfigFilename)
 	defaultLogDir            = filepath.Join(defaultHomeDir, defaultLogDirname)
 	defaultDataDir           = filepath.Join(defaultHomeDir, defaultDataDirname)
-	pfcdHomeDir              = pfcutil.AppDataDir("pfcd", false)
+	pfcdHomeDir              = dcrutil.AppDataDir("pfcd", false)
 	defaultDaemonRPCCertFile = filepath.Join(pfcdHomeDir, "rpc.cert")
 
 	defaultHost               = "localhost"
@@ -117,10 +117,10 @@ type config struct {
 	// EmailSubject string `long:"emailsubj" description:"Email subject. (default \"pfcdataapi transaction notification\")"`
 
 	// RPC client options
-	PfcdUser         string `long:"pfcduser" description:"Daemon RPC user name" env:"PFCDATA_PFCD_USER"`
-	PfcdPass         string `long:"pfcdpass" description:"Daemon RPC password" env:"PFCDATA_PFCD_PASS"`
-	PfcdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)" env:"PFCDATA_PFCD_URL"`
-	PfcdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file" env:"PFCDATA_PFCD_CERT"`
+	DcrdUser         string `long:"pfcduser" description:"Daemon RPC user name" env:"PFCDATA_PFCD_USER"`
+	DcrdPass         string `long:"pfcdpass" description:"Daemon RPC password" env:"PFCDATA_PFCD_PASS"`
+	DcrdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)" env:"PFCDATA_PFCD_URL"`
+	DcrdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file" env:"PFCDATA_PFCD_CERT"`
 	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost" env:"PFCDATA_PFCD_DISABLE_TLS"`
 }
 
@@ -138,7 +138,7 @@ var (
 		APIListen:          defaultAPIListen,
 		IndentJSON:         defaultIndentJSON,
 		CacheControlMaxAge: defaultCacheControlMaxAge,
-		PfcdCert:           defaultDaemonRPCCertFile,
+		DcrdCert:           defaultDaemonRPCCertFile,
 		MonitorMempool:     defaultMonitorMempool,
 		MempoolMinInterval: defaultMempoolMinInterval,
 		MempoolMaxInterval: defaultMempoolMaxInterval,
@@ -497,8 +497,8 @@ func loadConfig() (*config, error) {
 
 	// Set the host names and ports to the default if the user does not specify
 	// them.
-	if cfg.PfcdServ == "" {
-		cfg.PfcdServ = defaultHost + ":" + activeNet.JSONRPCClientPort
+	if cfg.DcrdServ == "" {
+		cfg.DcrdServ = defaultHost + ":" + activeNet.JSONRPCClientPort
 	}
 
 	// Output folder
@@ -531,7 +531,7 @@ func loadConfig() (*config, error) {
 	return &cfg, nil
 }
 
-// netName returns the name used when referring to a picfight network. TestNet3
+// netName returns the name used when referring to a decred network. TestNet3
 // correctly returns "testnet3", but not TestNet2. This function may be removed
 // after testnet2 is ancient history.
 func netName(chainParams *netparams.Params) string {

@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcdata/v3/db/agendadb"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
@@ -73,8 +73,8 @@ type TxBasic struct {
 	TxID          string
 	FormattedSize string
 	Total         float64
-	Fee           pfcutil.Amount
-	FeeRate       pfcutil.Amount
+	Fee           dcrutil.Amount
+	FeeRate       dcrutil.Amount
 	VoteInfo      *VoteInfo
 	Coinbase      bool
 }
@@ -197,7 +197,7 @@ type BlockValidation struct {
 
 // Vin models basic data about a tx input for display
 type Vin struct {
-	*pfcjson.Vin
+	*dcrjson.Vin
 	Addresses       []string
 	FormattedAmount string
 	Index           uint32
@@ -220,7 +220,7 @@ type TrimmedBlockInfo struct {
 	Height       int64
 	Total        float64
 	Fees         float64
-	Subsidy      *pfcjson.GetBlockSubsidyResult
+	Subsidy      *dcrjson.GetBlockSubsidyResult
 	Votes        []*TrimmedTxInfo
 	Tickets      []*TrimmedTxInfo
 	Revocations  []*TrimmedTxInfo
@@ -255,7 +255,7 @@ type BlockInfo struct {
 	MiningFee             float64
 	StakeValidationHeight int64
 	AllTxs                uint32
-	Subsidy               *pfcjson.GetBlockSubsidyResult
+	Subsidy               *dcrjson.GetBlockSubsidyResult
 }
 
 // AddressTransactions collects the transactions for an address as AddressTx
@@ -268,7 +268,7 @@ type AddressTransactions struct {
 
 // AddressInfo models data for display on the address page
 type AddressInfo struct {
-	// Address is the picfight address on the current page
+	// Address is the decred address on the current page
 	Address string
 
 	// IsDummyAddress is true when the address is the dummy address typically
@@ -294,9 +294,9 @@ type AddressInfo struct {
 	NumTransactions int64 // The number of transactions in the address
 	NumFundingTxns  int64 // number paying to the address
 	NumSpendingTxns int64 // number spending outpoints associated with the address
-	AmountReceived  pfcutil.Amount
-	AmountSent      pfcutil.Amount
-	AmountUnspent   pfcutil.Amount
+	AmountReceived  dcrutil.Amount
+	AmountSent      dcrutil.Amount
+	AmountUnspent   dcrutil.Amount
 
 	// Balance is used in full mode, describing all known transactions
 	Balance *AddressBalance
@@ -361,13 +361,13 @@ type HomeInfo struct {
 	NBlockSubsidy         BlockSubsidy   `json:"subsidy"`
 	Params                ChainParams    `json:"params"`
 	PoolInfo              TicketPoolInfo `json:"pool_info"`
-	TotalLockedPFC        float64        `json:"total_locked_pfc"`
+	TotalLockedPFC        float64        `json:"total_locked_dcr"`
 	HashRate              float64        `json:"hash_rate"`
 	// HashRateChange defines the hashrate change in 24hrs
 	HashRateChange float64 `json:"hash_rate_change"`
 }
 
-// BlockSubsidy is an implementation of pfcjson.GetBlockSubsidyResult
+// BlockSubsidy is an implementation of dcrjson.GetBlockSubsidyResult
 type BlockSubsidy struct {
 	Total int64 `json:"total"`
 	PoW   int64 `json:"pow"`
@@ -458,7 +458,7 @@ func ReduceAddressHistory(addrHist []*dbtypes.AddressRow) *AddressInfo {
 		if !addrOut.ValidMainChain {
 			continue
 		}
-		coin := pfcutil.Amount(addrOut.Value).ToCoin()
+		coin := dcrutil.Amount(addrOut.Value).ToCoin()
 		tx := AddressTx{
 			BlockTime: addrOut.TxBlockTime,
 			InOutID:   addrOut.TxVinVoutIndex,
@@ -492,9 +492,9 @@ func ReduceAddressHistory(addrHist []*dbtypes.AddressRow) *AddressInfo {
 		TxnsSpending:    debitTxns,
 		NumFundingTxns:  int64(len(creditTxns)),
 		NumSpendingTxns: int64(len(debitTxns)),
-		AmountReceived:  pfcutil.Amount(received),
-		AmountSent:      pfcutil.Amount(sent),
-		AmountUnspent:   pfcutil.Amount(received - sent),
+		AmountReceived:  dcrutil.Amount(received),
+		AmountSent:      dcrutil.Amount(sent),
+		AmountUnspent:   dcrutil.Amount(received - sent),
 	}
 }
 

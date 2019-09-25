@@ -9,7 +9,7 @@
   font-weight: normal;
   font-style: normal;
 }
-[class^="pfcicon-"], [class*=" pfcicon-"] {
+[class^="dcricon-"], [class*=" dcricon-"] {
   /* use !important to prevent issues with browser extensions that change fonts */
   font-family: 'icomoon' !important;
   speak: none;
@@ -23,16 +23,16 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-.pfcicon-qrcode:before {
+.dcricon-qrcode:before {
   content: "\e9f8";
 }
-.pfcicon-sun-fill:before {
+.dcricon-sun-fill:before {
   content: "\e901";
 }
-.pfcicon-sun-stroke:before {
+.dcricon-sun-stroke:before {
   content: "\e902";
 }
-.pfcicon-picfight:before {
+.dcricon-decred:before {
   content: "\e900";
 }
 
@@ -606,16 +606,16 @@ table.align-baseline-rows tr {
 }
 
 /*content*/
-.pfc-total .pfc {
+.dcr-total .dcr {
   font-size: 28px;
 }
-.pfc-total .total-text {
+.dcr-total .total-text {
   line-height: 11px;
   opacity: 0.8;
   font-weight: bold;
   letter-spacing: 0px;
 }
-.pfc-total .total-text .d-block {
+.dcr-total .total-text .d-block {
   letter-spacing: 1px;
   font-weight: bold;
   font-size: 13px;
@@ -669,7 +669,7 @@ table.align-baseline-rows tr {
   white-space: nowrap;
 }
 
-/*resemble voting.picfight.org*/
+/*resemble voting.decred.org*/
 .highlight-text {
   height: 20px;
   margin-top: 3px;

@@ -12,6 +12,20 @@ require (
 	github.com/coreos/bbolt v1.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/base58 v1.0.0
+	github.com/picfight/pfcd/blockchain v1.0.2
+	github.com/picfight/pfcd/blockchain/stake v1.0.2
+	github.com/picfight/pfcd/chaincfg v1.1.1
+	github.com/picfight/pfcd/chaincfg/chainhash v1.0.1
+	github.com/picfight/pfcd/database v1.0.2
+	github.com/picfight/pfcd/dcrec v0.0.0-20180926135934-93133096234e // indirect
+	github.com/picfight/pfcd/dcrec/edwards v0.0.0-20180926135934-93133096234e // indirect
+	github.com/picfight/pfcd/dcrjson v1.0.0
+	github.com/picfight/pfcd/dcrutil v1.1.1
+	github.com/picfight/pfcd/gcs v1.0.2 // indirect
+	github.com/picfight/pfcd/rpcclient v1.0.2
+	github.com/picfight/pfcd/txscript v1.0.1
+	github.com/picfight/pfcd/wire v1.1.0
+	github.com/picfight/pfcwallet/wallet v1.0.0
 	github.com/decred/slog v1.0.0
 	github.com/dgraph-io/badger v1.5.3
 	github.com/dgryski/go-farm v0.0.0-20180109070241-2de33835d102 // indirect

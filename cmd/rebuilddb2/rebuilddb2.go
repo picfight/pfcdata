@@ -17,11 +17,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/decred/slog"
 	"github.com/picfight/pfcd/rpcclient"
-	"github.com/picfight/pfcdata/v3/db/pfcpg"
+	"github.com/picfight/pfcdata/v3/db/dcrpg"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
+	"github.com/decred/slog"
 )
 
 var (
@@ -45,7 +45,7 @@ func init() {
 	rpcclientLogger = backendLog.Logger("RPC")
 	rpcclient.UseLogger(rpcclientLogger)
 	pgLogger = backendLog.Logger("PSQL")
-	pfcpg.UseLogger(pgLogger)
+	dcrpg.UseLogger(pgLogger)
 	stakedbLogger = backendLog.Logger("SKDB")
 	stakedb.UseLogger(stakedbLogger)
 }
@@ -91,8 +91,8 @@ func mainCore() error {
 	}
 
 	// Connect to node RPC server
-	client, _, err := rpcutils.ConnectNodeRPC(cfg.PfcdServ, cfg.PfcdUser,
-		cfg.PfcdPass, cfg.PfcdCert, cfg.DisableDaemonTLS)
+	client, _, err := rpcutils.ConnectNodeRPC(cfg.DcrdServ, cfg.DcrdUser,
+		cfg.DcrdPass, cfg.DcrdCert, cfg.DisableDaemonTLS)
 	if err != nil {
 		log.Fatalf("Unable to connect to RPC server: %v", err)
 		return err
@@ -115,7 +115,7 @@ func mainCore() error {
 	}
 
 	// Configure PostgreSQL ChainDB
-	dbi := pfcpg.DBInfo{
+	dbi := dcrpg.DBInfo{
 		Host:   host,
 		Port:   port,
 		User:   cfg.DBUser,
@@ -123,7 +123,7 @@ func mainCore() error {
 		DBName: cfg.DBName,
 	}
 	// Construct a ChainDB without a stakeDB to allow quick dropping of tables.
-	db, err := pfcpg.NewChainDB(&dbi, activeChain, nil, false)
+	db, err := dcrpg.NewChainDB(&dbi, activeChain, nil, false)
 	if db != nil {
 		defer db.Close()
 	}

@@ -1,11 +1,11 @@
 // Copyright (c) 2017, The pfcdata developers
 // See LICENSE for details.
 
-package pfcpg
+package dcrpg
 
 import (
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/explorer"
@@ -13,9 +13,9 @@ import (
 	"github.com/picfight/pfcdata/v3/txhelpers"
 )
 
-// GetRawTransaction gets a pfcjson.TxRawResult for the specified transaction
+// GetRawTransaction gets a dcrjson.TxRawResult for the specified transaction
 // hash.
-func (pgb *ChainDBRPC) GetRawTransaction(txid string) (*pfcjson.TxRawResult, error) {
+func (pgb *ChainDBRPC) GetRawTransaction(txid string) (*dcrjson.TxRawResult, error) {
 	txraw, err := rpcutils.GetTransactionVerboseByID(pgb.Client, txid)
 	if err != nil {
 		log.Errorf("GetRawTransactionVerbose failed for: %s", txid)
@@ -82,8 +82,8 @@ func (pgb *ChainDB) RetrieveAddressIDsByOutpoint(txHash string,
 // list. The search results are in reverse temporal order.
 // TODO: Does this really need all the prev vout extra data?
 func (pgb *ChainDBRPC) InsightGetAddressTransactions(addr string, count,
-	skip int) []*pfcjson.SearchRawTransactionsResult {
-	address, err := pfcutil.DecodeAddress(addr)
+	skip int) []*dcrjson.SearchRawTransactionsResult {
+	address, err := dcrutil.DecodeAddress(addr)
 	if err != nil {
 		log.Infof("Invalid address %s: %v", addr, err)
 		return nil
@@ -112,9 +112,9 @@ func (pgb *ChainDBRPC) GetTransactionHex(txid string) string {
 	return txraw.Hex
 }
 
-// GetBlockVerboseByHash returns a *pfcjson.GetBlockVerboseResult for the
+// GetBlockVerboseByHash returns a *dcrjson.GetBlockVerboseResult for the
 // specified block hash, optionally with transaction details.
-func (pgb *ChainDBRPC) GetBlockVerboseByHash(hash string, verboseTx bool) *pfcjson.GetBlockVerboseResult {
+func (pgb *ChainDBRPC) GetBlockVerboseByHash(hash string, verboseTx bool) *dcrjson.GetBlockVerboseResult {
 	return rpcutils.GetBlockVerboseByHash(pgb.Client, hash, verboseTx)
 }
 
@@ -126,7 +126,7 @@ func (pgb *ChainDBRPC) GetTransactionsForBlockByHash(hash string) *apitypes.Bloc
 	return makeBlockTransactions(blockVerbose)
 }
 
-func makeBlockTransactions(blockVerbose *pfcjson.GetBlockVerboseResult) *apitypes.BlockTransactions {
+func makeBlockTransactions(blockVerbose *dcrjson.GetBlockVerboseResult) *apitypes.BlockTransactions {
 	blockTransactions := new(apitypes.BlockTransactions)
 
 	blockTransactions.Tx = make([]string, len(blockVerbose.Tx))

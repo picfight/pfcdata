@@ -1,11 +1,11 @@
 # Command line app `rebuilddb2`
 
-The `rebuilddb2` app is used for maintenance of pfcdata's `pfcpg` database that
-uses PostgreSQL to store a nearly complete record of the PicFight blockchain data.
+The `rebuilddb2` app is used for maintenance of pfcdata's `dcrpg` database that
+uses PostgreSQL to store a nearly complete record of the Decred blockchain data.
 
 **IMPORTANT**: When performing a bulk data import (e.g. full chain scan from
 genesis block), be sure to configure PostgreSQL appropriately.  Please see
-[postgresql-tuning.conf](../../db/pfcpg/postgresql-tuning.conf) for tips.
+[postgresql-tuning.conf](../../db/dcrpg/postgresql-tuning.conf) for tips.
 
 ## Installation
 

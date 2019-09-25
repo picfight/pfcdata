@@ -6,7 +6,7 @@ package notification
 
 import (
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 
 	"github.com/picfight/pfcdata/v3/api/insight"
 	"github.com/picfight/pfcdata/v3/explorer"
@@ -38,12 +38,12 @@ var NtfnChans struct {
 	ReorgChanWiredDB                  chan *txhelpers.ReorgData
 	ConnectChanStakeDB                chan *chainhash.Hash
 	ReorgChanStakeDB                  chan *txhelpers.ReorgData
-	ConnectChanPfcpgDB                chan *chainhash.Hash
-	ReorgChanPfcpgDB                  chan *txhelpers.ReorgData
+	ConnectChanDcrpgDB                chan *chainhash.Hash
+	ReorgChanDcrpgDB                  chan *txhelpers.ReorgData
 	UpdateStatusNodeHeight            chan uint32
 	UpdateStatusDBHeight              chan uint32
 	SpendTxBlockChan, RecvTxBlockChan chan *txhelpers.BlockWatchedTx
-	RelevantTxMempoolChan             chan *pfcutil.Tx
+	RelevantTxMempoolChan             chan *dcrutil.Tx
 	NewTxChan                         chan *mempool.NewTx
 	ExpNewTxChan                      chan *explorer.NewMempoolTx
 	InsightNewTxChan                  chan *insight.NewTx
@@ -64,13 +64,13 @@ func MakeNtfnChans(monitorMempool, postgresEnabled bool) {
 	// Stake DB channel for connecting new blocks - BLOCKING!
 	NtfnChans.ConnectChanStakeDB = make(chan *chainhash.Hash)
 
-	NtfnChans.ConnectChanPfcpgDB = make(chan *chainhash.Hash, blockConnChanBuffer)
+	NtfnChans.ConnectChanDcrpgDB = make(chan *chainhash.Hash, blockConnChanBuffer)
 
 	// Reorg data channels
 	NtfnChans.ReorgChanBlockData = make(chan *txhelpers.ReorgData)
 	NtfnChans.ReorgChanWiredDB = make(chan *txhelpers.ReorgData)
 	NtfnChans.ReorgChanStakeDB = make(chan *txhelpers.ReorgData)
-	NtfnChans.ReorgChanPfcpgDB = make(chan *txhelpers.ReorgData)
+	NtfnChans.ReorgChanDcrpgDB = make(chan *txhelpers.ReorgData)
 
 	// To update app status
 	NtfnChans.UpdateStatusNodeHeight = make(chan uint32, blockConnChanBuffer)
@@ -81,7 +81,7 @@ func MakeNtfnChans(monitorMempool, postgresEnabled bool) {
 	// // recv/SpendTxBlockChan come with connected blocks
 	// 	NtfnChans.RecvTxBlockChan = make(chan *txhelpers.BlockWatchedTx, blockConnChanBuffer)
 	// 	NtfnChans.SpendTxBlockChan = make(chan *txhelpers.BlockWatchedTx, blockConnChanBuffer)
-	// 	NtfnChans.RelevantTxMempoolChan = make(chan *pfcutil.Tx, relevantMempoolTxChanBuffer)
+	// 	NtfnChans.RelevantTxMempoolChan = make(chan *dcrutil.Tx, relevantMempoolTxChanBuffer)
 	// }
 
 	if monitorMempool {
@@ -107,8 +107,8 @@ func CloseNtfnChans() {
 	if NtfnChans.ConnectChanStakeDB != nil {
 		close(NtfnChans.ConnectChanStakeDB)
 	}
-	if NtfnChans.ConnectChanPfcpgDB != nil {
-		close(NtfnChans.ConnectChanPfcpgDB)
+	if NtfnChans.ConnectChanDcrpgDB != nil {
+		close(NtfnChans.ConnectChanDcrpgDB)
 	}
 
 	if NtfnChans.ReorgChanBlockData != nil {
@@ -120,8 +120,8 @@ func CloseNtfnChans() {
 	if NtfnChans.ReorgChanStakeDB != nil {
 		close(NtfnChans.ReorgChanStakeDB)
 	}
-	if NtfnChans.ReorgChanPfcpgDB != nil {
-		close(NtfnChans.ReorgChanPfcpgDB)
+	if NtfnChans.ReorgChanDcrpgDB != nil {
+		close(NtfnChans.ReorgChanDcrpgDB)
 	}
 
 	if NtfnChans.UpdateStatusNodeHeight != nil {

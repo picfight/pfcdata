@@ -18,8 +18,8 @@ import (
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcjson"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrjson"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/rpcclient"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
@@ -137,7 +137,7 @@ func (p *mempoolMonitor) TxHandler(client *rpcclient.Client) {
 			// See if the transaction is a ticket purchase.  If not, just
 			// make a note of it and go back to the loop.
 			txType := stake.DetermineTxType(tx.MsgTx())
-			//s.Tree() == pfcutil.TxTreeRegular
+			//s.Tree() == dcrutil.TxTreeRegular
 			// See pfcd/blockchain/stake/staketx.go for information about
 			// specifications for different transaction types.
 
@@ -150,7 +150,7 @@ func (p *mempoolMonitor) TxHandler(client *rpcclient.Client) {
 				// Ticket purchase
 				price := tx.MsgTx().TxOut[0].Value
 				log.Tracef("Received ticket purchase %v, price %v",
-					tx.Hash(), pfcutil.Amount(price).ToCoin())
+					tx.Hash(), dcrutil.Amount(price).ToCoin())
 				// txHeight = tx.MsgTx().TxIn[0].BlockHeight // uh, no
 			case stake.TxTypeSSGen:
 				// Vote
@@ -286,7 +286,7 @@ type MempoolData struct {
 	NumTickets        uint32
 	NumVotes          uint32
 	NewTickets        uint32
-	Ticketfees        *pfcjson.TicketFeeInfoResult
+	Ticketfees        *dcrjson.TicketFeeInfoResult
 	MinableFees       *MinableFeeInfo
 	AllTicketsDetails TicketsDetails
 }
@@ -333,12 +333,12 @@ func (t *mempoolDataCollector) Collect() (*MempoolData, error) {
 
 	// Get a map of ticket hashes to getrawmempool results
 	// mempoolTickets[ticketHashes[0].String()].Fee
-	mempoolTickets, err := c.GetRawMempoolVerbose(pfcjson.GRMTickets)
+	mempoolTickets, err := c.GetRawMempoolVerbose(dcrjson.GRMTickets)
 	if err != nil {
 		return nil, err
 	}
 
-	mempoolVotes, err := c.GetRawMempoolVerbose(pfcjson.GRMVotes)
+	mempoolVotes, err := c.GetRawMempoolVerbose(dcrjson.GRMVotes)
 	if err != nil {
 		return nil, err
 	}

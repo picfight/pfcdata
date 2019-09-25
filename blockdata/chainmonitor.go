@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/picfight/pfcd/chaincfg/chainhash"
-	"github.com/picfight/pfcd/pfcutil"
+	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/txhelpers"
 )
@@ -72,7 +72,7 @@ func (p *chainMonitor) collect(hash *chainhash.Hash) (*wire.MsgBlock, *BlockData
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get block %v: %v", hash, err)
 	}
-	block := pfcutil.NewBlock(msgBlock)
+	block := dcrutil.NewBlock(msgBlock)
 	height := block.Height()
 	log.Infof("Block height %v connected. Collecting data...", height)
 

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/dcrjson"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 )
 
@@ -17,7 +17,7 @@ type MempoolDataCache struct {
 	height                  uint32
 	timestamp               time.Time
 	numTickets              uint32
-	ticketFeeInfo           pfcjson.FeeInfoMempool
+	ticketFeeInfo           dcrjson.FeeInfoMempool
 	allFees                 []float64
 	allFeeRates             []float64
 	lowestMineableByFeeRate float64
@@ -54,7 +54,7 @@ func (c *MempoolDataCache) GetNumTickets() (uint32, uint32) {
 }
 
 // GetFeeInfo returns the mempool height and basic fee info
-func (c *MempoolDataCache) GetFeeInfo() (uint32, pfcjson.FeeInfoMempool) {
+func (c *MempoolDataCache) GetFeeInfo() (uint32, dcrjson.FeeInfoMempool) {
 	c.RLock()
 	defer c.RUnlock()
 	return c.height, c.ticketFeeInfo

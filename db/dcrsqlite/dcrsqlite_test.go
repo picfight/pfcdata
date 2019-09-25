@@ -1,4 +1,4 @@
-package pfcsqlite
+package dcrsqlite
 
 /*
 This file contains package-related test-setup utils

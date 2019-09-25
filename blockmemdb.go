@@ -8,7 +8,7 @@ package main
 import (
 	"sync"
 
-	"github.com/picfight/pfcd/pfcjson"
+	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/blockdata"
@@ -74,7 +74,7 @@ func (s *BlockDataToMemdb) Get(idx int) *blockdata.BlockData {
 }
 
 // GetHeader returns the block header for block idx
-func (s *BlockDataToMemdb) GetHeader(idx int) *pfcjson.GetBlockHeaderVerboseResult {
+func (s *BlockDataToMemdb) GetHeader(idx int) *dcrjson.GetBlockHeaderVerboseResult {
 	if idx < 0 {
 		return nil
 	}
@@ -90,7 +90,7 @@ func (s *BlockDataToMemdb) GetHeader(idx int) *pfcjson.GetBlockHeaderVerboseResu
 }
 
 // GetFeeInfo returns the fee info for block idx
-func (s *BlockDataToMemdb) GetFeeInfo(idx int) *pfcjson.FeeInfoBlock {
+func (s *BlockDataToMemdb) GetFeeInfo(idx int) *dcrjson.FeeInfoBlock {
 	if idx < 0 {
 		return nil
 	}
@@ -106,7 +106,7 @@ func (s *BlockDataToMemdb) GetFeeInfo(idx int) *pfcjson.FeeInfoBlock {
 }
 
 // GetStakeDiffEstimate returns the stake difficulty estimates for block idx
-func (s *BlockDataToMemdb) GetStakeDiffEstimate(idx int) *pfcjson.EstimateStakeDiffResult {
+func (s *BlockDataToMemdb) GetStakeDiffEstimate(idx int) *dcrjson.EstimateStakeDiffResult {
 	if idx < 0 {
 		return nil
 	}
