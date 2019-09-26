@@ -26,7 +26,7 @@ require (
 	github.com/googollee/go-engine.io v0.0.0-20180611083002-3c3145340e67 // indirect
 	github.com/googollee/go-socket.io v0.0.0-20180611075005-f12da5711bc6
 	github.com/gopherjs/gopherjs v0.0.0-20180820052304-89baedc74dd7 // indirect
-	github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec
+	github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a
 	github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4
 	github.com/jrick/logrotate v1.0.0
 	github.com/jtolds/gls v4.2.1+incompatible // indirect
@@ -39,8 +39,8 @@ require (
 	github.com/oleiade/lane v1.0.0
 	github.com/onsi/gomega v1.4.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
-	github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93
-	github.com/picfight/pfcwallet v0.0.0-20190926200025-5ce90016cca8
+	github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf
+	github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/cors v1.5.0

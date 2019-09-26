@@ -163,6 +163,8 @@ github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJS
 github.com/jfixby/coinharness v0.0.0-20190926185122-3ff6bc845c84/go.mod h1:d/brli3srPhkdmg/3B9ZnaxEj6SgbZbGj27eapvPwOY=
 github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec h1:fpdGnFn+itGFvEhbm+H+u8WuKTFco2eePz8HGws+IHc=
 github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec/go.mod h1:xSXEkW0zBqOCyL49Pn5m2jMtjx+rjlB/EuPCJeP9g5Q=
+github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a h1:LIrKPA4Rmu4jiqnqjEB43hMUwjMADinQKoNfMRcTuys=
+github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a/go.mod h1:xSXEkW0zBqOCyL49Pn5m2jMtjx+rjlB/EuPCJeP9g5Q=
 github.com/jfixby/difficulty v1.0.0 h1:lvI8yfV7Mz09HvD70fB/PICgHjcbFa6HrA2ER8X1CNg=
 github.com/jfixby/difficulty v1.0.0/go.mod h1:eKUkJx0XjkDwjU7lA22IfU30feJcoObdPJ7rF46turk=
 github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4 h1:D7GpxLTy82tCGW56r/88JMHEC/d7VtHl/Q2jJ9awZKc=
@@ -202,9 +204,13 @@ github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaR
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93 h1:D6m0WGpkw7GdqVcldqIH6UTQdxrOeqSPDo0oHTYB+YI=
 github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93/go.mod h1:OcCDn81Sb0/nY+v/BF+ptN+QtKjNlVCRacseShkVgHk=
+github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf h1:O0fIMZxVdr32CbOxvHOzKe+kGGjL5mHMV2QHs5892Nw=
+github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf/go.mod h1:FDtoUcgfFVnYvJup5I35jK9RzDBBWszPXaFM18WW9AU=
 github.com/picfight/pfcharness v0.0.0-20190926171930-b728f233fcf8/go.mod h1:VsrBjNe0JhSWQw4W8hgvrGZgEAiwW1bRzi5KVGIfIXU=
 github.com/picfight/pfcwallet v0.0.0-20190926200025-5ce90016cca8 h1:0adAHSnnSpu31EFHXnO34Qo13CJ1Sciy8+NQW59Ugs8=
 github.com/picfight/pfcwallet v0.0.0-20190926200025-5ce90016cca8/go.mod h1:4jX4z+lioM4WCpkzrvZcN0kxQole9ffRhEmsvFOlVSQ=
+github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8 h1:fWj2NwnYV0i6CmE6Xhb+jlSdwpkfWXNUz+3XKq71ius=
+github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8/go.mod h1:VxSWKORpFA/6TwM1M5+xX3tIttU/iRwYZRQkhiY/HZI=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
@@ -229,6 +235,7 @@ golang.org/x/crypto v0.0.0-20180718160520-a2144134853f/go.mod h1:6SG95UA2DQfeDnf
 golang.org/x/crypto v0.0.0-20180808211826-de0752318171/go.mod h1:6SG95UA2DQfeDnfUPMdvaQW0Q7yPrPDi9nlGo2tz2b4=
 golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b h1:2b9XGzhjiYsYPnKXoEfL7klWZQIt8IfyRCz62gCqqlQ=
 golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b/go.mod h1:6SG95UA2DQfeDnfUPMdvaQW0Q7yPrPDi9nlGo2tz2b4=
+golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2 h1:VklqNMn3ovrHsnt90PveolxSbWFaJdECFbxSq0Mqo2M=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411 h1:kuW9k4QvBJpRjC3rxEytsfIYPs8oGY3Jw7iR36h0FIY=
 golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
@@ -252,6 +259,7 @@ golang.org/x/sys v0.0.0-20180810070207-f0d5e33068cb/go.mod h1:STP8DvDyc/dI5b8T5h
 golang.org/x/sys v0.0.0-20180909124046-d0be0721c37e/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20180926141714-2f1df4e56cde h1:o2dBNOxRuCoMNrNLR1fdvmvzjjNfp4jUJhBya+a2JAk=
 golang.org/x/sys v0.0.0-20180926141714-2f1df4e56cde/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a h1:1BGLXjeY4akVXGgbC9HugT3Jv3hCI0z56oJR5vAMgBU=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d h1:+R4KGOnez64A81RvjARKc4UT5/tI9ujCIVX+P5KiHuI=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
