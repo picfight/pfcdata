@@ -32,12 +32,16 @@ func nameGenerator(data string) string {
 }
 
 func fileGenerator(data string) string {
-	data = coinknife.Replace(data, "decred/dcrd", "picfight/pfcd")
-	data = coinknife.Replace(data, "decred/dcrwallet", "picfight/pfcwallet")
+
 	data = coinknife.Replace(data, "decred/dcrdata", "picfight/pfcdata")
-	data = coinknife.Replace(data, "dcrd", "pfcd")
-	data = coinknife.Replace(data, "dcrwallet", "pfcwallet")
 	data = coinknife.Replace(data, "dcrdata", "pfcdata")
+
+	data = coinknife.Replace(data, "decred/dcrwallet", "picfight/pfcwallet")
+	data = coinknife.Replace(data, "dcrwallet", "pfcwallet")
+
+	data = coinknife.Replace(data, "decred/dcrd", "picfight/pfcd")
+	data = coinknife.Replace(data, "dcrd", "pfcd")
+
 	//data = coinknife.Replace(data, "DcrdataVersion", "PfcdataVersion")
 	//data = coinknife.Replace(data, "DCR", "PFC")
 	//data = coinknife.Replace(data, "unit of Decred", "unit of Picfight coin")
