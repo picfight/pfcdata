@@ -105,8 +105,8 @@
         document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
     }
 
-    var PFCThings = {}
-    PFCThings.ticketPoolSize = {{$.ChainParams.TicketPoolSize}}
+    var DCRThings = {}
+    DCRThings.ticketPoolSize = {{$.ChainParams.TicketPoolSize}}
 
     var sunIcon = document.getElementById("sun-icon")
     var darkBGCookieName = 'pfcdataDarkBG';
@@ -442,12 +442,12 @@
         }
         else{
             var blocksLeft = complete+1-confirmations;
-            var remainingTime = blocksLeft*PFCThings.targetBlockTime
+            var remainingTime = blocksLeft*DCRThings.targetBlockTime
             if(txType == "LiveTicket"){
                 ticketProgress.children("span").html("block "+confirmations+" of "+complete+" ("+(remainingTime/86400.).toFixed(1)+" days remaining)");
                 // Chance of expiring is (1-P)^N where P := single-block probability of being picked, N := blocks remaining.
                 // This probability is using the network parameter rather than the calculated value. So far, the ticket pool size seems stable enough to do that.
-                var pctChance = Math.pow(1 - 1/PFCThings.ticketPoolSize, blocksLeft)*100;
+                var pctChance = Math.pow(1 - 1/DCRThings.ticketPoolSize, blocksLeft)*100;
                 $("#ticketExpiryChance").children("span").html(pctChance.toFixed(2)+"% chance of expiry");
             }
             else{

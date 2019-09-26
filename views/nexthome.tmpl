@@ -23,7 +23,7 @@
                             <span id="coin-supply">
                                 {{template "decimalParts" (float64AsDecimalParts (toFloat64Amount .CoinSupply) 0 true)}}
                             </span>
-                            <span class="pl-1 unit lh15rem">PFC</span>
+                            <span class="pl-1 unit lh15rem">DCR</span>
                         </div>
                     </div>
                     <div class="col-sm-4">
@@ -32,7 +32,7 @@
                             <span id="bsubsidy-dev">
                                 {{template "decimalParts" (float64AsDecimalParts (toFloat64Amount .NBlockSubsidy.Dev) 8 true 2)}}
                             </span>
-                            <span class="pl-1 unit lh15rem"> PFC</span>
+                            <span class="pl-1 unit lh15rem"> DCR</span>
                         </div>
                     </div>
                     {{if .DevFund}}
@@ -42,7 +42,7 @@
                             <span id="dev-fund">
                                 {{template "decimalParts" (float64AsDecimalParts (toFloat64Amount .DevFund) 0 true)}}
                             </span>
-                            <span class="pl-1 unit lh15rem"> PFC</span>
+                            <span class="pl-1 unit lh15rem"> DCR</span>
                         </div>
                     </div>
                     {{end}}
@@ -54,12 +54,12 @@
                         <span><img class="img-size" src="/images/staking.svg" alt="staking"><p class="statcard-title">Staking</p></span>
                     </div>
                     <div class="col-sm-4">
-                        <div class="heading">Total Locked PFC</div>
+                        <div class="heading">Total Locked DCR</div>
                         <div class="data mono lh1rem fs14-decimal count fs24 p03rem0">
                             <span id="pool-value">
                                 {{template "decimalParts" (float64AsDecimalParts .PoolInfo.Value 0 true)}}
                             </span>
-                            <span class="pl-1 unit lh15rem">PFC</span>
+                            <span class="pl-1 unit lh15rem">DCR</span>
                         </div>
                         <div class="subdata">
                             <span class="count" id="pool-info-percentage">({{printf "%.2f" .PoolInfo.Percentage}} % of total supply)</span>
@@ -71,7 +71,7 @@
                             <span id="bsubsidy-pos">
                                 {{template "decimalParts" (float64AsDecimalParts (toFloat64Amount (divide .NBlockSubsidy.PoS 5)) 8 true 2)}}
                             </span>
-                            <span class="pl-1 unit lh15rem" style="font-size:13px;">PFC/vote</span>
+                            <span class="pl-1 unit lh15rem" style="font-size:13px;">DCR/vote</span>
                         </div>
                         <div class="subdata">
                             <span id="ticket-reward" class="count">({{template "fmtPercentage" .TicketReward}} per ~{{.RewardPeriod}})</span>
@@ -83,7 +83,7 @@
                         </div>
                         <div class="data mono lh1rem fs14-decimal count fs24 p03rem0">
                             <span id="ticket-price">{{template "decimalParts" (float64AsDecimalParts .StakeDiff 8 false 2)}}</span>
-                            <span class="pl-1 unit lh15rem">PFC</span>
+                            <span class="pl-1 unit lh15rem">DCR</span>
                         </div>
                     </div>
                 </div>
@@ -106,7 +106,7 @@
                         <div class="heading">PoW Reward</div>
                         <div class="data mono lh1rem fs14-decimal count fs24 p03rem0">
                             <span id="bsubsidy-pow">{{template "decimalParts" (float64AsDecimalParts (toFloat64Amount .NBlockSubsidy.PoW) 8 true 2)}}</span>
-                            <span class="pl-1 unit lh15rem">PFC</span>
+                            <span class="pl-1 unit lh15rem">DCR</span>
                         </div>
                     </div>
                     <div class="col-sm-4">
@@ -134,7 +134,7 @@
                         <a class="color-code" href="/mempool">Mempool</a>
                         <div class="mono amount" style="line-height: 1;">
                                 <span>{{template "decimalParts" (float64AsDecimalParts .Total 0 false)}}</span>
-                            <span class="unit"> PFC</span>
+                            <span class="unit"> DCR</span>
                         </div>
                         <span class="timespan">
                             <span data-target="main.age" data-age="{{.Time}}"></span>&nbsp;ago
@@ -238,7 +238,7 @@
                         <a class="color-code" href="/block/{{.Height}}">{{.Height}}</a>
                         <div class="mono amount" style="line-height: 1;">
                             <span>{{template "decimalParts" (float64AsDecimalParts .Total 0 false)}}</span>
-                            <span class="unit"> PFC</span>
+                            <span class="unit"> DCR</span>
                         </div>
                         <span class="timespan">
                             <span data-target="main.age" data-age="{{.Time}}"></span>&nbsp;ago

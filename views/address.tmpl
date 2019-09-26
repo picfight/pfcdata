@@ -51,9 +51,9 @@
                         {{if .Fullmode}}
                             <td class="fs28 mono nowrap fs16-decimal d-flex align-items-center justify-content-end rm-spacing">
                                 {{if .Balance}}
-                                    {{template "decimalParts" (amountAsDecimalParts .Balance.TotalUnspent true)}}<span class="pl-1 unit">PFC</span>
+                                    {{template "decimalParts" (amountAsDecimalParts .Balance.TotalUnspent true)}}<span class="pl-1 unit">DCR</span>
                                 {{else}}
-                                <span class="pl-1 unit">0.000000000 PFC</span>
+                                <span class="pl-1 unit">0.000000000 DCR</span>
                                 {{end}}
                             </td>
                         {{else}}
@@ -70,9 +70,9 @@
                             <td class="mono nowrap text-right rm-spacing justify-content-end">
                                 {{if .Balance}}
                                     {{$received := add .Balance.TotalSpent .Balance.TotalUnspent}}
-                                    {{template "decimalParts" (amountAsDecimalParts $received true)}}<span class="pl-1 unit">PFC</span>
+                                    {{template "decimalParts" (amountAsDecimalParts $received true)}}<span class="pl-1 unit">DCR</span>
                                 {{else}}
-                                <span class="pl-1 unit">0.000000000 PFC</span>
+                                <span class="pl-1 unit">0.000000000 DCR</span>
                                 {{end}}
                             </td>
                         {{else}}
@@ -88,9 +88,9 @@
                         {{if .Fullmode}}
                             <td class="mono nowrap text-right rm-spacing justify-content-end">
                                 {{if .Balance}}
-                                    {{template "decimalParts" (amountAsDecimalParts .Balance.TotalSpent true)}}<span class="pl-1 unit">PFC</span>
+                                    {{template "decimalParts" (amountAsDecimalParts .Balance.TotalSpent true)}}<span class="pl-1 unit">DCR</span>
                                 {{else}}
-                                <span class="pl-1 unit">0.000000000 PFC</span>
+                                <span class="pl-1 unit">0.000000000 DCR</span>
                                 {{end}}
                             </td>
                         {{else}}
@@ -213,12 +213,12 @@
                             {{if eq $txType "merged_debit"}}
                                 <th># of Input(s)</th>
                             {{else}}
-                                <th class="text-right">Credit PFC</th>
+                                <th class="text-right">Credit DCR</th>
                             {{end}}
                             {{if eq $txType "merged_debit"}}
-                                <th class="text-center">Debit PFC</th>
+                                <th class="text-center">Debit DCR</th>
                             {{else}}
-                                <th>Debit PFC</th>
+                                <th>Debit DCR</th>
                             {{end}}
                             <th>Time UTC</th>
                             <th class="jsonly">Age</th>

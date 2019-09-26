@@ -247,7 +247,7 @@ type Status struct {
 	Height          uint32 `json:"node_height"`
 	NodeConnections int64  `json:"node_connections"`
 	APIVersion      int    `json:"api_version"`
-	PfcdataVersion  string `json:"pfcdata_version"`
+	DcrdataVersion  string `json:"pfcdata_version"`
 }
 
 // CoinSupply models the coin supply at a certain best block.
