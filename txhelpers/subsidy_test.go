@@ -7,7 +7,7 @@ import (
 )
 
 func TestBlockSubsidy(t *testing.T) {
-	totalSubsidy := UltimateSubsidy(&chaincfg.MainNetParams)
+	totalSubsidy := UltimateSubsidy(&chaincfg.PicFightCoinNetParams)
 
 	if totalSubsidy != 2099999999800912 {
 		t.Errorf("Bad total subsidy; want 2099999999800912, got %v", totalSubsidy)

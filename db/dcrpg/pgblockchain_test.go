@@ -25,7 +25,7 @@ func openDB() (func() error, error) {
 		DBName: "pfcdata",
 	}
 	var err error
-	db, err = NewChainDB(&dbi, &chaincfg.MainNetParams, nil, true)
+	db, err = NewChainDB(&dbi, &chaincfg.PicFightCoinNetParams, nil, true)
 	cleanUp := func() error { return nil }
 	if db != nil {
 		cleanUp = db.Close

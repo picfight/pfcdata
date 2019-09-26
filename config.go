@@ -33,8 +33,8 @@ const (
 	defaultLogDirname     = "logs"
 )
 
-var activeNet = &netparams.MainNetParams
-var activeChain = &chaincfg.MainNetParams
+var activeNet = &netparams.PicFightCoinNetParams
+var activeChain = &chaincfg.PicFightCoinNetParams
 
 var (
 	defaultHomeDir           = dcrutil.AppDataDir("pfcdata", false)
@@ -419,8 +419,8 @@ func loadConfig() (*config, error) {
 	// Choose the active network params based on the selected network. Multiple
 	// networks can't be selected simultaneously.
 	numNets := 0
-	activeNet = &netparams.MainNetParams
-	activeChain = &chaincfg.MainNetParams
+	activeNet = &netparams.PicFightCoinNetParams
+	activeChain = &chaincfg.PicFightCoinNetParams
 	if cfg.TestNet {
 		activeNet = &netparams.TestNet3Params
 		activeChain = &chaincfg.TestNet3Params

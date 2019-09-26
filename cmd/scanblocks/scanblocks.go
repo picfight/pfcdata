@@ -25,7 +25,7 @@ var cert = flag.String("cert", "pfcd.cert", "node RPC TLS certificate (when notl
 var notls = flag.Bool("notls", true, "Disable use of TLS for node connection")
 
 var (
-	activeNetParams = &chaincfg.MainNetParams
+	activeNetParams = &chaincfg.PicFightCoinNetParams
 
 	backendLog      *slog.Backend
 	rpcclientLogger slog.Logger

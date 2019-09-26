@@ -16,7 +16,7 @@ type networkRewardPeriod struct {
 
 var networkRewardPeriods = []networkRewardPeriod{
 	{
-		&chaincfg.MainNetParams,
+		&chaincfg.PicFightCoinNetParams,
 		7860,
 		8372,
 		2511600000000000,

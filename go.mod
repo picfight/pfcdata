@@ -12,20 +12,6 @@ require (
 	github.com/coreos/bbolt v1.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1
 	github.com/decred/base58 v1.0.0
-	github.com/picfight/pfcd/blockchain v1.0.2
-	github.com/picfight/pfcd/blockchain/stake v1.0.2
-	github.com/picfight/pfcd/chaincfg v1.1.1
-	github.com/picfight/pfcd/chaincfg/chainhash v1.0.1
-	github.com/picfight/pfcd/database v1.0.2
-	github.com/picfight/pfcd/dcrec v0.0.0-20180926135934-93133096234e // indirect
-	github.com/picfight/pfcd/dcrec/edwards v0.0.0-20180926135934-93133096234e // indirect
-	github.com/picfight/pfcd/dcrjson v1.0.0
-	github.com/picfight/pfcd/dcrutil v1.1.1
-	github.com/picfight/pfcd/gcs v1.0.2 // indirect
-	github.com/picfight/pfcd/rpcclient v1.0.2
-	github.com/picfight/pfcd/txscript v1.0.1
-	github.com/picfight/pfcd/wire v1.1.0
-	github.com/picfight/pfcwallet/wallet v1.0.0
 	github.com/decred/slog v1.0.0
 	github.com/dgraph-io/badger v1.5.3
 	github.com/dgryski/go-farm v0.0.0-20180109070241-2de33835d102 // indirect
@@ -40,7 +26,8 @@ require (
 	github.com/googollee/go-engine.io v0.0.0-20180611083002-3c3145340e67 // indirect
 	github.com/googollee/go-socket.io v0.0.0-20180611075005-f12da5711bc6
 	github.com/gopherjs/gopherjs v0.0.0-20180820052304-89baedc74dd7 // indirect
-	github.com/gorilla/websocket v1.4.0 // indirect
+	github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec
+	github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4
 	github.com/jrick/logrotate v1.0.0
 	github.com/jtolds/gls v4.2.1+incompatible // indirect
 	github.com/kardianos/osext v0.0.0-20170510131534-ae77be60afb1 // indirect
@@ -52,6 +39,8 @@ require (
 	github.com/oleiade/lane v1.0.0
 	github.com/onsi/gomega v1.4.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
+	github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93
+	github.com/picfight/pfcwallet v0.0.0-20190926200025-5ce90016cca8
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/cors v1.5.0
@@ -62,11 +51,8 @@ require (
 	github.com/stretchr/testify v1.2.2 // indirect
 	github.com/vmihailenco/msgpack v3.3.3+incompatible // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2 // indirect
-	golang.org/x/crypto v0.0.0-20180910181607-0e37d006457b // indirect
-	golang.org/x/net v0.0.0-20180925072008-f04abc6bdfa7
-	golang.org/x/sys v0.0.0-20180926141714-2f1df4e56cde // indirect
+	golang.org/x/net v0.0.0-20190926025831-c00fd9afed17
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
-	google.golang.org/appengine v1.1.0 // indirect
 	gopkg.in/airbrake/gobrake.v2 v2.0.9 // indirect
 	gopkg.in/gemnasium/logrus-airbrake-hook.v2 v2.1.2 // indirect
 )

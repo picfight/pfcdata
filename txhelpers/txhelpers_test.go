@@ -218,7 +218,7 @@ func TestFilterHashSlice(t *testing.T) {
 
 func TestGenesisTxHash(t *testing.T) {
 	// Mainnet
-	genesisTxHash := GenesisTxHash(&chaincfg.MainNetParams).String()
+	genesisTxHash := GenesisTxHash(&chaincfg.PicFightCoinNetParams).String()
 	if genesisTxHash == "" {
 		t.Errorf("Failed to get genesis transaction hash for mainnet.")
 	}
@@ -260,18 +260,18 @@ func TestIsZeroHashP2PHKAddress(t *testing.T) {
 	positiveTest := true
 	negativeTest := !positiveTest
 
-	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.MainNetParams, positiveTest)
+	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.PicFightCoinNetParams, positiveTest)
 	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.TestNet3Params, positiveTest)
 	testIsZeroHashP2PHKAddress(simnetDummy, &chaincfg.SimNetParams, positiveTest)
 
 	// wrong network
 	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.SimNetParams, negativeTest)
-	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.MainNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.PicFightCoinNetParams, negativeTest)
 	testIsZeroHashP2PHKAddress(simnetDummy, &chaincfg.TestNet3Params, negativeTest)
 
 	// wrong address
 	testIsZeroHashP2PHKAddress("", &chaincfg.SimNetParams, negativeTest)
-	testIsZeroHashP2PHKAddress("", &chaincfg.MainNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress("", &chaincfg.PicFightCoinNetParams, negativeTest)
 	testIsZeroHashP2PHKAddress("", &chaincfg.TestNet3Params, negativeTest)
 
 }

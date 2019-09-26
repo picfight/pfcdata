@@ -16,10 +16,17 @@ type Params struct {
 	GRPCServerPort    string
 }
 
-// MainNetParams contains parameters specific running pfcwallet and
-// pfcd on the main network (wire.MainNet).
-var MainNetParams = Params{
-	Params:            &chaincfg.MainNetParams,
+// DecredNetParams contains parameters specific running pfcwallet and
+// pfcd on the main network (wire.DecredWire).
+var DecredNetParams = Params{
+	Params:            &chaincfg.DecredNetParams,
+	JSONRPCClientPort: "9109",
+	JSONRPCServerPort: "9110",
+	GRPCServerPort:    "9111",
+}
+
+var PicFightCoinNetParams = Params{
+	Params:            &chaincfg.PicFightCoinNetParams,
 	JSONRPCClientPort: "9109",
 	JSONRPCServerPort: "9110",
 	GRPCServerPort:    "9111",
