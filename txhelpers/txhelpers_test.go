@@ -260,19 +260,20 @@ func TestIsZeroHashP2PHKAddress(t *testing.T) {
 	positiveTest := true
 	negativeTest := !positiveTest
 
-	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.PicFightCoinNetParams, positiveTest)
+	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.DecredNetParams, positiveTest)
 	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.TestNet3Params, positiveTest)
 	testIsZeroHashP2PHKAddress(simnetDummy, &chaincfg.SimNetParams, positiveTest)
 
 	// wrong network
-	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.SimNetParams, negativeTest)
-	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.PicFightCoinNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress(testnetDummy, &chaincfg.DecredNetParams, negativeTest)
 	testIsZeroHashP2PHKAddress(simnetDummy, &chaincfg.TestNet3Params, negativeTest)
+	testIsZeroHashP2PHKAddress(mainnetDummy, &chaincfg.SimNetParams, negativeTest)
 
 	// wrong address
-	testIsZeroHashP2PHKAddress("", &chaincfg.SimNetParams, negativeTest)
-	testIsZeroHashP2PHKAddress("", &chaincfg.PicFightCoinNetParams, negativeTest)
+	testIsZeroHashP2PHKAddress("", &chaincfg.DecredNetParams, negativeTest)
 	testIsZeroHashP2PHKAddress("", &chaincfg.TestNet3Params, negativeTest)
+	testIsZeroHashP2PHKAddress("", &chaincfg.SimNetParams, negativeTest)
+
 
 }
 
