@@ -16,13 +16,13 @@ import (
 
 	flags "github.com/btcsuite/go-flags"
 	"github.com/caarlos0/env"
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/netparams"
 	"github.com/picfight/pfcdata/v3/version"
-	"github.com/decred/slog"
 )
 
 const (
@@ -538,7 +538,7 @@ func netName(chainParams *netparams.Params) string {
 	// The following switch is to ensure this code is not built for testnet2, as
 	// TestNet2 was removed entirely for pfcd 1.3.0. Compile check!
 	switch chainParams.Net {
-	case wire.TestNet3, wire.MainNet, wire.SimNet:
+	case wire.TestNet3, wire.DecredWire, wire.SimNet, wire.PicfightCoinWire:
 	default:
 		log.Warnf("Unknown network: %s", chainParams.Name)
 	}
