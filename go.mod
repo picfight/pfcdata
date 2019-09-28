@@ -40,7 +40,7 @@ require (
 	github.com/onsi/gomega v1.4.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/picfight/pfcd v0.0.0-20190928101712-3acdc43cf9f8
-	github.com/picfight/pfcwallet v0.0.0-20190928121614-7b162c87a9f4
+	github.com/picfight/pfcwallet v0.0.0-20190928160916-929fe132c824
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/cors v1.5.0

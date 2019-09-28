@@ -13,6 +13,10 @@ import (
 // UltimateSubsidy computes the total subsidy over the entire subsidy
 // distribution period of the network.
 func UltimateSubsidy(params *chaincfg.Params) int64 {
+	if params.SubsidyCalculator != nil {
+		return params.SubsidyCalculator().ExpectedTotalNetworkSubsidy().AtomsValue
+	}
+
 	subsidyCache := blockchain.NewSubsidyCache(0, params)
 
 	totalSubsidy := params.BlockOneSubsidy()

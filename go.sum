@@ -221,6 +221,8 @@ github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8 h1:fWj2NwnYV0i6
 github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8/go.mod h1:VxSWKORpFA/6TwM1M5+xX3tIttU/iRwYZRQkhiY/HZI=
 github.com/picfight/pfcwallet v0.0.0-20190928121614-7b162c87a9f4 h1:OQnNzVe/pKjUMSeMf4+vxHKUL4GmhYEgP+1NlerixeA=
 github.com/picfight/pfcwallet v0.0.0-20190928121614-7b162c87a9f4/go.mod h1:Huas4SP+OKXsAtnObGW/XJUat9BvQEqHf4fxItLbztg=
+github.com/picfight/pfcwallet v0.0.0-20190928160916-929fe132c824 h1:+kWppMeCDGt7wWXENszre3pZZVPezb0V0M7FUjve4VM=
+github.com/picfight/pfcwallet v0.0.0-20190928160916-929fe132c824/go.mod h1:Huas4SP+OKXsAtnObGW/XJUat9BvQEqHf4fxItLbztg=
 github.com/picfight/picfightcoin v0.0.0-20190927230555-879c0ab253b3 h1:u53QpXlXKBek/P8K+ZDVncl6UfouPCoTwxdW50wrzqw=
 github.com/picfight/picfightcoin v0.0.0-20190927230555-879c0ab253b3/go.mod h1:0KR2uIib9lrq/4C30w23X9tWUZr4rLJn99g7o3vdfLU=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
