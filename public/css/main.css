@@ -116,7 +116,7 @@ body.theme-testnet #menuToggle .patty {
   background: #fff;
 }
 body.theme-testnet .pfcdata-logo {
-  background-image: url(/images/themes/night/logo.svg);
+  background-image: url(/images/themes/night/logo.png);
 }
 
 
@@ -229,7 +229,7 @@ body.darkBG .progress {
   color: black;
 }
 .darkBG .pfcdata-logo {
-  background-image: url(/images/themes/night/logo.svg);
+  background-image: url(/images/themes/night/logo.png);
 }
 
 .flash {
@@ -363,7 +363,7 @@ body.darkBG .progress {
 .pfcdata-logo {
   width: 110px;
   height: 24px;
-  background-image: url(/images/themes/light/logo.svg);
+  background-image: url(/images/themes/light/logo.png);
   background-repeat: no-repeat;
   display: block;
   background-size: cover;
