@@ -16,13 +16,13 @@ import (
 
 	flags "github.com/btcsuite/go-flags"
 	"github.com/caarlos0/env"
-	"github.com/decred/slog"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/netparams"
 	"github.com/picfight/pfcdata/v3/version"
+	"github.com/decred/slog"
 )
 
 const (
@@ -67,45 +67,45 @@ var (
 
 type config struct {
 	// General application behavior
-	HomeDir      string `short:"A" long:"appdata" description:"Path to application home directory" env:"DCRDATA_APPDATA_DIR"`
-	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file" env:"DCRDATA_CONFIG_FILE"`
-	DataDir      string `short:"b" long:"datadir" description:"Directory to store data" env:"DCRDATA_DATA_DIR"`
-	LogDir       string `long:"logdir" description:"Directory to log output." env:"DCRDATA_LOG_DIR"`
-	OutFolder    string `short:"f" long:"outfolder" description:"Folder for file outputs" env:"DCRDATA_OUT_FOLDER"`
+	HomeDir      string `short:"A" long:"appdata" description:"Path to application home directory" env:"PFCDATA_APPDATA_DIR"`
+	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file" env:"PFCDATA_CONFIG_FILE"`
+	DataDir      string `short:"b" long:"datadir" description:"Directory to store data" env:"PFCDATA_DATA_DIR"`
+	LogDir       string `long:"logdir" description:"Directory to log output." env:"PFCDATA_LOG_DIR"`
+	OutFolder    string `short:"f" long:"outfolder" description:"Folder for file outputs" env:"PFCDATA_OUT_FOLDER"`
 	ShowVersion  bool   `short:"V" long:"version" description:"Display version information and exit"`
-	TestNet      bool   `long:"testnet" description:"Use the test network (default mainnet)" env:"DCRDATA_USE_TESTNET"`
-	SimNet       bool   `long:"simnet" description:"Use the simulation test network (default mainnet)" env:"DCRDATA_USE_SIMNET"`
-	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}" env:"DCRDATA_LOG_LEVEL"`
-	Quiet        bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error" env:"DCRDATA_QUIET"`
-	HTTPProfile  bool   `long:"httpprof" short:"p" description:"Start HTTP profiler." env:"DCRDATA_ENABLE_HTTP_PROFILER"`
-	HTTPProfPath string `long:"httpprofprefix" description:"URL path prefix for the HTTP profiler." env:"DCRDATA_HTTP_PROFILER_PREFIX"`
-	CPUProfile   string `long:"cpuprofile" description:"File for CPU profiling." env:"DCRDATA_CPU_PROFILER_FILE"`
-	UseGops      bool   `short:"g" long:"gops" description:"Run with gops diagnostics agent listening. See github.com/google/gops for more information." env:"DCRDATA_USE_GOPS"`
+	TestNet      bool   `long:"testnet" description:"Use the test network (default mainnet)" env:"PFCDATA_USE_TESTNET"`
+	SimNet       bool   `long:"simnet" description:"Use the simulation test network (default mainnet)" env:"PFCDATA_USE_SIMNET"`
+	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}" env:"PFCDATA_LOG_LEVEL"`
+	Quiet        bool   `short:"q" long:"quiet" description:"Easy way to set debuglevel to error" env:"PFCDATA_QUIET"`
+	HTTPProfile  bool   `long:"httpprof" short:"p" description:"Start HTTP profiler." env:"PFCDATA_ENABLE_HTTP_PROFILER"`
+	HTTPProfPath string `long:"httpprofprefix" description:"URL path prefix for the HTTP profiler." env:"PFCDATA_HTTP_PROFILER_PREFIX"`
+	CPUProfile   string `long:"cpuprofile" description:"File for CPU profiling." env:"PFCDATA_CPU_PROFILER_FILE"`
+	UseGops      bool   `short:"g" long:"gops" description:"Run with gops diagnostics agent listening. See github.com/google/gops for more information." env:"PFCDATA_USE_GOPS"`
 
 	// API
-	APIProto           string `long:"apiproto" description:"Protocol for API (http or https)" env:"DCRDATA_ENABLE_HTTPS"`
-	APIListen          string `long:"apilisten" description:"Listen address for API" env:"DCRDATA_LISTEN_URL"`
+	APIProto           string `long:"apiproto" description:"Protocol for API (http or https)" env:"PFCDATA_ENABLE_HTTPS"`
+	APIListen          string `long:"apilisten" description:"Listen address for API" env:"PFCDATA_LISTEN_URL"`
 	IndentJSON         string `long:"indentjson" description:"String for JSON indentation (default is \"   \"), when indentation is requested via URL query."`
-	UseRealIP          bool   `long:"userealip" description:"Use the RealIP middleware from the pressly/chi/middleware package to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order." env:"DCRDATA_USE_REAL_IP"`
-	CacheControlMaxAge int    `long:"cachecontrol-maxage" description:"Set CacheControl in the HTTP response header to a value in seconds for clients to cache the response. This applies only to FileServer routes." env:"DCRDATA_MAX_CACHE_AGE"`
+	UseRealIP          bool   `long:"userealip" description:"Use the RealIP middleware from the pressly/chi/middleware package to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order." env:"PFCDATA_USE_REAL_IP"`
+	CacheControlMaxAge int    `long:"cachecontrol-maxage" description:"Set CacheControl in the HTTP response header to a value in seconds for clients to cache the response. This applies only to FileServer routes." env:"PFCDATA_MAX_CACHE_AGE"`
 
 	// Data I/O
-	MonitorMempool     bool   `short:"m" long:"mempool" description:"Monitor mempool for new transactions, and report ticketfee info when new tickets are added." env:"DCRDATA_ENABLE_MEMPOOL_MONITOR"`
-	MempoolMinInterval int    `long:"mp-min-interval" description:"The minimum time in seconds between mempool reports, regarless of number of new tickets seen." env:"DCRDATA_MEMPOOL_MIN_INTERVAL"`
-	MempoolMaxInterval int    `long:"mp-max-interval" description:"The maximum time in seconds between mempool reports (within a couple seconds), regarless of number of new tickets seen." env:"DCRDATA_MEMPOOL_MAX_INTERVAL"`
-	MPTriggerTickets   int    `long:"mp-ticket-trigger" description:"The number minimum number of new tickets that must be seen to trigger a new mempool report." env:"DCRDATA_MP_TRIGGER_TICKETS"`
-	DumpAllMPTix       bool   `long:"dumpallmptix" description:"Dump to file the fees of all the tickets in mempool." env:"DCRDATA_ENABLE_DUMP_ALL_MP_TIX"`
-	DBFileName         string `long:"dbfile" description:"SQLite DB file name (default is pfcdata.sqlt.db)." env:"DCRDATA_SQLITE_DB_FILE_NAME"`
-	AgendaDBFileName   string `long:"agendadbfile" description:"Agenda DB file name (default is agendas.db)." env:"DCRDATA_AGENDA_DB_FILE_NAME"`
+	MonitorMempool     bool   `short:"m" long:"mempool" description:"Monitor mempool for new transactions, and report ticketfee info when new tickets are added." env:"PFCDATA_ENABLE_MEMPOOL_MONITOR"`
+	MempoolMinInterval int    `long:"mp-min-interval" description:"The minimum time in seconds between mempool reports, regarless of number of new tickets seen." env:"PFCDATA_MEMPOOL_MIN_INTERVAL"`
+	MempoolMaxInterval int    `long:"mp-max-interval" description:"The maximum time in seconds between mempool reports (within a couple seconds), regarless of number of new tickets seen." env:"PFCDATA_MEMPOOL_MAX_INTERVAL"`
+	MPTriggerTickets   int    `long:"mp-ticket-trigger" description:"The number minimum number of new tickets that must be seen to trigger a new mempool report." env:"PFCDATA_MP_TRIGGER_TICKETS"`
+	DumpAllMPTix       bool   `long:"dumpallmptix" description:"Dump to file the fees of all the tickets in mempool." env:"PFCDATA_ENABLE_DUMP_ALL_MP_TIX"`
+	DBFileName         string `long:"dbfile" description:"SQLite DB file name (default is pfcdata.sqlt.db)." env:"PFCDATA_SQLITE_DB_FILE_NAME"`
+	AgendaDBFileName   string `long:"agendadbfile" description:"Agenda DB file name (default is agendas.db)." env:"PFCDATA_AGENDA_DB_FILE_NAME"`
 
-	FullMode         bool   `long:"pg" description:"Run in \"Full Mode\" mode,  enables postgresql support" env:"DCRDATA_ENABLE_FULL_MODE"`
-	PGDBName         string `long:"pgdbname" description:"PostgreSQL DB name." env:"DCRDATA_PG_DB_NAME"`
-	PGUser           string `long:"pguser" description:"PostgreSQL DB user." env:"DCRDATA_POSTGRES_USER"`
-	PGPass           string `long:"pgpass" description:"PostgreSQL DB password." env:"DCRDATA_POSTGRES_PASS"`
-	PGHost           string `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)." env:"DCRDATA_POSTGRES_HOST_URL"`
-	NoDevPrefetch    bool   `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected." env:"DCRDATA_DISABLE_DEV_PREFETCH"`
-	SyncAndQuit      bool   `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API." env:"DCRDATA_ENABLE_SYNC_N_QUIT"`
-	ImportSideChains bool   `long:"import-side-chains" description:"(experimental) Enable startup import of side chains retrieved from pfcd via getchaintips." env:"DCRDATA_IMPORT_SIDE_CHAINS"`
+	FullMode         bool   `long:"pg" description:"Run in \"Full Mode\" mode,  enables postgresql support" env:"PFCDATA_ENABLE_FULL_MODE"`
+	PGDBName         string `long:"pgdbname" description:"PostgreSQL DB name." env:"PFCDATA_PG_DB_NAME"`
+	PGUser           string `long:"pguser" description:"PostgreSQL DB user." env:"PFCDATA_POSTGRES_USER"`
+	PGPass           string `long:"pgpass" description:"PostgreSQL DB password." env:"PFCDATA_POSTGRES_PASS"`
+	PGHost           string `long:"pghost" description:"PostgreSQL server host:port or UNIX socket (e.g. /run/postgresql)." env:"PFCDATA_POSTGRES_HOST_URL"`
+	NoDevPrefetch    bool   `long:"no-dev-prefetch" description:"Disable automatic dev fund balance query on new blocks. When true, the query will still be run on demand, but not automatically after new blocks are connected." env:"PFCDATA_DISABLE_DEV_PREFETCH"`
+	SyncAndQuit      bool   `long:"sync-and-quit" description:"Sync to the best block and exit. Do not start the explorer or API." env:"PFCDATA_ENABLE_SYNC_N_QUIT"`
+	ImportSideChains bool   `long:"import-side-chains" description:"(experimental) Enable startup import of side chains retrieved from pfcd via getchaintips." env:"PFCDATA_IMPORT_SIDE_CHAINS"`
 
 	SyncStatusLimit int64 `long:"sync-status-limit" description:"Sets the number of blocks behind the current best height past which only the syncing status page can be served on the running web server. Value should be greater than 2 but less than 5000."`
 
@@ -117,11 +117,11 @@ type config struct {
 	// EmailSubject string `long:"emailsubj" description:"Email subject. (default \"pfcdataapi transaction notification\")"`
 
 	// RPC client options
-	DcrdUser         string `long:"pfcduser" description:"Daemon RPC user name" env:"DCRDATA_DCRD_USER"`
-	DcrdPass         string `long:"pfcdpass" description:"Daemon RPC password" env:"DCRDATA_DCRD_PASS"`
-	DcrdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)" env:"DCRDATA_DCRD_URL"`
-	DcrdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file" env:"DCRDATA_DCRD_CERT"`
-	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost" env:"DCRDATA_DCRD_DISABLE_TLS"`
+	DcrdUser         string `long:"pfcduser" description:"Daemon RPC user name" env:"PFCDATA_PFCD_USER"`
+	DcrdPass         string `long:"pfcdpass" description:"Daemon RPC password" env:"PFCDATA_PFCD_PASS"`
+	DcrdServ         string `long:"pfcdserv" description:"Hostname/IP and port of pfcd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:19556)" env:"PFCDATA_PFCD_URL"`
+	DcrdCert         string `long:"pfcdcert" description:"File containing the pfcd certificate file" env:"PFCDATA_PFCD_CERT"`
+	DisableDaemonTLS bool   `long:"nodaemontls" description:"Disable TLS for the daemon RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost" env:"PFCDATA_PFCD_DISABLE_TLS"`
 }
 
 var (

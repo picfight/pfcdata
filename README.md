@@ -193,7 +193,7 @@ variables may be set inside the container or on the [command
 line](https://docs.docker.com/engine/reference/run/#env-environment-variables).
 For example,
 
-`docker run -ti --entrypoint=/bin/bash -e DCRDATA_LISTEN_URL=0.0.0.0:2222 -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine`
+`docker run -ti --entrypoint=/bin/bash -e PFCDATA_LISTEN_URL=0.0.0.0:2222 -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine`
 
 ### Container Production Usage
 
@@ -203,7 +203,7 @@ of pfcdata. However, you can still use the images for testing.
 In addition to configuring pfcdata, it is also necessary to map the TCP port on
 which pfcdata listens for connections with the `-p` switch. For example,
 
-`docker run -ti -p 2222:2222 -e DCRDATA_LISTEN_URL=0.0.0.0:2222 --rm picfight/pfcdata:dev-alpine`
+`docker run -ti -p 2222:2222 -e PFCDATA_LISTEN_URL=0.0.0.0:2222 --rm picfight/pfcdata:dev-alpine`
 
 Please keep in mind these images have not been hardened so this is not
 recommended for production.
@@ -375,9 +375,9 @@ struct.
 Each setting uses the `env` struct field tag to specify the name of the
 environment variable.
 
-ie. `env:"DCRDATA_USE_TESTNET"`
+ie. `env:"PFCDATA_USE_TESTNET"`
 
-So when starting pfcdata you can now use with environment variables `DCRDATA_USE_TESTNET=true ./pfcdata`
+So when starting pfcdata you can now use with environment variables `PFCDATA_USE_TESTNET=true ./pfcdata`
 
 Config precedence:
 
@@ -393,43 +393,43 @@ List of variables that can be set:
 
 | Description                                                                                                              | Name                           |
 | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
-| Path to application home directory                                                                                       | DCRDATA_APPDATA_DIR            |
-| Path to configuration file                                                                                               | DCRDATA_CONFIG_FILE            |
-| Directory to store data                                                                                                  | DCRDATA_DATA_DIR               |
-| Directory to log output                                                                                                  | DCRDATA_LOG_DIR                |
-| Folder for file outputs                                                                                                  | DCRDATA_OUT_FOLDER             |
-| Use the test network (default mainnet)                                                                                   | DCRDATA_USE_TESTNET            |
-| Use the simulation test network (default mainnet)                                                                        | DCRDATA_USE_SIMNET             |
-| Logging level {trace, debug, info, warn, error, critical}                                                                | DCRDATA_LOG_LEVEL              |
-| Easy way to set debuglevel to error                                                                                      | DCRDATA_QUIET                  |
-| Start HTTP profiler.                                                                                                     | DCRDATA_ENABLE_HTTP_PROFILER   |
-| URL path prefix for the HTTP profiler.                                                                                   | DCRDATA_HTTP_PROFILER_PREFIX   |
-| File for CPU profiling.                                                                                                  | DCRDATA_CPU_PROFILER_FILE      |
-| Run with gops diagnostics agent listening. See github.com/google/gops for more information.                              | DCRDATA_USE_GOPS               |
-| Protocol for API (http or https)                                                                                         | DCRDATA_ENABLE_HTTPS           |
-| Listen address for API                                                                                                   | DCRDATA_LISTEN_URL             |
-| Use the RealIP to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order.                 | DCRDATA_USE_REAL_IP            |
-| Set CacheControl in the HTTP response header                                                                             | DCRDATA_MAX_CACHE_AGE          |
-| Monitor mempool for new transactions, and report ticket fee info when new tickets are added.                             | DCRDATA_ENABLE_MEMPOOL_MONITOR |
-| The minimum time in seconds between mempool reports, regardless of number of new tickets seen.                           | DCRDATA_MEMPOOL_MIN_INTERVAL   |
-| The maximum time in seconds between mempool reports (within a couple seconds), regardless of number of new tickets seen. | DCRDATA_MEMPOOL_MAX_INTERVAL   |
-| The number minimum number of new tickets that must be seen to trigger a new mempool report.                              | DCRDATA_MP_TRIGGER_TICKETS     |
-| Dump to file the fees of all the tickets in mempool.                                                                     | DCRDATA_ENABLE_DUMP_ALL_MP_TIX |
-| SQLite DB file name (default is pfcdata.sqlt.db)                                                                         | DCRDATA_SQLITE_DB_FILE_NAME    |
-| Voting agendas DB file name (default is agendas.db)                                                                      | DCRDATA_AGENDA_DB_FILE_NAME    |
-| Run in "Full Mode" mode, enables postgresql support                                                                      | DCRDATA_ENABLE_FULL_MODE       |
-| PostgreSQL DB name.                                                                                                      | DCRDATA_PG_DB_NAME             |
-| PostgreSQL DB user                                                                                                       | DCRDATA_POSTGRES_USER          |
-| PostgreSQL DB password.                                                                                                  | DCRDATA_POSTGRES_PASS          |
-| port or UNIX socket (e.g. /run/postgresql).                                                                              | DCRDATA_POSTGRES_HOST_URL      |
-| Disable automatic dev fund balance query on new blocks.                                                                  | DCRDATA_DISABLE_DEV_PREFETCH   |
-| Sync to the best block and exit. Do not start the explorer or API.                                                       | DCRDATA_ENABLE_SYNC_N_QUIT     |
-| (experimental) Import side chain blocks from pfcd via the getchaintips RPC.                                              | DCRDATA_IMPORT_SIDE_CHAINS     |
-| Daemon RPC user name                                                                                                     | DCRDATA_DCRD_USER              |
-| Daemon RPC password                                                                                                      | DCRDATA_DCRD_PASS              |
-| Hostname/IP and port of pfcd RPC server                                                                                  | DCRDATA_DCRD_URL               |
-| File containing the pfcd certificate file                                                                                | DCRDATA_DCRD_CERT              |
-| Disable TLS for the daemon RPC client                                                                                    | DCRDATA_DCRD_DISABLE_TLS       |
+| Path to application home directory                                                                                       | PFCDATA_APPDATA_DIR            |
+| Path to configuration file                                                                                               | PFCDATA_CONFIG_FILE            |
+| Directory to store data                                                                                                  | PFCDATA_DATA_DIR               |
+| Directory to log output                                                                                                  | PFCDATA_LOG_DIR                |
+| Folder for file outputs                                                                                                  | PFCDATA_OUT_FOLDER             |
+| Use the test network (default mainnet)                                                                                   | PFCDATA_USE_TESTNET            |
+| Use the simulation test network (default mainnet)                                                                        | PFCDATA_USE_SIMNET             |
+| Logging level {trace, debug, info, warn, error, critical}                                                                | PFCDATA_LOG_LEVEL              |
+| Easy way to set debuglevel to error                                                                                      | PFCDATA_QUIET                  |
+| Start HTTP profiler.                                                                                                     | PFCDATA_ENABLE_HTTP_PROFILER   |
+| URL path prefix for the HTTP profiler.                                                                                   | PFCDATA_HTTP_PROFILER_PREFIX   |
+| File for CPU profiling.                                                                                                  | PFCDATA_CPU_PROFILER_FILE      |
+| Run with gops diagnostics agent listening. See github.com/google/gops for more information.                              | PFCDATA_USE_GOPS               |
+| Protocol for API (http or https)                                                                                         | PFCDATA_ENABLE_HTTPS           |
+| Listen address for API                                                                                                   | PFCDATA_LISTEN_URL             |
+| Use the RealIP to get the client's real IP from the X-Forwarded-For or X-Real-IP headers, in that order.                 | PFCDATA_USE_REAL_IP            |
+| Set CacheControl in the HTTP response header                                                                             | PFCDATA_MAX_CACHE_AGE          |
+| Monitor mempool for new transactions, and report ticket fee info when new tickets are added.                             | PFCDATA_ENABLE_MEMPOOL_MONITOR |
+| The minimum time in seconds between mempool reports, regardless of number of new tickets seen.                           | PFCDATA_MEMPOOL_MIN_INTERVAL   |
+| The maximum time in seconds between mempool reports (within a couple seconds), regardless of number of new tickets seen. | PFCDATA_MEMPOOL_MAX_INTERVAL   |
+| The number minimum number of new tickets that must be seen to trigger a new mempool report.                              | PFCDATA_MP_TRIGGER_TICKETS     |
+| Dump to file the fees of all the tickets in mempool.                                                                     | PFCDATA_ENABLE_DUMP_ALL_MP_TIX |
+| SQLite DB file name (default is pfcdata.sqlt.db)                                                                         | PFCDATA_SQLITE_DB_FILE_NAME    |
+| Voting agendas DB file name (default is agendas.db)                                                                      | PFCDATA_AGENDA_DB_FILE_NAME    |
+| Run in "Full Mode" mode, enables postgresql support                                                                      | PFCDATA_ENABLE_FULL_MODE       |
+| PostgreSQL DB name.                                                                                                      | PFCDATA_PG_DB_NAME             |
+| PostgreSQL DB user                                                                                                       | PFCDATA_POSTGRES_USER          |
+| PostgreSQL DB password.                                                                                                  | PFCDATA_POSTGRES_PASS          |
+| port or UNIX socket (e.g. /run/postgresql).                                                                              | PFCDATA_POSTGRES_HOST_URL      |
+| Disable automatic dev fund balance query on new blocks.                                                                  | PFCDATA_DISABLE_DEV_PREFETCH   |
+| Sync to the best block and exit. Do not start the explorer or API.                                                       | PFCDATA_ENABLE_SYNC_N_QUIT     |
+| (experimental) Import side chain blocks from pfcd via the getchaintips RPC.                                              | PFCDATA_IMPORT_SIDE_CHAINS     |
+| Daemon RPC user name                                                                                                     | PFCDATA_PFCD_USER              |
+| Daemon RPC password                                                                                                      | PFCDATA_PFCD_PASS              |
+| Hostname/IP and port of pfcd RPC server                                                                                  | PFCDATA_PFCD_URL               |
+| File containing the pfcd certificate file                                                                                | PFCDATA_PFCD_CERT              |
+| Disable TLS for the daemon RPC client                                                                                    | PFCDATA_PFCD_DISABLE_TLS       |
 
 ### Indexing the Blockchain
 

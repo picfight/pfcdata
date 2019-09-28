@@ -13,10 +13,10 @@ func TestTestNet3Name(t *testing.T) {
 	}
 }
 
-func TestMainNetName(t *testing.T) {
+func TestPicfightcoinNetName(t *testing.T) {
 	netName := netName(&chaincfg.PicFightCoinNetParams)
-	if netName != "Picfightcoin" {
-		t.Errorf(`Net name not "Picfightcoin": %s`, netName)
+	if netName != "PicFight Coin" {
+		t.Errorf(`Net name not "PicFight Coin": %s`, netName)
 	}
 }
 

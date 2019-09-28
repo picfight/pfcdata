@@ -1283,7 +1283,7 @@ func scanAddressQueryRows(rows *sql.Rows) (ids []uint64, addressRows []*dbtypes.
 
 // RetrieveAddressIDsByOutpoint fetches all address row IDs for a given outpoint
 // (hash:index).
-// Update Vin due to DCRD AMOUNTIN - START - DO NOT MERGE CHANGES IF DCRD FIXED
+// Update Vin due to PFCD AMOUNTIN - START - DO NOT MERGE CHANGES IF PFCD FIXED
 func RetrieveAddressIDsByOutpoint(db *sql.DB, txHash string,
 	voutIndex uint32) ([]uint64, []string, int64, error) {
 	var ids []uint64
@@ -1308,7 +1308,7 @@ func RetrieveAddressIDsByOutpoint(db *sql.DB, txHash string,
 		addresses = append(addresses, addr)
 	}
 	return ids, addresses, value, err
-} // Update Vin due to DCRD AMOUNTIN - END
+} // Update Vin due to PFCD AMOUNTIN - END
 
 // retrieveOldestTxBlockTime helps choose the most appropriate address page
 // graph grouping to load by default depending on when the first transaction to

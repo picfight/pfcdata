@@ -557,7 +557,7 @@ Methods that work with addresses.
 
 **URL:**  ```GET /addr/{address}/balance```
 
-**Description:** Retrieves address balance in atoms (the smallest unit of Decred; 1 DCR = 100,000,000 atoms).
+**Description:** Retrieves address balance in atoms (the smallest unit of Picfight coin; 1 PFC = 100,000,000 atoms).
 
 **Parameters:**
 
@@ -581,7 +581,7 @@ Methods that work with addresses.
 
 **URL:**  ```GET /addr/{address}/totalSent```
 
-**Description:** Retrieves total amount sent from an address in atoms (the smallest unit of Decred; 1 DCR = 100,000,000 atoms)
+**Description:** Retrieves total amount sent from an address in atoms (the smallest unit of Picfight coin; 1 PFC = 100,000,000 atoms)
 
 **Parameters:**
 

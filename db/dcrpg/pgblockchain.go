@@ -1144,7 +1144,7 @@ func (pgb *ChainDB) AddressHistory(address string, N, offset int64,
 		}
 	}
 
-	log.Infof("%s: %d spent totalling %f DCR, %d unspent totalling %f DCR",
+	log.Infof("%s: %d spent totalling %f PFC, %d unspent totalling %f PFC",
 		address, balanceInfo.NumSpent, dcrutil.Amount(balanceInfo.TotalSpent).ToCoin(),
 		balanceInfo.NumUnspent, dcrutil.Amount(balanceInfo.TotalUnspent).ToCoin())
 	log.Infof("Caching address receive count for address %s: "+

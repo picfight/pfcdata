@@ -126,7 +126,7 @@ function barchartPlotter(e) {
             labels: ["Date", "Mempool Tickets", "Immature Tickets", "Live Tickets", "Ticket Value"],
             colors: ['#FF8C00', '#006600', '#2971FF', '#ff0090'],
             title: 'Tickets Purchase Distribution',
-            y2label: 'A.v.g. Tickets Value (DCR)',
+            y2label: 'A.v.g. Tickets Value (PFC)',
             dateWindow: getWindow("day"),
             series: {
                 "Ticket Value": {
@@ -149,7 +149,7 @@ function barchartPlotter(e) {
                 colors: ['#FF8C00', '#006600', '#2971FF'],
                 title: 'Ticket Price Distribution',
                 labelsKMB: true,
-                xlabel: 'Ticket Price (DCR)',
+                xlabel: 'Ticket Price (PFC)',
         }
         return new Dygraph(
             document.getElementById("tickets_by_purchase_price"),

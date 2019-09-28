@@ -361,7 +361,7 @@ type HomeInfo struct {
 	NBlockSubsidy         BlockSubsidy   `json:"subsidy"`
 	Params                ChainParams    `json:"params"`
 	PoolInfo              TicketPoolInfo `json:"pool_info"`
-	TotalLockedDCR        float64        `json:"total_locked_dcr"`
+	TotalLockedPFC        float64        `json:"total_locked_dcr"`
 	HashRate              float64        `json:"hash_rate"`
 	// HashRateChange defines the hashrate change in 24hrs
 	HashRateChange float64 `json:"hash_rate_change"`

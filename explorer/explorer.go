@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcd/dcrutil"
@@ -27,6 +25,8 @@ import (
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/rs/cors"
 )
 
@@ -465,7 +465,7 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 	difficulty := blockData.Header.Difficulty
 	hashrate := dbtypes.CalculateHashRate(difficulty, targetTimePerBlock)
 
-	// If BlockData contains non-nil PoolInfo, compute actual percentage of DCR
+	// If BlockData contains non-nil PoolInfo, compute actual percentage of PFC
 	// supply staked.
 	stakePerc := 45.0
 	if blockData.PoolInfo != nil {
@@ -609,10 +609,10 @@ func (exp *explorerUI) addRoutes() {
 }
 
 // Simulate ticket purchase and re-investment over a full year for a given
-// starting amount of DCR and calculation parameters.  Generate a TEXT table of
+// starting amount of PFC and calculation parameters.  Generate a TEXT table of
 // the simulation results that can optionally be used for future expansion of
 // pfcdata functionality.
-func (exp *explorerUI) simulateASR(StartingDCRBalance float64, IntegerTicketQty bool,
+func (exp *explorerUI) simulateASR(StartingPFCBalance float64, IntegerTicketQty bool,
 	CurrentStakePercent float64, ActualCoinbase float64, CurrentBlockNum float64,
 	ActualTicketPrice float64) (ASR float64, ReturnTable string) {
 
@@ -664,11 +664,11 @@ func (exp *explorerUI) simulateASR(StartingDCRBalance float64, IntegerTicketQty 
 	// Prepare for simulation
 	simblock := CurrentBlockNum
 	TicketPrice := ActualTicketPrice
-	DCRBalance := StartingDCRBalance
+	PFCBalance := StartingPFCBalance
 
-	ReturnTable += fmt.Sprintf("\n\nBLOCKNUM        DCR  TICKETS TKT_PRICE TKT_REWRD  ACTION\n")
+	ReturnTable += fmt.Sprintf("\n\nBLOCKNUM        PFC  TICKETS TKT_PRICE TKT_REWRD  ACTION\n")
 	ReturnTable += fmt.Sprintf("%8d  %9.2f %8.1f %9.2f %9.2f    INIT\n",
-		int64(simblock), DCRBalance, TicketsPurchased,
+		int64(simblock), PFCBalance, TicketsPurchased,
 		TicketPrice, StakeRewardAtBlock(simblock))
 
 	for simblock < (BlocksPerYear + CurrentBlockNum) {
@@ -678,36 +678,36 @@ func (exp *explorerUI) simulateASR(StartingDCRBalance float64, IntegerTicketQty 
 
 		if IntegerTicketQty {
 			// Use this to simulate integer qtys of tickets up to max funds
-			TicketsPurchased = math.Floor(DCRBalance / TicketPrice)
+			TicketsPurchased = math.Floor(PFCBalance / TicketPrice)
 		} else {
 			// Use this to simulate ALL funds used to buy tickets - even fractional tickets
 			// which is actually not possible
-			TicketsPurchased = (DCRBalance / TicketPrice)
+			TicketsPurchased = (PFCBalance / TicketPrice)
 		}
 
-		DCRBalance -= (TicketPrice * TicketsPurchased)
+		PFCBalance -= (TicketPrice * TicketsPurchased)
 		ReturnTable += fmt.Sprintf("%8d  %9.2f %8.1f %9.2f %9.2f     BUY\n",
-			int64(simblock), DCRBalance, TicketsPurchased,
+			int64(simblock), PFCBalance, TicketsPurchased,
 			TicketPrice, StakeRewardAtBlock(simblock))
 
 		// Move forward to average vote
 		simblock += (float64(exp.ChainParams.TicketMaturity) + float64(exp.MeanVotingBlocks))
 		ReturnTable += fmt.Sprintf("%8d  %9.2f %8.1f %9.2f %9.2f    VOTE\n",
-			int64(simblock), DCRBalance, TicketsPurchased,
+			int64(simblock), PFCBalance, TicketsPurchased,
 			(TheoreticalTicketPrice(simblock) * TicketAdjustmentFactor), StakeRewardAtBlock(simblock))
 
 		// Simulate return of funds
-		DCRBalance += (TicketPrice * TicketsPurchased)
+		PFCBalance += (TicketPrice * TicketsPurchased)
 
 		// Simulate reward
-		DCRBalance += (StakeRewardAtBlock(simblock) * TicketsPurchased)
+		PFCBalance += (StakeRewardAtBlock(simblock) * TicketsPurchased)
 		TicketsPurchased = 0
 
 		// Move forward to coinbase maturity
 		simblock += float64(exp.ChainParams.CoinbaseMaturity)
 
 		ReturnTable += fmt.Sprintf("%8d  %9.2f %8.1f %9.2f %9.2f  REWARD\n",
-			int64(simblock), DCRBalance, TicketsPurchased,
+			int64(simblock), PFCBalance, TicketsPurchased,
 			(TheoreticalTicketPrice(simblock) * TicketAdjustmentFactor), StakeRewardAtBlock(simblock))
 
 		// Need to receive funds before we can use them again so add 1 block
@@ -715,7 +715,7 @@ func (exp *explorerUI) simulateASR(StartingDCRBalance float64, IntegerTicketQty 
 	}
 
 	// Scale down to exactly 365 days
-	SimulationReward := ((DCRBalance - StartingDCRBalance) / StartingDCRBalance) * 100
+	SimulationReward := ((PFCBalance - StartingPFCBalance) / StartingPFCBalance) * 100
 	ASR = (BlocksPerYear / (simblock - CurrentBlockNum)) * SimulationReward
 	ReturnTable += fmt.Sprintf("ASR over 365 Days is %.2f.\n", ASR)
 	return

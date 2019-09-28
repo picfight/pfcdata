@@ -64,12 +64,12 @@ func (c *insightApiContext) DcrToInsightTxns(txs []*dcrjson.TxRawResult,
 			_, addresses, value, err := c.BlockData.ChainDB.RetrieveAddressIDsByOutpoint(vin.Txid, vin.Vout)
 			if err == nil {
 				if len(addresses) > 0 {
-					// Update Vin due to DCRD AMOUNTIN - START
+					// Update Vin due to PFCD AMOUNTIN - START
 					// NOTE THIS IS ONLY USEFUL FOR INPUT AMOUNTS THAT ARE NOT ALSO FROM MEMPOOL
 					if tx.Confirmations == 0 {
 						InsightVin.Value = dcrutil.Amount(value).ToCoin()
 					}
-					// Update Vin due to DCRD AMOUNTIN - END
+					// Update Vin due to PFCD AMOUNTIN - END
 					InsightVin.Addr = addresses[0]
 				}
 			}

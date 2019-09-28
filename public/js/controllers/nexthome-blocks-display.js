@@ -65,7 +65,7 @@ function makeMempoolBlock(block) {
     return `<div class="block visible">
                 <div class="block-info">
                     <a class="color-code" href="/mempool">Mempool</a>
-                    <div class="mono" style="line-height: 1;">${Math.floor(block.Total)} DCR</div>
+                    <div class="mono" style="line-height: 1;">${Math.floor(block.Total)} PFC</div>
                     <span class="timespan">
                         <span data-target="main.age" data-age="${block.Time}"></span>&nbsp;ago
                     </span>
@@ -102,7 +102,7 @@ function newBlockHtmlElement(block) {
 function makeBlockSummary(blockHeight, totalSent, time) {
     return `<div class="block-info">
                 <a class="color-code" href="/block/${blockHeight}">${blockHeight}</a>
-                <div class="mono" style="line-height: 1;">${Math.floor(totalSent)} DCR</div>
+                <div class="mono" style="line-height: 1;">${Math.floor(totalSent)} PFC</div>
                 <span class="timespan">
                     <span data-target="main.age" data-age="${time}"></span>&nbsp;ago
                 </span>
@@ -125,9 +125,9 @@ function makeRewardsElement(subsidy, fee, voteCount, rewardTxId) {
     
     const backgroundColorRelativeToVotes = `style="width: ${voteCount * 20}%"`; // 5 blocks = 100% painting
 
-    // const totalDCR = Math.round(pow + fund + fee);
-    const totalDCR = 1;
-    return `<div class="block-rewards" style="flex-grow: ${totalDCR}">
+    // const totalPFC = Math.round(pow + fund + fee);
+    const totalPFC = 1;
+    return `<div class="block-rewards" style="flex-grow: ${totalPFC}">
                 <span class="pow" style="flex-grow: ${pow}"
                     title='{"object": "PoW Reward", "total": "${pow}"}'>
                     <a class="block-element-link" href="/tx/${rewardTxId}">
@@ -154,9 +154,9 @@ function makeRewardsElement(subsidy, fee, voteCount, rewardTxId) {
 }
 
 function makeVoteElements(votes) {
-    let totalDCR = 0;
+    let totalPFC = 0;
     const voteElements = (votes || []).map(vote => {
-        totalDCR += vote.Total;
+        totalPFC += vote.Total;
         return `<span style="background-color: ${vote.VoteValid ? '#2971ff' : 'rgba(253, 113, 74, 0.8)' }"
                     title='{"object": "Vote", "total": "${vote.Total}", "voteValid": "${vote.VoteValid}"}'>
                     <a class="block-element-link" href="/tx/${vote.TxID}"></a>
@@ -168,18 +168,18 @@ function makeVoteElements(votes) {
         voteElements.push('<span title="Empty vote slot"></span>');
     }
 
-    // totalDCR = Math.round(totalDCR);
-    totalDCR = 1;
-    return `<div class="block-votes" style="flex-grow: ${totalDCR}">
+    // totalPFC = Math.round(totalPFC);
+    totalPFC = 1;
+    return `<div class="block-votes" style="flex-grow: ${totalPFC}">
                 ${voteElements.join("\n")}
             </div>`;
 }
 
 function makeTicketAndRevocationElements(tickets, revocations, blockHref) {
-    let totalDCR = 0;
+    let totalPFC = 0;
 
     const ticketElements = (tickets || []).map(ticket => {
-        totalDCR += ticket.Total;
+        totalPFC += ticket.Total;
         return makeTxElement(ticket, "block-ticket", "Ticket");
     });
     if (ticketElements.length > 50) {
@@ -190,7 +190,7 @@ function makeTicketAndRevocationElements(tickets, revocations, blockHref) {
                             </span>`);
     }
     const revocationElements = (revocations || []).map(revocation => {
-        totalDCR += revocation.Total;
+        totalPFC += revocation.Total;
         return makeTxElement(revocation, "block-rev", "Revocation");
     });
 
@@ -201,17 +201,17 @@ function makeTicketAndRevocationElements(tickets, revocations, blockHref) {
         ticketsAndRevocationElements.push('<span title="Empty ticket slot"></span>');
     }
 
-    // totalDCR = Math.round(totalDCR);
-    totalDCR = 1;
-    return `<div class="block-tickets" style="flex-grow: ${totalDCR}">
+    // totalPFC = Math.round(totalPFC);
+    totalPFC = 1;
+    return `<div class="block-tickets" style="flex-grow: ${totalPFC}">
                 ${ticketsAndRevocationElements.join("\n")}
             </div>`;
 }
 
 function makeTransactionElements(transactions, blockHref) {
-    let totalDCR = 0;
+    let totalPFC = 0;
     const transactionElements = (transactions || []).map(tx => {
-        totalDCR += tx.Total;
+        totalPFC += tx.Total;
         return makeTxElement(tx, "block-tx", "Transaction", true);
     });
 
@@ -223,9 +223,9 @@ function makeTransactionElements(transactions, blockHref) {
                                 </span>`);
     }
 
-    // totalDCR = Math.round(totalDCR);
-    totalDCR = 1;
-    return `<div class="block-transactions" style="flex-grow: ${totalDCR}">
+    // totalPFC = Math.round(totalPFC);
+    totalPFC = 1;
+    return `<div class="block-transactions" style="flex-grow: ${totalPFC}">
                 ${transactionElements.join("\n")}
             </div>`;
 }
@@ -262,7 +262,7 @@ function setupTooltips() {
                 newContent = `<b>${data.object} (${data.voteValid ? "Yes" : "No"})</b>`;
             }
             else {
-                newContent = `<b>${data.object}</b><br>${data.total} DCR`;
+                newContent = `<b>${data.object}</b><br>${data.total} PFC`;
             }
 
             if (data.vin && data.vout) {

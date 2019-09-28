@@ -75,7 +75,7 @@ func (pgb *ChainDB) RetrieveAddressSpentUnspent(address string) (int64, int64, i
 func (pgb *ChainDB) RetrieveAddressIDsByOutpoint(txHash string,
 	voutIndex uint32) ([]uint64, []string, int64, error) {
 	return RetrieveAddressIDsByOutpoint(pgb.db, txHash, voutIndex)
-} // Update Vin due to DCRD AMOUNTIN - END
+} // Update Vin due to PFCD AMOUNTIN - END
 
 // InsightGetAddressTransactions performs a searchrawtransactions for the
 // specfied address, max number of transactions, and offset into the transaction

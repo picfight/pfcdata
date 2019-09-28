@@ -1005,7 +1005,7 @@ func (c *insightApiContext) getEstimateFee(w http.ResponseWriter, r *http.Reques
 	}
 	estimateFee := make(map[string]float64)
 
-	// A better solution would be a call to the DCRD RPC "estimatefee" endpoint
+	// A better solution would be a call to the PFCD RPC "estimatefee" endpoint
 	// but that does not appear to be exposed currently.
 	infoResult, err := c.nodeClient.GetInfo()
 	if err != nil {

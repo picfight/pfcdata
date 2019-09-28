@@ -2,16 +2,16 @@ FROM golang:1.11-alpine3.8
 RUN apk update && apk add vim tree lsof bash git gcc musl-dev
 ENV GOPATH=/home/decred/go
 ENV PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$GOPATH/bin
-ENV DCRSRC_PATH=$GOPATH/src/github.com/picfight/pfcdata/
+ENV PFCSRC_PATH=$GOPATH/src/github.com/picfight/pfcdata/
 ENV GO111MODULE=on
 RUN adduser -s /bin/bash -D -h /home/decred decred && chown -R decred:decred /home/decred
-WORKDIR $DCRSRC_PATH
+WORKDIR $PFCSRC_PATH
 RUN chown -R decred:decred $GOPATH 
 # since we might be rebulding often we need to cache this module layer
 # otherwise docker will detect changes everytime and re-download everything again
-COPY go.* $DCRSRC_PATH
+COPY go.* $PFCSRC_PATH
 RUN go mod download 
-COPY . $DCRSRC_PATH
+COPY . $PFCSRC_PATH
 RUN chown -R decred:decred $GOPATH 
 USER decred
 RUN go build
