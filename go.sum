@@ -160,6 +160,10 @@ github.com/gorilla/websocket v1.4.1/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/ad
 github.com/hpcloud/tail v1.0.0 h1:nfCOvKYfkgYP8hkirhJocXT2+zOD8yUNjXaWfTlyFKI=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
+github.com/jfixby/bignum v0.0.0-20190927225727-04ba44556f74 h1:lWA3nJ5w7UPMXuTsMeOIB4SIIATWOZlGP6vRvhmF7g4=
+github.com/jfixby/bignum v0.0.0-20190927225727-04ba44556f74/go.mod h1:9nlAS/+72lbaSjHL+W3KszyxnaAEZ3fnY+0VDkJS364=
+github.com/jfixby/coin v0.0.0-20190927091650-385b78bc116b h1:FBa1TjOKI5zEjxz7+dABvYlYvKDkaQry4OfRsFF7VjA=
+github.com/jfixby/coin v0.0.0-20190927091650-385b78bc116b/go.mod h1:mFaMuHns/dWGvPLfjg6vjzWxdJLc2X88T1WwqWv91vY=
 github.com/jfixby/coinharness v0.0.0-20190926185122-3ff6bc845c84/go.mod h1:d/brli3srPhkdmg/3B9ZnaxEj6SgbZbGj27eapvPwOY=
 github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec h1:fpdGnFn+itGFvEhbm+H+u8WuKTFco2eePz8HGws+IHc=
 github.com/jfixby/coinknife v0.0.0-20190924133401-1d91f49342ec/go.mod h1:xSXEkW0zBqOCyL49Pn5m2jMtjx+rjlB/EuPCJeP9g5Q=
@@ -167,6 +171,8 @@ github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a h1:LIrKPA4Rmu4jiq
 github.com/jfixby/coinknife v0.0.0-20190926203656-03d129b9318a/go.mod h1:xSXEkW0zBqOCyL49Pn5m2jMtjx+rjlB/EuPCJeP9g5Q=
 github.com/jfixby/difficulty v1.0.0 h1:lvI8yfV7Mz09HvD70fB/PICgHjcbFa6HrA2ER8X1CNg=
 github.com/jfixby/difficulty v1.0.0/go.mod h1:eKUkJx0XjkDwjU7lA22IfU30feJcoObdPJ7rF46turk=
+github.com/jfixby/lineardown v0.0.0-20190927204119-ebaf915296b7 h1:21VztjiYv0n/RlTc1eK70+E7nAsihFM0he9n7RAbV3Y=
+github.com/jfixby/lineardown v0.0.0-20190927204119-ebaf915296b7/go.mod h1:HbbVf3BMBXWoqvn2PKe2a6Eaw6RtwwVyS2RpmiHToKM=
 github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4 h1:D7GpxLTy82tCGW56r/88JMHEC/d7VtHl/Q2jJ9awZKc=
 github.com/jfixby/pin v0.0.0-20190926185208-4828e1e664f4/go.mod h1:fcyyZW36sY5GM2qsX/sewjJu7y5ngGKoELUbDEccDqY=
 github.com/jrick/bitset v1.0.0 h1:Ws0PXV3PwXqWK2n7Vz6idCdrV/9OrBXgHEJi27ZB9Dw=
@@ -206,11 +212,17 @@ github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93 h1:D6m0WGpkw7GdqVcld
 github.com/picfight/pfcd v0.0.0-20190926193904-740f24ea4c93/go.mod h1:OcCDn81Sb0/nY+v/BF+ptN+QtKjNlVCRacseShkVgHk=
 github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf h1:O0fIMZxVdr32CbOxvHOzKe+kGGjL5mHMV2QHs5892Nw=
 github.com/picfight/pfcd v0.0.0-20190926205853-ed9e943221bf/go.mod h1:FDtoUcgfFVnYvJup5I35jK9RzDBBWszPXaFM18WW9AU=
+github.com/picfight/pfcd v0.0.0-20190928101712-3acdc43cf9f8 h1:kU9I9t5sr57VBSICCuOGHvcRN8Gq6jet/cLjmwPzgHg=
+github.com/picfight/pfcd v0.0.0-20190928101712-3acdc43cf9f8/go.mod h1:Oq3BooejfYt2BfPwv3Cu/zHi0dpXYpVnMql9zDPu6U0=
 github.com/picfight/pfcharness v0.0.0-20190926171930-b728f233fcf8/go.mod h1:VsrBjNe0JhSWQw4W8hgvrGZgEAiwW1bRzi5KVGIfIXU=
 github.com/picfight/pfcwallet v0.0.0-20190926200025-5ce90016cca8 h1:0adAHSnnSpu31EFHXnO34Qo13CJ1Sciy8+NQW59Ugs8=
 github.com/picfight/pfcwallet v0.0.0-20190926200025-5ce90016cca8/go.mod h1:4jX4z+lioM4WCpkzrvZcN0kxQole9ffRhEmsvFOlVSQ=
 github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8 h1:fWj2NwnYV0i6CmE6Xhb+jlSdwpkfWXNUz+3XKq71ius=
 github.com/picfight/pfcwallet v0.0.0-20190926210357-7b56a967b0e8/go.mod h1:VxSWKORpFA/6TwM1M5+xX3tIttU/iRwYZRQkhiY/HZI=
+github.com/picfight/pfcwallet v0.0.0-20190928121614-7b162c87a9f4 h1:OQnNzVe/pKjUMSeMf4+vxHKUL4GmhYEgP+1NlerixeA=
+github.com/picfight/pfcwallet v0.0.0-20190928121614-7b162c87a9f4/go.mod h1:Huas4SP+OKXsAtnObGW/XJUat9BvQEqHf4fxItLbztg=
+github.com/picfight/picfightcoin v0.0.0-20190927230555-879c0ab253b3 h1:u53QpXlXKBek/P8K+ZDVncl6UfouPCoTwxdW50wrzqw=
+github.com/picfight/picfightcoin v0.0.0-20190927230555-879c0ab253b3/go.mod h1:0KR2uIib9lrq/4C30w23X9tWUZr4rLJn99g7o3vdfLU=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
@@ -239,6 +251,8 @@ golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2 h1:VklqNMn3ovrHsnt90Pveol
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411 h1:kuW9k4QvBJpRjC3rxEytsfIYPs8oGY3Jw7iR36h0FIY=
 golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
+golang.org/x/crypto v0.0.0-20190927123631-a832865fa7ad h1:5E5raQxcv+6CZ11RrBYQe5WRbUIWpScjh0kvHZkZIrQ=
+golang.org/x/crypto v0.0.0-20190927123631-a832865fa7ad/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=
 golang.org/x/net v0.0.0-20180719180050-a680a1efc54d/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20180808004115-f9ce57c11b24 h1:mEsFm194MmS9vCwxFy+zwu0EU7ZkxxMD1iH++vmGdUY=
