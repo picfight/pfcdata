@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrjson"
 	"github.com/picfight/pfcd/dcrutil"
@@ -25,8 +27,6 @@ import (
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 	"github.com/rs/cors"
 )
 
@@ -493,7 +493,9 @@ func (exp *explorerUI) Store(blockData *blockdata.BlockData, msgBlock *wire.MsgB
 	p.HomeInfo.NextExpectedBoundsMin = blockData.EstStakeDiff.Min
 	p.HomeInfo.NextExpectedBoundsMax = blockData.EstStakeDiff.Max
 	p.HomeInfo.IdxBlockInWindow = blockData.IdxBlockInWindow
-	p.HomeInfo.IdxInRewardWindow = int(newBlockData.Height % exp.ChainParams.SubsidyReductionInterval)
+	if exp.ChainParams.SubsidyReductionInterval != 0 {
+		p.HomeInfo.IdxInRewardWindow = int(newBlockData.Height % exp.ChainParams.SubsidyReductionInterval)
+	}
 	p.HomeInfo.Difficulty = difficulty
 	p.HomeInfo.NBlockSubsidy.Dev = blockData.ExtraInfo.NextBlockSubsidy.Developer
 	p.HomeInfo.NBlockSubsidy.PoS = blockData.ExtraInfo.NextBlockSubsidy.PoS
