@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/dcrjson"
@@ -25,7 +26,6 @@ import (
 	"github.com/picfight/pfcdata/v3/db/agendadb"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
-	humanize "github.com/dustin/go-humanize"
 )
 
 // Status page strings
@@ -43,6 +43,9 @@ const homePageBlocksMaxCount = 30
 func netName(chainParams *chaincfg.Params) string {
 	if strings.HasPrefix(strings.ToLower(chainParams.Name), "testnet") {
 		return "Testnet"
+	}
+	if chainParams == &chaincfg.PicFightCoinNetParams {
+		return "PicFight Coin"
 	}
 	return strings.Title(chainParams.Name)
 }
@@ -857,7 +860,7 @@ func (exp *explorerUI) TxPage(w http.ResponseWriter, r *http.Request) {
 					// Blocks from eligible until voted (actual luck)
 					tx.TicketInfo.TicketLiveBlocks = exp.blockData.TxHeight(tx.SpendingTxns[0].Hash) -
 						tx.BlockHeight - int64(exp.ChainParams.TicketMaturity) - 1
-				} else if tx.Confirmations >= int64(exp.ChainParams.TicketExpiry+
+				} else if tx.Confirmations >= int64(exp.ChainParams.TicketExpiry +
 					uint32(exp.ChainParams.TicketMaturity)) { // Expired
 					// Blocks ticket was active before expiring (actual no luck)
 					tx.TicketInfo.TicketLiveBlocks = int64(exp.ChainParams.TicketExpiry)
