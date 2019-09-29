@@ -14,8 +14,8 @@
     <link rel="manifest" href="/images/favicon/manifest.json">
     <link rel="mask-icon" href="/images/favicon/safari-pinned-tab.svg">
     <link rel="shortcut icon" href="/images/favicon/favicon.ico">
-    <meta name="apple-mobile-web-app-title" content="Decred - Autonomous Digital Currency">
-    <meta name="application-name" content="Decred - Autonomous Digital Currency">
+    <meta name="apple-mobile-web-app-title" content="PicFight Coin">
+    <meta name="application-name" content="PicFight Coin">
     <meta name="msapplication-TileColor" content="#2973ff">
     <meta name="msapplication-TileImage" content="/images/favicon/mstile-144x144.png">
     <meta name="msapplication-config" content="/images/favicon/browserconfig.xml">
@@ -70,10 +70,10 @@
                     <span class="patty short"></span>
                     <div id="menu">
                         <a data-keynav-skip href="/" title="Home">Home</a>
-                        <a data-keynav-skip href="/blocks" title="Decred blocks">Blocks</a>
-                        <a data-keynav-skip href="/mempool" title="Decred mempool">Mempool</a>
-                        <a data-keynav-skip href="/ticketpool" title="Decred ticket pool">Ticket Pool</a>
-                        <a data-keynav-skip class="jsonly" href="/charts" title="Decred charts">Charts</a>
+                        <a data-keynav-skip href="/blocks" title="PicFight Coin blocks">Blocks</a>
+                        <a data-keynav-skip href="/mempool" title="PicFight Coin mempool">Mempool</a>
+                        <a data-keynav-skip href="/ticketpool" title="PicFight Coin ticket pool">Ticket Pool</a>
+                        <a data-keynav-skip class="jsonly" href="/charts" title="PicFight Coin charts">Charts</a>
                         <a data-keynav-skip href="/agendas" title="Agendas">Agendas</a>
                         <a data-keynav-skip href="/parameters" title="Chain Parameters">Parameters</a>
                         <a data-keynav-skip href="/decodetx" title="Decode or send a raw transaction">Decode/Broadcast Tx</a>
@@ -364,7 +364,7 @@
     }
 
     function doNotification(block) {
-        var newBlockNtfn = new Notify('New Decred Block Mined', {
+        var newBlockNtfn = new Notify('New PicFight Coin Block Mined', {
             body: 'Block mined at height ' + block.height,
             tag: 'blockheight',
             image: '/images/pfcdata144x128.png',
@@ -507,19 +507,19 @@
             <li class="nav-item">
                 <a
                     class="nav-item no-wrap"
-                    href="https://github.com/picfight/pfcdata"
+                    href="https://github.com/decred/dcrdata"
                     title="pfcdata on GitHub"
                     target="_blank"
                     rel="noopener noreferrer"
-                >pfcdata v{{.Version}}</a>
+                >dcrdata v{{.Version}}</a>
             </li>
             <li class="nav-item">
                 <a
                     class="nav-item nowrap"
-                    href="https://github.com/decred/dcrdata"
+                    href="https://github.com/picfight/pfcdata"
                     target="_blank"
                     rel="noopener noreferrer"
-                >dcrdata</a>
+                >pfcdata</a>
             </li>
         </ul>
         <ul class="nav justify-content-right align-items-center jsonly">

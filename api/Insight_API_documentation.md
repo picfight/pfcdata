@@ -1150,7 +1150,7 @@ Methods that provide utilities or relay network status.
 
 **URL:**  ```GET /status```
 
-**Description:** Retrieves status of Decred network. If `q` is set to a parameter from the table below, only that parameter is returned. If `q` is not specified, all status parameters are returned. 
+**Description:** Retrieves status of PicFight Coin network. If `q` is set to a parameter from the table below, only that parameter is returned. If `q` is not specified, all status parameters are returned. 
 
 
 | Parameter           | Type                   |  Description                   | 
