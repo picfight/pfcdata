@@ -844,12 +844,12 @@ body.darkBG .keynav-target {
 
 /*bootstrap overrides*/
 .progress {
-  background-color: #dddddd;
+  background-color: #ffffff;
   border-radius: 2px;
   height: 1.5rem;
 }
 .progress-bar {
-  background: #74e06b;
+  background: #70ffd5;
   color: #333;
   line-height: 1.5rem;
   text-shadow: 1px 1px 0px #00000012;
