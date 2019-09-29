@@ -5,90 +5,6 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/picfight/pfcdata)](https://goreportcard.com/report/github.com/picfight/pfcdata)
 [![ISC License](https://img.shields.io/badge/license-ISC-blue.svg)](http://copyfree.org)
 
-The pfcdata repository is a collection of Go packages and apps for
-[Decred](https://www.decred.org/) data collection, storage, and presentation.
-
-- [pfcdata](#pfcdata)
-  - [Repository Overview](#repository-overview)
-  - [Requirements](#requirements)
-  - [Docker Support](#docker-support)
-    - [Building the Image](#building-the-image)
-    - [Building pfcdata with Docker](#building-pfcdata-with-docker)
-    - [Developing pfcdata Using a Container](#developing-pfcdata-using-a-container)
-    - [Container Production Usage](#container-production-usage)
-  - [Installation](#installation)
-    - [Building with Go 1.11](#building-with-go-111)
-    - [Building with Go 1.10](#building-with-go-110)
-    - [Setting build version flags](#setting-build-version-flags)
-    - [Runtime Resources](#runtime-resources)
-  - [Updating](#updating)
-  - [Upgrading Instructions](#upgrading-instructions)
-  - [Getting Started](#getting-started)
-    - [Configuring PostgreSQL (IMPORTANT)](#configuring-postgresql-important)
-    - [Creating the Configuration File](#creating-the-configuration-file)
-    - [Using Configuration Environment Variables](#using-configuration-environment-variables)
-    - [Indexing the Blockchain](#indexing-the-blockchain)
-    - [Starting pfcdata](#starting-pfcdata)
-    - [Running the Web Interface During Synchronization](#running-the-web-interface-during-synchronization)
-  - [System Hardware Requirements](#system-hardware-requirements)
-    - ["lite" Mode (SQLite only)](#lite-mode-sqlite-only)
-    - ["full" Mode (SQLite and PostgreSQL)](#full-mode-sqlite-and-postgresql)
-  - [pfcdata Daemon](#pfcdata-daemon)
-    - [Block Explorer](#block-explorer)
-  - [APIs](#apis)
-    - [Insight API (EXPERIMENTAL)](#insight-api-experimental)
-    - [pfcdata API](#pfcdata-api)
-      - [Endpoint List](#endpoint-list)
-  - [Important Note About Mempool](#important-note-about-mempool)
-  - [Command Line Utilities](#command-line-utilities)
-    - [rebuilddb](#rebuilddb)
-    - [rebuilddb2](#rebuilddb2)
-    - [scanblocks](#scanblocks)
-  - [Helper Packages](#helper-packages)
-  - [Internal-use Packages](#internal-use-packages)
-  - [Plans](#plans)
-  - [Contributing](#contributing)
-  - [License](#license)
-
-## Repository Overview
-
-```none
-../pfcdata              The pfcdata daemon.
-├── api                 Package blockdata implements pfcdata's own HTTP API.
-│   ├── insight         Package insight implements the Insight API.
-│   └── types           Package types includes the exported structures used by
-|                         the pfcdata and Insight APIs.
-├── blockdata           Package blockdata is the primary data collection and
-|                         storage hub, and chain monitor.
-├── cmd
-│   ├── rebuilddb       rebuilddb utility, for SQLite backend. Not required.
-│   ├── rebuilddb2      rebuilddb2 utility, for PostgreSQL backend. Not required.
-│   └── scanblocks      scanblocks utility. Not required.
-├── pfcdataapi          Package pfcdataapi for Go API clients.
-├── db
-│   ├── agendadb        Package agendadb is a basic PoS voting agenda database.
-│   ├── dbtypes         Package dbtypes with common data types.
-│   ├── dcrpg           Package dcrpg providing PostgreSQL backend.
-│   └── dcrsqlite       Package dcrsqlite providing SQLite backend.
-├── dev                 Shell scripts for maintenance and deployment.
-├── explorer            Package explorer, powering the block explorer.
-├── mempool             Package mempool for monitoring mempool for transactions,
-|                         data collection, and storage.
-├── middleware          Package middleware provides HTTP router middleware.
-├── notification        Package notification manages pfcd notifications, and
-|                         synchronous data collection by a queue of collectors.
-├── public              Public resources for block explorer (css, js, etc.).
-├── rpcutils            Package rpcutils contains helper types and functions for
-|                         interacting with a chain server via RPC.
-├── semver              Package semver.
-├── stakedb             Package stakedb, for tracking tickets.
-├── testutil            Package testutil provides some testing helper functions.
-├── txhelpers           Package txhelpers provides many functions and types for
-|                         processing blocks, transactions, voting, etc.
-├── version             Package version describes the pfcdata version.
-└── views               HTML templates for block explorer.
-```
-
 ## Requirements
 
 - [Go](http://golang.org) 1.10.x or 1.11.x.
@@ -97,120 +13,6 @@ The pfcdata repository is a collection of Go packages and apps for
   pfcdata v3.0.0.
 - (Optional) PostgreSQL 9.6+, if running in "full" mode. v10.x is recommended
   for improved dump/restore formats and utilities.
-
-## Docker Support
-
-The inclusion of a Dockerfile in this repository means you can use Docker for
-pfcdata development or in production. However, official images are not presently
-published to docker hub.
-
-When developing you can utilize containers for easily swapping out Go versions
-and overall project setup. You don't even need go installed on your system if
-using containers during development.
-
-Once [Docker](https://docs.docker.com/install/) is installed, you can then
-download this repository and follow the build instructions below.
-
-### Building the Image
-
-To use a pfcdata container you need to build an image as follows:
-
-`docker build --squash -t picfight/pfcdata:dev-alpine .`
-
-Note: The `--squash` flag is an [experimental
-feature](https://docs.docker.com/engine/reference/commandline/image_build/) as
-of Docker 18.06. Experimental features must be enabled to use the setting. On
-Windows and OS/X, look under the "Daemon" settings tab. On Linux, [enable the
-setting manually](https://github.com/docker/cli/blob/master/experimental/README.md).
-
-By default, docker will build the container based on the Dockerfile found in the
-root of the repository that is based on Alpine Linux. To use an Ubuntu-based
-container, you should build from the Ubuntu-based Dockerfile:
-
-`docker build --squash -f dockerfiles/Dockerfile_stretch -t picfight/pfcdata:dev-stretch .`
-
-Part of the build process is to copy all the source code over to the image,
-download all dependencies, and build pfcdata. If you run into build errors with
-docker try adding the `--no-cache` flag to trigger a rebuild of all the layers
-since docker does not rebuild cached layers.
-
-`docker build --no-cache --squash -t picfight/pfcdata:dev-alpine .`
-
-### Building pfcdata with Docker
-
-In addition to running pfcdata in a container, you can also build pfcdata inside
-a container and copy the executable to another system. To do this, you must have
-the pfcdata Docker image or [build it from source](#building-the-image).
-
-The default container image is based on amd64 Alpine Linux. To create a binary
-targeting different operating systems or architectures, it is necessary to [set
-the `GOOS` and `GOARCH` environment variables](https://golang.org/doc/install/source#environment).
-
-From the repository source folder, do the following to build the Docker image,
-and compile pfcdata into your current directory:
-
-- `docker build --squash -t picfight/pfcdata:dev-alpine .` [Only build the container image if necessary](#building-the-image)
-- `docker run --entrypoint="" -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine go build`
-
-This mounts your current working directory in the host machine on a volume
-inside the container so that the build output will be on the host file system.
-
-Build for other platforms as follows:
-
-`docker run -e GOOS=darwin -e GOARCH=amd64 --entrypoint="" -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine go build`
-
-`docker run -e GOOS=windows -e GOARCH=amd64 --entrypoint="" -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine go build`
-
-### Developing pfcdata Using a Container
-
-Containers are a great way to develop any source code as they serve as a
-disposable runtime environment built specifically to the specifications of the
-application. Suggestions for developing in a container:
-
-1. Don't write code inside the container.
-2. Attach a volume and write code from your editor on your docker host.
-3. Attached volumes on a Mac are generally slower than Linux/Windows.
-4. Install everything in the container, don't muck up your Docker host.
-5. Resist the urge to run git commands from the container.
-6. You can swap out the Go version just by using a different docker image.
-
-To make the source code from the host available inside the container, attach a
-volume to the container when launching the image:
-
-`docker run -ti --entrypoint="" -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine /bin/bash`
-
-_Note_: Changing `entrypoint` allows you to run commands in the container since
-the default container command runs pfcdata. We also added /bin/bash at the
-end so the container executes this by default.
-
-You can now run `go build` or `go test` inside the container. If you run `go fmt`
-you should notice that any formatting changes will also be reflected on the
-docker host as well.
-
-To run pfcdata in the container, it may be convenient to use [environment
-variables](#using-configuration-environment-variables) to configure pfcdata. The
-variables may be set inside the container or on the [command
-line](https://docs.docker.com/engine/reference/run/#env-environment-variables).
-For example,
-
-`docker run -ti --entrypoint=/bin/bash -e PFCDATA_LISTEN_URL=0.0.0.0:2222 -v ${PWD}:/home/decred/go/src/github.com/picfight/pfcdata --rm picfight/pfcdata:dev-alpine`
-
-### Container Production Usage
-
-We don't yet have a build system in place for creating production grade images
-of pfcdata. However, you can still use the images for testing.
-
-In addition to configuring pfcdata, it is also necessary to map the TCP port on
-which pfcdata listens for connections with the `-p` switch. For example,
-
-`docker run -ti -p 2222:2222 -e PFCDATA_LISTEN_URL=0.0.0.0:2222 --rm picfight/pfcdata:dev-alpine`
-
-Please keep in mind these images have not been hardened so this is not
-recommended for production.
-
-Note: The TLS certificate for pfcd's RPC server may be needed in the container.
-Either build a new container image with the certificate, or attach a volume
-containing the certificate to the container.
 
 ## Installation
 
@@ -253,16 +55,6 @@ modifications to the `go.mod` and `go.sum` files.
 
 **Beware:** For the v3 pfcdata module, the executable generated by `go build`
 may be named "v3" instead of "pfcdata".
-
-### Building with Go 1.10
-
-Module-enabled builds with Go 1.10 require the
-[vgo](https://github.com/golang/vgo) command. Follow the same procedures as if
-you were [using Go 1.11](#building-with-go-111), but replacing `go` with `vgo`.
-
-**NOTE:** The `dep` tool is no longer supported. If you must use Go 1.10,
-install and use `vgo`. If possible, upgrade to [Go 1.11](#building-with-go-111)
-or using the Docker [container build instructions](#building-pfcdata-with-docker).
 
 ### Setting build version flags
 
@@ -447,10 +239,9 @@ with the `rebuilddb2` command line tool:
 - In case of irrecoverable errors, such as detected schema changes without an
   upgrade path, the tables and their indexes may be dropped with `rebuilddb2 -D`.
 
-Note that pfcdata requires that
-[pfcd](https://docs.decred.org/getting-started/user-guides/pfcd-setup/) is
-running with some optional indexes enabled. By default, these indexes are not
-turned on when pfcd is installed. To enable them, set the following in
+Note that pfcdata requires running with some optional indexes enabled.
+By default, these indexes are not turned on when pfcd is installed.
+To enable them, set the following in
 pfcd.conf:
 
 ```ini
@@ -804,34 +595,6 @@ triggers for mempool data collection, which is handled by the
 `mempoolDataCollector` class, and data storage, which is handled by any number
 of objects implementing the `MempoolDataSaver` interface.
 
-## Plans
-
-See the GitHub issue tracker and the [project milestones](https://github.com/picfight/pfcdata/milestones).
-
-## Contributing
-
-Yes, please! **See the CONTRIBUTING.md file for details**, but here's the gist of it:
-
-1. Fork the repo.
-2. Create a branch for your work (`git checkout -b cool-stuff`).
-3. Code something great.
-4. Commit and push to your repo.
-5. Create a [pull request](https://github.com/picfight/pfcdata/compare).
-
-**DO NOT merge from master to your feature branch; rebase.**
-
-Before committing any changes to the Gopkg.lock file, you must update `dep` to
-the latest version via:
-
-    go get -u github.com/go/dep/cmd/dep
-
-**To update `dep` from the network, it is important to use the `-u` flag as
-shown above.**
-
-Note that all pfcdata.org community and team members are expected to adhere to
-the code of conduct, described in the CODE_OF_CONDUCT file.
-
-Also, [come chat with us on Slack](https://slack.decred.org/)!
 
 ## License
 
