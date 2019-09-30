@@ -18,6 +18,8 @@ func DevSubsidyAddress(params *chaincfg.Params) (string, error) {
 	var devSubsidyAddress string
 	var err error
 	switch params.Name {
+	case "picfightcoin":
+		devSubsidyAddress = "JsKEwugutnHaQ71DaPqfN5hP1VYapSLpw92"
 	case "testnet2":
 		// TestNet2 uses an invalid organization PkScript
 		devSubsidyAddress = "TccTkqj8wFqrUemmHMRSx8SYEueQYLmuuFk"
