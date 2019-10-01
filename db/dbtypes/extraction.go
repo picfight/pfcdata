@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/picfight/picfightcoin"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/txscript"
@@ -19,7 +20,8 @@ func DevSubsidyAddress(params *chaincfg.Params) (string, error) {
 	var err error
 	switch params.Name {
 	case "picfightcoin":
-		devSubsidyAddress = "JsKEwugutnHaQ71DaPqfN5hP1VYapSLpw92"
+		devSubsidyAddress = picfightcoin.PROJECT_PREMINE_ADDRESS_STRING
+		err = nil
 	case "testnet2":
 		// TestNet2 uses an invalid organization PkScript
 		devSubsidyAddress = "TccTkqj8wFqrUemmHMRSx8SYEueQYLmuuFk"

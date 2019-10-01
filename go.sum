@@ -99,10 +99,16 @@ github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaR
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/picfight/pfcd v0.0.0-20190930152325-60bd7e74949a h1:RlRgmYMKDKrYSSRIatk8imaa8LQAaRnsQe+gEpvui38=
 github.com/picfight/pfcd v0.0.0-20190930152325-60bd7e74949a/go.mod h1:5gPte+rE3IaCwH4RbVjJUn7kocscv+W/4E5oMhKw5oQ=
+github.com/picfight/pfcd v0.0.0-20191001115922-e4ae6dde5b1b h1:tz4Yz3HPYn9aCaaMbEbzaXhAd6Gx/Uy3oXWfi5YR3LU=
+github.com/picfight/pfcd v0.0.0-20191001115922-e4ae6dde5b1b/go.mod h1:2ns8Bos4fB0DL9qvWyel2laxbrawQTbBy8aq5/ji9WM=
 github.com/picfight/pfcwallet v0.0.0-20190930152533-ccab07ca363c h1:cd84awEJT6G9AVYr20fNYj0j7hd0ZDiKT5Le9sxl9/8=
 github.com/picfight/pfcwallet v0.0.0-20190930152533-ccab07ca363c/go.mod h1:i2gbPps6dxXx0agxJcePF0H+nmJhxWV7BiPRJeltyRc=
+github.com/picfight/pfcwallet v0.0.0-20191001120114-87313e41f37b h1:FN689/YtICtvXAy32toNjIrNAiSRvc1QtuOujNpqKM0=
+github.com/picfight/pfcwallet v0.0.0-20191001120114-87313e41f37b/go.mod h1:pxPuYWcdEzYFYJFCuBS5nj04bpUtr3N4MSIaxXgCxBw=
 github.com/picfight/picfightcoin v0.0.0-20190930150635-03da47866cbd h1:GVdVk8msxZ5RKxcEOBii9Vy/fj1Mlsr4LYJ4giEF7Ik=
 github.com/picfight/picfightcoin v0.0.0-20190930150635-03da47866cbd/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
+github.com/picfight/picfightcoin v0.0.0-20191001115746-c680a917d1fe h1:q+o3HxSv/u67nKRb5Q1b/egqxJgY9Ck0nZp00AJvzmg=
+github.com/picfight/picfightcoin v0.0.0-20191001115746-c680a917d1fe/go.mod h1:ha+rYP3z5+4VMMFtxAen2S0YKzVQeR5+B/gLkwAjx18=
 github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
