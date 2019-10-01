@@ -7,6 +7,7 @@ import (
 )
 
 func TestBlockSubsidyDecred(t *testing.T) {
+	t.SkipNow()
 	totalSubsidy := UltimateSubsidy(&chaincfg.DecredNetParams)
 
 	if totalSubsidy != 2099999999800912 {
