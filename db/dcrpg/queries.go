@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
+	"github.com/lib/pq"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrutil"
@@ -22,8 +24,6 @@ import (
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/db/dcrpg/internal"
 	"github.com/picfight/pfcdata/v3/txhelpers"
-	humanize "github.com/dustin/go-humanize"
-	"github.com/lib/pq"
 )
 
 // outputCountType defines the modes of the output count chart data.

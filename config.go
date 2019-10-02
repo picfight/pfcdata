@@ -16,13 +16,13 @@ import (
 
 	flags "github.com/btcsuite/go-flags"
 	"github.com/caarlos0/env"
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrutil"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/netparams"
 	"github.com/picfight/pfcdata/v3/version"
-	"github.com/decred/slog"
 )
 
 const (

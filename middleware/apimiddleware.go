@@ -14,11 +14,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi"
+	"github.com/go-chi/docgen"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/dcrjson"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/docgen"
 )
 
 type contextKey int

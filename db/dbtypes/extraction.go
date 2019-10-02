@@ -5,12 +5,12 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/picfight/picfightcoin"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/txscript"
 	"github.com/picfight/pfcd/wire"
 	"github.com/picfight/pfcdata/v3/txhelpers"
+	"github.com/picfight/picfightcoin"
 )
 
 // DevSubsidyAddress returns the development subsidy address for the specified

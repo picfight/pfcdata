@@ -14,8 +14,8 @@ import (
 	"sync"
 
 	"github.com/asdine/storm"
-	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/dgraph-io/badger"
+	"github.com/picfight/pfcd/chaincfg/chainhash"
 )
 
 // TicketPool contains the live ticket pool diffs (tickets in/out) between

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/dcrjson"
@@ -25,7 +26,6 @@ import (
 	"github.com/picfight/pfcdata/v3/db/agendadb"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
 	"github.com/picfight/pfcdata/v3/txhelpers"
-	humanize "github.com/dustin/go-humanize"
 )
 
 // Status page strings

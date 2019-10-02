@@ -17,11 +17,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/v3/db/dcrpg"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
-	"github.com/decred/slog"
 )
 
 var (

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	m "github.com/picfight/pfcdata/v3/middleware"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	m "github.com/picfight/pfcdata/v3/middleware"
 	"github.com/rs/cors"
 )
 

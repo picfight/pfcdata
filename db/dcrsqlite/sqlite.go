@@ -11,12 +11,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/decred/slog"
+	_ "github.com/mattn/go-sqlite3" // register sqlite driver with database/sql
 	"github.com/picfight/pfcd/wire"
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/blockdata"
 	"github.com/picfight/pfcdata/v3/db/dbtypes"
-	"github.com/decred/slog"
-	_ "github.com/mattn/go-sqlite3" // register sqlite driver with database/sql
 )
 
 // StakeInfoDatabaser is the interface for an extended stake info saving database

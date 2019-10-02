@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/chappjc/trylock"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
@@ -30,7 +31,6 @@ import (
 	"github.com/picfight/pfcdata/v3/explorer"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
-	humanize "github.com/dustin/go-humanize"
 )
 
 var (

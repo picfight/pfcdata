@@ -7,11 +7,11 @@ import (
 	"os/signal"
 	"runtime/pprof"
 
+	"github.com/decred/slog"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/v3/db/dcrsqlite"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
-	"github.com/decred/slog"
 )
 
 var (

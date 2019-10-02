@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/oleiade/lane"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
@@ -23,7 +24,6 @@ import (
 	apitypes "github.com/picfight/pfcdata/v3/api/types"
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/txhelpers"
-	"github.com/oleiade/lane"
 )
 
 // PoolInfoCache contains a map of block hashes to ticket pool info data at that

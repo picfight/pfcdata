@@ -12,14 +12,14 @@ import (
 
 // UltimateSubsidy computes the total subsidy over the entire subsidy
 // distribution period of the network.
-func UltimateSubsidy(params *chaincfg.Params) int64 {
-	if params.SubsidyCalculator != nil {
-		return params.SubsidyCalculator().ExpectedTotalNetworkSubsidy().AtomsValue
+func UltimateSubsidy(net *chaincfg.Params) int64 {
+	if net.SubsidyCalculator != nil {
+		return net.SubsidyCalculator().ExpectedTotalNetworkSubsidy().AtomsValue
 	}
+	params := net.DecredSubsidyParams
+	subsidyCache := blockchain.NewSubsidyCache(0, net)
 
-	subsidyCache := blockchain.NewSubsidyCache(0, params)
-
-	totalSubsidy := params.BlockOneSubsidy()
+	totalSubsidy := net.BlockOneSubsidy()
 	for i := int64(0); ; i++ {
 		// Genesis block or first block.
 		if i <= 1 {
@@ -36,11 +36,11 @@ func UltimateSubsidy(params *chaincfg.Params) int64 {
 			height := i - numBlocks
 
 			work := blockchain.CalcBlockWorkSubsidy(subsidyCache, height,
-				params.TicketsPerBlock, params)
+				net.TicketsPerBlock, net)
 			stake := blockchain.CalcStakeVoteSubsidy(subsidyCache, height,
-				params) * int64(params.TicketsPerBlock)
+				net) * int64(net.TicketsPerBlock)
 			tax := blockchain.CalcBlockTaxSubsidy(subsidyCache, height,
-				params.TicketsPerBlock, params)
+				net.TicketsPerBlock, net)
 			if (work + stake + tax) == 0 {
 				break // all done
 			}
@@ -49,7 +49,7 @@ func UltimateSubsidy(params *chaincfg.Params) int64 {
 			// First reduction internal -- subtract the stake subsidy for blocks
 			// before the staking system is enabled.
 			if i == params.SubsidyReductionInterval {
-				totalSubsidy -= stake * (params.StakeValidationHeight - 2)
+				totalSubsidy -= stake * (net.StakeValidationHeight - 2)
 			}
 		}
 	}

@@ -274,7 +274,6 @@ func TestIsZeroHashP2PHKAddress(t *testing.T) {
 	testIsZeroHashP2PHKAddress("", &chaincfg.TestNet3Params, negativeTest)
 	testIsZeroHashP2PHKAddress("", &chaincfg.SimNetParams, negativeTest)
 
-
 }
 
 func testIsZeroHashP2PHKAddress(expectedAddress string, params *chaincfg.Params, expectedTestResult bool) {

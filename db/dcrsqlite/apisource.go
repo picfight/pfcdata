@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/blockchain/stake"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
@@ -28,7 +29,6 @@ import (
 	"github.com/picfight/pfcdata/v3/rpcutils"
 	"github.com/picfight/pfcdata/v3/stakedb"
 	"github.com/picfight/pfcdata/v3/txhelpers"
-	humanize "github.com/dustin/go-humanize"
 )
 
 // wiredDB is intended to satisfy DataSourceLite interface. The block header is

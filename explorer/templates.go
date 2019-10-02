@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	humanize "github.com/dustin/go-humanize"
 	"github.com/picfight/pfcd/chaincfg"
 	"github.com/picfight/pfcd/dcrutil"
-	humanize "github.com/dustin/go-humanize"
 )
 
 type pageTemplate struct {
@@ -201,7 +201,7 @@ func makeTemplateFuncMap(params *chaincfg.Params) template.FuncMap {
 			return p
 		},
 		"rewardAdjustmentProgress": func(i int) float64 {
-			p := (float64(i) / float64(params.SubsidyReductionInterval)) * 100
+			p := (float64(i) / float64(1)) * 100
 			return p
 		},
 		"float64AsDecimalParts": float64Formatting,

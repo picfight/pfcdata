@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi"
+	"github.com/google/gops/agent"
 	"github.com/picfight/pfcd/chaincfg/chainhash"
 	"github.com/picfight/pfcd/rpcclient"
 	"github.com/picfight/pfcdata/v3/api"
@@ -38,8 +40,6 @@ import (
 	"github.com/picfight/pfcdata/v3/semver"
 	"github.com/picfight/pfcdata/v3/txhelpers"
 	"github.com/picfight/pfcdata/v3/version"
-	"github.com/go-chi/chi"
-	"github.com/google/gops/agent"
 )
 
 func main() {
