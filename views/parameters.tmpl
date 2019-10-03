@@ -112,30 +112,6 @@
                         </thead>
                         <tbody>
                             <tr>
-                                <td class="mono text-left pr-2 nowrap p03rem0">BaseSubsidy</td>
-                                <td class="mono fs13">
-                                    <span class="rm-spacing">{{template "decimalParts" (amountAsDecimalParts $.ChainParams.BaseSubsidy true)}}
-                                    <span class="pl-1 unit lh15rem">PFC</span>
-                                    </span>
-                                </td>
-                                <td>Starting subsidy amount for mined blocks</td>
-                            </tr>
-                            <tr>
-                                <td class="mono text-left pr-2 nowrap p03rem0">MulSubsidy</td>
-                                <td class="mono">{{$.ChainParams.MulSubsidy}}</td>
-                                <td>Subsidy reduction multiplier</td>
-                            </tr>
-                            <tr>
-                                <td class="mono text-left pr-2 nowrap p03rem0">DivSubsidy</td>
-                                <td class="mono">{{$.ChainParams.DivSubsidy}}</td>
-                                <td>Subsidy reduction divisor</td>
-                            </tr>
-                            <tr>
-                                <td class="mono text-left pr-2 nowrap p03rem0">SubsidyReductionInterval</td>
-                                <td class="mono">{{$.ChainParams.SubsidyReductionInterval}} blocks</td>
-                                <td>Reduction interval in blocks</td>
-                            </tr>
-                            <tr>
                                 <td class="mono text-left pr-2 nowrap p03rem0">WorkRewardProportion</td>
                                 <td class="mono">{{uint16Mul $.ChainParams.WorkRewardProportion 10}}%</td>
                                 <td>Comparative amount of the subsidy given for creating a block</td>
