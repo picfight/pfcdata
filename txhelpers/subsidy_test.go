@@ -18,7 +18,7 @@ func TestBlockSubsidyDecred(t *testing.T) {
 func TestBlockSubsidyPicFightCoin(t *testing.T) {
 	totalSubsidy := UltimateSubsidy(&chaincfg.PicFightCoinNetParams)
 
-	if totalSubsidy != 800000000000000 {
-		t.Errorf("Bad total subsidy; want 800000000000000, got %v", totalSubsidy)
+	if totalSubsidy != 7777700000000 {
+		t.Errorf("Bad total subsidy; want 7777700000000, got %v", totalSubsidy)
 	}
 }

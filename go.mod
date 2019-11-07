@@ -39,9 +39,9 @@ require (
 	github.com/oleiade/lane v1.0.0
 	github.com/onsi/gomega v1.4.2 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
-	github.com/picfight/pfcd v0.0.0-20191002190200-9b95798b6408
-	github.com/picfight/pfcwallet v0.0.0-20191002200651-263d4643c259
-	github.com/picfight/picfightcoin v0.0.0-20191002184602-b5e70e4070ea
+	github.com/picfight/pfcd v0.0.0-20191107152947-874b0656a0e6
+	github.com/picfight/pfcwallet v0.0.0-20191107153413-c23236c735d8
+	github.com/picfight/picfightcoin v0.0.0-20191107151210-0ab5c80ba5bc
 	github.com/pkg/errors v0.8.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/cors v1.5.0
