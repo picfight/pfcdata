@@ -32,21 +32,21 @@ const (
 //
 // rpcutils.BlockGetter is an interface with basic accessor methods like Block
 // and WaitForHash that can request current data and channels for future data,
-// but do not update the state of the object. The rpcutils.MasterBlockGetter is
+// but do not update the state of the object. The rpcutils.MainBlockGetter is
 // an interface that embeds the regular BlockGetter, adding with functions that
 // can change state and signal to the BlockGetters, such as UpdateToHeight,
 // which will get the block via RPC and signal to all channels configured for
 // that block.
 //
-// In full mode, ChainDB has the MasterBlockGetter and wiredDB has the
+// In full mode, ChainDB has the MainBlockGetter and wiredDB has the
 // BlockGetter. The way ChainDB is in charge of requesting blocks on demand from
 // RPC without getting ahead of wiredDB during sync is that StakeDatabase has a
 // very similar coordination mechanism (WaitForHeight).
 //
 // 1. In main, we make a new `rpcutils.BlockGate`, a concrete type that
-//    implements `MasterBlockGetter` and thus `BlockGetter` too.  This
+//    implements `MainBlockGetter` and thus `BlockGetter` too.  This
 //    "smart client" is provided to `baseDB` (a `wiredDB`) as a `BlockGetter`,
-//    and to `auxDB` (a `ChainDB`) as a `MasterBlockGetter`.
+//    and to `auxDB` (a `ChainDB`) as a `MainBlockGetter`.
 //
 // 2. `baseDB` makes a channel using `BlockGetter.WaitForHeight` and starts
 //    waiting for the current block to come across the channel.
@@ -56,7 +56,7 @@ const (
 //    specified block. `auxDB` does not start waiting for the signal yet.
 //
 // 4. `auxDB` requests that the same current block be retrieved via RPC using
-//    `MasterBlockGetter.UpdateToBlock`.
+//    `MainBlockGetter.UpdateToBlock`.
 //
 // 5. `auxDB` immediately begins waiting for the signal that `StakeDatabase` has
 //    connected the block.
@@ -88,7 +88,7 @@ const (
 // With the above approach, (a) the DBs share a single StakeDatabase, (b) the
 // DBs are in sync (tightly coupled), (c) there is ample opportunity for
 // concurrent computations, and (d) the shared blockGetter (as a
-// MasterBlockGetter in auxDB, and a BlockGetter in baseDB) makes it so a given
+// MainBlockGetter in auxDB, and a BlockGetter in baseDB) makes it so a given
 // block will only be fetched via RPC ONCE and stored for the BlockGetters that
 // are waiting for the block.
 ////////////////////////////////////////////////////////////////////////////////
@@ -98,7 +98,7 @@ const (
 // should be called as a goroutine or it will hang on send if the channel is
 // unbuffered.
 func (db *ChainDB) SyncChainDBAsync(ctx context.Context, res chan dbtypes.SyncResult,
-	client rpcutils.MasterBlockGetter, updateAllAddresses, updateAllVotes, newIndexes bool,
+	client rpcutils.MainBlockGetter, updateAllAddresses, updateAllVotes, newIndexes bool,
 	updateExplorer chan *chainhash.Hash, barLoad chan *dbtypes.ProgressBarLoad) {
 	if db == nil {
 		res <- dbtypes.SyncResult{
@@ -126,7 +126,7 @@ func (db *ChainDB) SyncChainDBAsync(ctx context.Context, res chan dbtypes.SyncRe
 // RPC client. The table indexes may be force-dropped and recreated by setting
 // newIndexes to true. The quit channel is used to break the sync loop. For
 // example, closing the channel on SIGINT.
-func (db *ChainDB) SyncChainDB(ctx context.Context, client rpcutils.MasterBlockGetter,
+func (db *ChainDB) SyncChainDB(ctx context.Context, client rpcutils.MainBlockGetter,
 	updateAllAddresses, updateAllVotes, newIndexes bool,
 	updateExplorer chan *chainhash.Hash, barLoad chan *dbtypes.ProgressBarLoad) (int64, error) {
 	// Note that we are doing a batch blockchain sync
@@ -272,7 +272,7 @@ func (db *ChainDB) SyncChainDB(ctx context.Context, client rpcutils.MasterBlockG
 			log.Errorf("stakedb says that block %d has come and gone", ib)
 			return ib - 1, fmt.Errorf("stakedb says that block %d has come and gone", ib)
 		}
-		// If not master:
+		// If not main:
 		//blockHash := <-client.WaitForHeight(ib)
 		//block, err := client.Block(blockHash)
 		// direct:

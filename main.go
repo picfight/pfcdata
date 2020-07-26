@@ -566,7 +566,7 @@ func _main(ctx context.Context) error {
 			latestBlockHash, barLoad)
 
 		// Now that stakedb is either catching up or waiting for a block, start
-		// the auxDB sync, which is the master block getter, retrieving and
+		// the auxDB sync, which is the main block getter, retrieving and
 		// making available blocks to the baseDB. In return, baseDB maintains a
 		// StakeDatabase at the best block's height. For a detailed description
 		// on how the DBs' synchronization is coordinated, see the documents in

@@ -93,9 +93,9 @@ func (db *wiredDB) RewindStakeDB(ctx context.Context, toHeight int64) (stakeDBHe
 func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGetter,
 	fetchToHeight int64, updateExplorer chan *chainhash.Hash,
 	barLoad chan *dbtypes.ProgressBarLoad) (int64, error) {
-	// Determine if we're in lite mode, when we are the "master" who sets the
+	// Determine if we're in lite mode, when we are the "main" who sets the
 	// pace rather than waiting on other consumers to get done with the stakedb.
-	master := blockGetter == nil || blockGetter.(*rpcutils.BlockGate) == nil
+	main := blockGetter == nil || blockGetter.(*rpcutils.BlockGate) == nil
 
 	// Get chain servers's best block.
 	_, height, err := db.client.GetBestBlock()
@@ -145,18 +145,18 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 	}
 
 	// Start syncing at or after DB height depending on whether an external
-	// MasterBlockGetter is already configured to relay the current best block,
+	// MainBlockGetter is already configured to relay the current best block,
 	// in which case we receive and discard it to maintain synchronization with
 	// the auxiliary DB.
 	startHeight := dbHeight
 
-	// When coordinating with an external MasterBlockGetter, do not start beyond
-	// fetchToHeight, which is intended to indicate where the MasterBlockGetter
+	// When coordinating with an external MainBlockGetter, do not start beyond
+	// fetchToHeight, which is intended to indicate where the MainBlockGetter
 	// will be relaying blocks, and potentially relying on stakedb block
 	// connection notifications that are triggered in this function.
-	if !master {
+	if !main {
 		// stakedb height may not be larger than fetchToHeight if there is an
-		// external MasterBlockGetter since it is likely to require notification
+		// external MainBlockGetter since it is likely to require notification
 		// of block connection in stakedb starting at height fetchToHeight.
 		if fetchToHeight < stakeDBHeight {
 			return startHeight, fmt.Errorf("fetchToHeight may not be less than stakedb height")
@@ -164,7 +164,7 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 
 		// Start at the next block we don't have in both SQLite and stakedb, but
 		// do not start beyond fetchToHeight if there is an external
-		// MasterBlockGetter, the owner of which should already be configured to
+		// MainBlockGetter, the owner of which should already be configured to
 		// send the block at fetchToHeight over the waitChan (e.g. the call to
 		// UpdateToBlock in (*ChainDB).SyncChainDB).
 		if fetchToHeight > startHeight {
@@ -207,7 +207,7 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 		// Either fetch the block or wait for a signal that it is ready
 		var block *dcrutil.Block
 		var blockhash chainhash.Hash
-		if master || i < fetchToHeight {
+		if main || i < fetchToHeight {
 			// Not coordinating with blockGetter for this block
 			var h *chainhash.Hash
 			block, h, err = db.getBlock(i)
@@ -216,7 +216,7 @@ func (db *wiredDB) resyncDB(ctx context.Context, blockGetter rpcutils.BlockGette
 			}
 			blockhash = *h
 		} else {
-			// Wait for this block to become available in the MasterBlockGetter
+			// Wait for this block to become available in the MainBlockGetter
 			select {
 			case blockhash = <-db.waitChan:
 			case <-ctx.Done():

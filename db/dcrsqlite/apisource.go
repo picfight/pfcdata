@@ -162,10 +162,10 @@ func (db *wiredDB) CheckConnectivity() error {
 }
 
 // SyncDBAsync is like SyncDB except it also takes a result channel where the
-// caller should wait to receive the result. When a slave BlockGetter is in use,
-// fetchToHeight is used to indicate at what height the MasterBlockGetter will
+// caller should wait to receive the result. When a subordinate BlockGetter is in use,
+// fetchToHeight is used to indicate at what height the MainBlockGetter will
 // start sending blocks for processing. e.g. When an auxiliary DB owns the
-// MasterBlockGetter, fetchToHeight should be one past the best block in the aux
+// MainBlockGetter, fetchToHeight should be one past the best block in the aux
 // DB, thus putting wiredDB sync into "catch up" mode where it just pulls blocks
 // from RPC until it matches the auxDB height and coordination begins.
 func (db *wiredDB) SyncDBAsync(ctx context.Context, res chan dbtypes.SyncResult, blockGetter rpcutils.BlockGetter, fetchToHeight int64,
